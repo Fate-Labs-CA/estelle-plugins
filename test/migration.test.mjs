@@ -5,6 +5,7 @@ import * as fs from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { planHooks, inspectHooks, commitHooks, legacyCommand } from '../runtime/migration.mjs';
+import { runSetup } from '../runtime/setup.mjs';
 const raw = value => Buffer.from(JSON.stringify(value));
 const legacy = (mode, event, extra={}) => ({ type:'command', command:`estelle hook ${mode} --event ${event}`, ...extra });
 async function fixture(t, value) {
@@ -12,6 +13,15 @@ async function fixture(t, value) {
  const file=join(dir,'hooks.json');await writeFile(file,raw(value),{mode:0o600});return {dir,file};
 }
 const mixed=()=>({ extra:{keep:true},hooks:{PreToolUse:[{matcher:'Write|Edit', custom:'preserve', hooks:[legacy('ground','PreToolUse'),{type:'command',command:'security-check --strict',timeout:5}]}],Stop:[{hooks:[legacy('checkpoint','Stop'),{type:'command',command:'node "${PLUGIN_ROOT}/runtime/cli.mjs" hook codex'}]}]}});
+async function unsupportedApply(file) {
+ const before=await readFile(file);let effects=0;
+ const env=new Proxy({},{get(){effects++;throw Error('Windows apply must not read credentials');}});
+ const result=await runSetup({host:'codex',apply:true,home:tmpdir(),env},{
+  native:async()=>{effects++;throw Error('Windows apply must not invoke native commands');},
+  authenticate:async()=>{effects++;return true;}});
+ assert.equal(result.status,'pending_unsupported_platform');assert.equal(effects,0);
+ assert.deepEqual(await readFile(file),before);
+}
 test('exact owned commands only: no shell, basename, package or mismatched event inference',()=>{
  assert(legacyCommand('estelle hook ground --event PreToolUse','PreToolUse'));
  assert(legacyCommand('npx -y --package=@fatelabs/estelle@latest -- estelle hook checkpoint --event Stop','Stop'));
@@ -31,6 +41,7 @@ test('missing hooks is a byte-preserving no-op, malformed and duplicate keys ref
  assert.throws(()=>planHooks(Buffer.alloc(262145,32)));assert.throws(()=>planHooks(Buffer.from([0xff])));
 });
 test('actual owned file commit is private, idempotent and preserves foreign hooks',async t=>{
+ if(process.platform==='win32'){const {file}=await fixture(t,mixed());await unsupportedApply(file);return;}
  const {file}=await fixture(t,mixed());const snapshot=await inspectHooks(file);const result=await commitHooks(file,snapshot);
  assert.equal(result.status,'applied');assert.equal(result.removed,2);assert.equal(planHooks(await readFile(file)).removed,0);
  assert.equal((await stat(file)).mode&0o077,0);assert.equal((await commitHooks(file,await inspectHooks(file))).status,'unchanged');
@@ -41,6 +52,7 @@ test('stale content and replaced inode refuse without touching the new file',asy
  const old=await inspectHooks(file);await rm(file);await writeFile(file,replacement);await assert.rejects(commitHooks(file,old),/conflict/);
 });
 test('symlink/absent/nonregular and lock conflict never overwrite',async t=>{
+ if(process.platform==='win32'){const {file}=await fixture(t,mixed());await unsupportedApply(file);return;}
  const {dir,file}=await fixture(t,mixed());const alias=join(dir,'alias');await symlink(file,alias);
  await assert.rejects(inspectHooks(alias));assert.equal(await inspectHooks(join(dir,'absent')),null);
  await assert.rejects(inspectHooks(dir));const snapshot=await inspectHooks(file);await writeFile(file+'.estelle-setup.lock','owned other setup');
@@ -95,6 +107,7 @@ test('fourteen source-owned registrations are removed while public and foreign s
  assert.equal(plan.removed,14);assert.deepEqual(JSON.parse(plan.bytes).hooks.PreToolUse.at(-1).hooks,preserved);
 });
 test('post-rename directory flush opens only a nonblocking nonsymlink directory',async t=>{
+ if(process.platform==='win32'){const {file}=await fixture(t,mixed());await unsupportedApply(file);return;}
  const {constants}=await import('node:fs');const {file,dir}=await fixture(t,mixed());let inspected=false;
  const port={...fs,open:async(path,flags,...args)=>{
   if(path===dir){for(const flag of [constants.O_DIRECTORY,constants.O_NOFOLLOW,constants.O_NONBLOCK])assert.equal(flags&flag,flag);inspected=true;}
@@ -104,7 +117,8 @@ test('post-rename directory flush opens only a nonblocking nonsymlink directory'
 });
 test('short regular-file reads cannot authorize overwriting unread configuration',async t=>{
  const {file}=await fixture(t,mixed());const full=await inspectHooks(file);
- assert.equal((await commitHooks(file,full)).status,'applied');assert.equal(planHooks(await readFile(file)).removed,0);
+ if(process.platform==='win32')await unsupportedApply(file);
+ else{assert.equal((await commitHooks(file,full)).status,'applied');assert.equal(planHooks(await readFile(file)).removed,0);}
  const prefix=raw({hooks:{PreToolUse:[{hooks:[{type:'command',command:'estelle hook ground'}]}]}});
  const original=Buffer.concat([prefix,Buffer.from('\nUNSUPPORTED_TRAILING_BYTES')]);await writeFile(file,original);
  assert.throws(()=>planHooks(original));let refused=false,outcome;

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, rename, readFile, readdir, rmdir, rm, unlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rename, readFile, readdir, rm, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -107,11 +107,15 @@ test('both save and take wait for a live short claim guard without losing contex
     await mkdir(guard);
     const owner = join(guard, `${process.pid}.${randomUUID()}.owner`);
     await writeFile(owner, '', { flag: 'wx' });
+    let settled = false;
     const pending = operation === 'save'
       ? saveContext(f.path, 'turn', f.request, 'updated fixture', true) : takeContext(f.path, 'turn');
+    pending.then(() => { settled = true; }, () => { settled = true; });
     await new Promise(resolve => setTimeout(resolve, 25));
+    assert.equal(settled, false, 'the live guard must retain ownership until its owner releases');
     await unlink(owner);
-    await rmdir(guard);
+    // The existing claimant reclaims the now-empty guard. Removing the shared path
+    // here could race with its replacement owner after our owner was unlinked.
     assert.deepEqual(await pending, operation === 'save' ? true : { text: 'updated fixture', degraded: true });
   }
   assert.deepEqual(await readdir(f.root), []);
