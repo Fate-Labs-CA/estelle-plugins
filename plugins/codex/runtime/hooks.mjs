@@ -75,15 +75,15 @@ export async function drainOne(stateDir, request) {
       const port = await adapter(item.host);
       payload.transcript_path = await port.getTranscriptPath({ host: 'kimi', sessionId: payload.session_id, cwd: payload.cwd });
     }
-    if (!repo || !payload.transcript_path) {
+    if (!payload.transcript_path) {
       // Preserve the reference for diagnosis without letting one unusable item starve the queue.
       await mkdir(join(stateDir, 'unavailable'), { recursive: true, mode: 0o700 });
       await rename(path, join(stateDir, 'unavailable', name));
       continue;
     }
     const [result, stream] = await Promise.all([
-      checkpointSession({ payload, host: item.host, repo: repo.name, stateDir, request }),
-      streamSession({ payload, host: item.host, repo: repo.name, stateDir, request }),
+      checkpointSession({ payload, host: item.host, repo: repo?.name, stateDir, request }),
+      streamSession({ payload, host: item.host, repo: repo?.name, stateDir, request }),
     ]);
     if (result.saved && !stream.pending && !stream.backlog) {
       if (stream.incomplete || stream.unsupported) {
@@ -148,8 +148,7 @@ export async function handleHook({ host, payload, stateDir, request }) {
   const protection = protectWrite(n);
   if (protection?.unscanned) {
     await recordStatus(stateDir, { host, event: n.event, mode: 'protect', status: 'partial', code: 'input_bound' });
-    return port.formatContext('Estelle did not scan this edit for credential patterns because its structure exceeded the local scan bound. No clean result was established.', n.event)
-      ?? port.defaultOutput?.(payload.hook_event_name) ?? null;
+    return port.defaultOutput?.(payload.hook_event_name) ?? null;
   }
   if (protection) return host === 'cursor' ? { permission: 'deny',
     user_message: protection.hookSpecificOutput.permissionDecisionReason,
@@ -176,8 +175,9 @@ export async function handleHook({ host, payload, stateDir, request }) {
     actions.push(runAction('reindex', n, stateDir, () => queueReindex({ normalized: n, repo, stateDir, request })));
   }
   if (n.event === 'SessionStart') actions.push(runAction('deferred', n, stateDir, () => drainOne(stateDir, request)));
-  if (repo && STREAM_EVENTS.has(n.event)) actions.push(runAction('stream', n, stateDir,
-    () => streamSession({ payload: streamPayload, host, repo: repo.name, stateDir, request })));
+  // Session capture belongs to the authenticated account even before a workspace has Git metadata.
+  if (STREAM_EVENTS.has(n.event)) actions.push(runAction('stream', n, stateDir,
+    () => streamSession({ payload: streamPayload, host, repo: repo?.name, stateDir, request })));
   if (CHECKPOINT_EVENTS.has(n.event)) actions.push(runAction('checkpoint', n, stateDir,
     () => checkpointSession({ payload: streamPayload, host, repo: repo?.name, stateDir, request })));
   // Attach handlers before awaiting recall: other operations can finish while it is in flight.
