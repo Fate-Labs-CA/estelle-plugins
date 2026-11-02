@@ -36,7 +36,8 @@ emit('.cursor-plugin/marketplace.json', marketplace('cursor'));
 
 function nativeHooks(host, variable, events) {
   return { hooks: Object.fromEntries(events.map(event => [event, [{ hooks: [{ type: 'command',
-    command: command(host, variable), timeout: ['SessionEnd', 'Interrupt'].includes(event) ? 3 : 20 }],
+    command: command(host, variable), timeout: ['SessionEnd', 'Interrupt'].includes(event) ? 3 : 20,
+    ...(host === 'codex' ? { statusMessage: `Estelle: ${event}` } : {}) }],
   }]])) };
 }
 emit('plugins/claude/.claude-plugin/plugin.json', { ...manifest, license: 'Apache-2.0', author: { name: 'Fate Labs' },
