@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mutatingTool, protectWrite } from '../runtime/protect.mjs';
 
 test('local credential protection refuses a real shape without echoing its value', () => {
@@ -131,8 +132,8 @@ test('actual Codex runner emits silence for ordinary post-tool and malformed inp
     ['PreToolUse',{content:'const token = "'+'ghp_'+'f'.repeat(30)+'";'},'deny'],
     ['UnknownEvent',{},'silent']]) {
     const payload = {...base,hook_event_name:event,tool_input:input,tool_response:{}};
-    const result = spawnSync(process.execPath, ['--import', guard,
-      new URL('../runtime/cli.mjs',import.meta.url).pathname,'hook','codex'], {
+    const result = spawnSync(process.execPath, ['--import', pathToFileURL(guard).href,
+      fileURLToPath(new URL('../runtime/cli.mjs',import.meta.url)),'hook','codex'], {
       input:JSON.stringify(payload),encoding:'utf8',timeout:3000,maxBuffer:100_000,
       env:{PATH:process.env.PATH,HOME:home,ESTELLE_PLUGIN_DATA:join(home,'state')},cwd:home,
     });
