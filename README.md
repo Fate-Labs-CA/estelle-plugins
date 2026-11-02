@@ -20,6 +20,8 @@ Version: `0.0.9`.
 | Grok Build | [Grok](docs/install/grok.md) |
 | Cursor | [Cursor](docs/install/cursor.md) |
 
+Estelle for ChatGPT is a separate package in `chatgpt/estelle/`, prepared for OpenAI review and not yet listed. See [ChatGPT](docs/install/chatgpt.md).
+
 ## Copy a setup prompt
 
 Paste the matching prompt into your coding agent. After native installation, the installer agent must
