@@ -72,7 +72,17 @@ if (command === 'doctor') {
     console.error(`Native continuation could not be completed (${nativeErrorCode(error)}). No safe-to-close acknowledgment was issued.`);
     process.exitCode = 1;
   }
+} else if (command === 'setup') {
+  try {
+    const { runSetupArgs } = await import('./setup.mjs');
+    const result = await runSetupArgs(process.argv.slice(3));
+    console.log(JSON.stringify(result));
+    if (!['planned', 'applied', 'unchanged'].includes(result.status)) process.exitCode = 1;
+  } catch {
+    console.log(JSON.stringify({ status: 'pending_setup_unavailable' }));
+    process.exitCode = 1;
+  }
 } else {
-  console.error('Usage: node runtime/cli.mjs hook <claude-code|codex|kimi|grok|cursor> | doctor');
+  console.error('Usage: node runtime/cli.mjs hook <claude-code|codex|kimi|grok|cursor> | doctor | setup <host> [--apply] [--expect SHA256]');
   process.exitCode = 1;
 }

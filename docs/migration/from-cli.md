@@ -1,44 +1,78 @@
 # Replace a legacy installation
 
-Install the host-specific package linked in the README. The hosted account and its saved memory
-stay in place. Use the host's plugin/MCP/hook manager to identify existing registrations; do not
-dump configuration files or credential stores into chat.
+Install the host-specific package linked in the README using native approval. The hosted account,
+saved memory, unrelated security hooks and other MCP servers stay in place. Installation does not
+run a hidden post-install migration or approve hook trust.
 
-1. Make `ESTELLE_API_KEY` available to the host process. MCP and hooks use that same environment
-   key. A separate MCP OAuth login does not authenticate the hooks. Never ask for a key in chat.
-2. Install the replacement with native approval, then verify its authenticated MCP connection.
-   Do not add a second standalone MCP server when the plugin already provides one.
-3. Disable the old `estelle@fatelabs` plugin **if it is installed**, through the native manager.
-   For user/project hooks, remove only rows verified to invoke the old Estelle CLI (`estelle hook`
-   or `@fatelabs/estelle`). Back up the affected config and preserve other rows.
-4. Check for a separate legacy MCP registration alongside the plugin's server. Verify its source
-   and exact endpoint (`https://api.fatelabs.ca/mcp`) before disabling only that legacy row.
-   A name containing “Estelle” is not sufficient evidence. Keep the plugin-owned server and all
-   unrelated servers. Do not erase a credential to resolve a duplicate registration.
-5. Reload through the host's supported action and start a fresh session. Do not modify an active
-   session, plugin cache or hook trust fingerprint. Use normal trust prompts; in Codex `/hooks`,
-   `t` grants trust while space only toggles enablement.
+## Deterministic setup
 
-A healthy plugin server and a failed old server are separate registrations. Repair or remove the
-verified old row; do not reconfigure the healthy plugin or create another server.
+After installing the replacement, an installer agent should invoke the **shipped** entry once,
+using the actual installed Estelle package directory, not a guessed version-cache path:
 
-Report three short results, with the evidence observed and any next step:
+```sh
+node "<installed Estelle package>/runtime/cli.mjs" setup codex --apply
+```
 
-- **Package:** installed version and native enabled/trust state.
-- **MCP:** authenticated connection and actual tool discovery, or its specific failure.
-- **Hooks:** the event actually observed and local status; say “not observed” until it runs.
+For a nonmutating preview, omit `--apply`. The preview returns a public `plan_sha256`; optionally
+pass `--expect <that SHA256>` with `--apply` to refuse a changed plan. Do not paste configuration,
+credentials or command output from native MCP JSON listings into chat.
 
-An enabled package does not prove authentication or hook execution. Hook execution does not prove
-an acknowledged upload. A deferred save is pending; missing transcripts and partial capture are
-not complete history. Test Rooms only if requested and with this session's own proof. Do not start
-paid model or cloud work to test installation. Keep the report concise; do not paste full tool
-catalogues, environment dumps or transcript content.
+The current automated migration supports **Codex on POSIX only**. It:
 
-Existing CLI users may run `node scripts/launch.mjs <claude|codex|kimi|grok>` from a clone. It reads
-one existing private `~/.estelle/auth.json` credential and passes it to the child environment
-without printing it or invoking the CLI. For Cursor, start the application with the same
-`ESTELLE_API_KEY` available to its process; do not put it in a shared plugin variable.
+1. Requires the canonical `ESTELLE_API_KEY` in the setup process environment. It does not read
+   credential files or accept a separate MCP OAuth login as hook authentication. Missing or
+   unavailable authentication returns `pending_auth` and changes nothing.
+2. Checks the installed/enabled native package version and this package's canonical MCP descriptor,
+   then makes one bounded authenticated MCP `initialize` request to `https://api.fatelabs.ca/mcp`.
+   This is a protocol/authentication check, not a model or cloud launch.
+3. Inspects only the user `hooks.json` under `CODEX_HOME` (otherwise `~/.codex`). It removes exact
+   known legacy `estelle hook` commands for their matching events, including the supported
+   `@fatelabs/estelle` runners. Unknown commands, foreign hooks, matchers, options and order remain.
+   Missing files are not created. Malformed, oversized, duplicate-key or symlink files refuse.
+4. Uses the native **non-JSON** MCP descriptor to recognize only the separate lowercase `estelle`
+   registration with the exact same endpoint and canonical environment descriptor, without extra
+   headers or policy overrides. Only that proven duplicate may be removed with `codex mcp remove
+   estelle`. The plugin-owned `Estelle` server and unfamiliar registrations remain.
 
-Version 0.0.1 used a combined package. Update Claude/Codex through the refreshed marketplace;
-reinstall Estelle for Kimi using the [native GitHub guide](../install/kimi.md).
-Project `AGENTS.md` and `CLAUDE.md` are not overwritten.
+A configuration change during setup refuses. Do not run another configuration editor concurrently:
+checks plus atomic file replacement do not provide a kernel-level compare-and-swap against foreign
+writers, and the native MCP remove command has its own read/write window. Setup uses an exclusive
+lock for its own writers. A leftover lock requires inspection, never automatic deletion.
+
+An ambiguous native remove or file-commit acknowledgment returns `unknown` or `partial` and stops;
+it does not retry or roll back another writer. Inspect the current native state before deciding
+what to do next. No configuration backup containing authentication material is created. Foreign
+values remain in their configuration file, never in the setup report.
+
+For Claude Code, Cursor, Kimi and Grok, use the same entry with the host name to obtain
+`pending_unsupported_host`; Windows Codex apply returns `pending_unsupported_platform`. Their
+native installation still works, but automated legacy cleanup is not implemented here. Keep those
+migration steps pending rather than replacing them with ad hoc configuration surgery. Project hooks,
+old plugin registrations such as `estelle@fatelabs`, and unfamiliar MCP registrations also remain
+pending native-manager review.
+
+## Trust, reload and evidence
+
+Use the host's normal hook approval and reload flow, then start a fresh session. In Codex `/hooks`,
+`t` grants trust while space only toggles enablement. Setup never changes trust, global permissions,
+active sessions, plugin caches, `AGENTS.md` or `CLAUDE.md`.
+
+Versions 0.0.7 and 0.0.8 used version-root hook commands. A native upgrade can remove the old cache
+while a running session still holds its old command. Setup does not repair that active command or
+promise that a persistent cache bypasses native trust. Use a normal reload/fresh session; do not
+manually delete or replace active cache directories.
+
+Report three short results, with the actual evidence and remaining step:
+
+- **Package:** installed version and enabled state; hook trust is separately observed, not inferred.
+- **MCP:** authenticated initialization, or its specific pending state; this does not certify every tool.
+- **Hooks:** event and local status actually observed, or “not observed” until a fresh session runs it.
+
+Hook execution does not prove an acknowledged upload. Deferred saves are pending, and partial capture
+is not complete history. Test Rooms only if requested with this session's actual identity. Do not
+start paid model or cloud work to test installation or manufacture a session proof.
+
+Existing CLI users may separately run `node scripts/launch.mjs <claude|codex|kimi|grok>` from a clone.
+That existing launcher reads one private `~/.estelle/auth.json` credential and passes it to the child
+without printing it. It is not the installed setup entry and does not certify the child was restarted.
+For Cursor, its actual application process must inherit the canonical environment key.
