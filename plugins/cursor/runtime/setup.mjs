@@ -150,6 +150,13 @@ export async function runSetup({host,apply=false,expect,env=process.env,home=hom
 }
 
 export async function runSetupArgs(args) {
+ if(args.length===2&&['--capture-login','--capture-logout'].includes(args[1])){
+  const {runCaptureSetup}=await import('./capture-auth.mjs');
+  const controller=new AbortController(),stop=()=>controller.abort();
+  process.once('SIGINT',stop);process.once('SIGTERM',stop);
+  try{return await runCaptureSetup({host:args[0],logout:args[1]==='--capture-logout'},{signal:controller.signal});}
+  finally{process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);}
+ }
  const [host,...flags]=args;let apply=false,expect;
  for(let i=0;i<flags.length;i++){
   if(flags[i]==='--apply'&&!apply)apply=true;
