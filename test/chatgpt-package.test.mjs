@@ -17,7 +17,7 @@ import assert from 'node:assert/strict';
 import { readFile, readdir, mkdtemp, cp, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { join, resolve, relative } from 'node:path';
+import { join, resolve, relative, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const root = resolve(import.meta.dirname, '..');
@@ -164,7 +164,8 @@ async function inventory(base) {
   for (const entry of await readdir(base, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const path = join(entry.parentPath, entry.name);
-    out.set(relative(base, path), createHash('sha256').update(await readFile(path)).digest('hex'));
+    // Keys are POSIX-style on every OS so the inventory compares equal to FILES on Windows too.
+    out.set(relative(base, path).split(sep).join('/'), createHash('sha256').update(await readFile(path)).digest('hex'));
   }
   return out;
 }
@@ -257,7 +258,7 @@ test('each validator fails on a planted defect (the instruments can go red)', as
 test('npm run build leaves chatgpt/ byte-identical, and the comparison would see a change', async t => {
   const temporary = await mkdtemp(join(tmpdir(), 'estelle-chatgpt-build-'));
   t.after(() => rm(temporary, { recursive: true, force: true }));
-  await cp(root, temporary, { recursive: true, filter: source => !relative(root, source).split('/').includes('.git') });
+  await cp(root, temporary, { recursive: true, filter: source => !relative(root, source).split(sep).includes('.git') });
   const target = join(temporary, 'chatgpt');
   const before = await inventory(target);
   assert.equal(before.size, FILES.length);
