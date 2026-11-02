@@ -33,6 +33,15 @@ async function status(stateDir) {
 async function doctor() {
   const api = apiBase();
   const keyPresent = Boolean(process.env.ESTELLE_API_KEY);
+  const { captureHookContext } = await import('./capture-auth.mjs');
+  const capture = await captureHookContext();
+  if (capture) {
+    console.log(JSON.stringify({ version: VERSION, node: process.version, api,
+      credential: 'capture_scoped', capture_auth: 'configured_not_probed', mcp_auth: 'not_probed',
+      hook_execution: 'not_observed', automatic_pr_verification: 'not_available', work_metrics: 'not_available',
+      status: await status(stateDirectory(process.env, capture.partition)) }, null, 2));
+    return;
+  }
   console.log(JSON.stringify({ version: VERSION, node: process.version, api,
     credential: keyPresent ? 'environment' : 'missing', status: await status(stateDirectory()) }, null, 2));
   if (!keyPresent) process.exitCode = 1;
@@ -47,7 +56,12 @@ if (command === 'doctor') {
   try {
     payload = await readInput();
     const { handleHook } = await import('./hooks.mjs');
-    const output = await handleHook({ host, payload, stateDir: stateDirectory(), request: apiClient() });
+    const output = await handleHook({ host, payload, stateDir: stateDirectory(), request: apiClient(),
+      requestContext: async () => {
+        const { captureHookContext } = await import('./capture-auth.mjs');
+        const capture = await captureHookContext();
+        return capture ? { ...capture, stateDir: stateDirectory(process.env, capture.partition) } : null;
+      } });
     if (output) console.log(JSON.stringify(output));
   } catch (error) {
     if (host === 'cursor') {
@@ -77,12 +91,13 @@ if (command === 'doctor') {
     const { runSetupArgs } = await import('./setup.mjs');
     const result = await runSetupArgs(process.argv.slice(3));
     console.log(JSON.stringify(result));
-    if (!['planned', 'applied', 'unchanged'].includes(result.status)) process.exitCode = 1;
+    if (!['planned', 'applied', 'unchanged', 'capture_configured', 'capture_already_configured',
+      'capture_signed_out', 'capture_not_configured'].includes(result.status)) process.exitCode = 1;
   } catch {
     console.log(JSON.stringify({ status: 'pending_setup_unavailable' }));
     process.exitCode = 1;
   }
 } else {
-  console.error('Usage: node runtime/cli.mjs hook <claude-code|codex|kimi|grok|cursor> | doctor | setup <host> [--apply] [--expect SHA256]');
+  console.error('Usage: node runtime/cli.mjs hook <claude-code|codex|kimi|grok|cursor> | doctor | setup <host> [--apply] [--expect SHA256] | setup <host> --capture-login | setup <host> --capture-logout');
   process.exitCode = 1;
 }

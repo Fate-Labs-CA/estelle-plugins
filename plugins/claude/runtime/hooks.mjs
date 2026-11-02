@@ -45,7 +45,7 @@ export async function deferSession(normalized, stateDir) {
   });
 }
 
-export async function drainOne(stateDir, request) {
+export async function drainOne(stateDir, request, { captureOnly = false } = {}) {
   let directory;
   try { directory = await opendir(join(stateDir, 'deferred')); }
   catch (error) { if (error.code === 'ENOENT') return; throw error; }
@@ -82,15 +82,17 @@ export async function drainOne(stateDir, request) {
       continue;
     }
     const [result, stream] = await Promise.all([
-      checkpointSession({ payload, host: item.host, repo: repo?.name, stateDir, request }),
+      captureOnly ? null : checkpointSession({ payload, host: item.host, repo: repo?.name, stateDir, request }),
       streamSession({ payload, host: item.host, repo: repo?.name, stateDir, request }),
     ]);
-    if (result.saved && !stream.pending && !stream.backlog) {
+    if ((captureOnly || result.saved) && !stream.pending && !stream.backlog) {
       if (stream.incomplete || stream.unsupported) {
         await mkdir(join(stateDir, 'partial'), { recursive: true, mode: 0o700 });
         await rename(path, join(stateDir, 'partial', name));
       } else await unlink(path);
     }
+    if (captureOnly) return { incomplete: stream.incomplete, unsupported: stream.unsupported,
+      pending: stream.pending || stream.backlog, association_partial: stream.association_partial };
     return stream.association_partial ? { association_partial: true } : undefined;
   }
 }
@@ -137,15 +139,11 @@ const START_TEXT = 'If Estelle MCP tools are available, call estelle_resume befo
   + 'Check capture coverage before claiming a complete handoff.';
 
 /** One host event, one process. Network failures are recorded separately from successful empty results. */
-export async function handleHook({ host, payload, stateDir, request }) {
+export async function handleHook({ host, payload, stateDir, request, captureOnly = false, requestContext }) {
   const port = await adapter(host);
   const n = port.normalize(payload);
   if (!n.event) throw new Error('event_missing');
   if (!safeSession(n.sessionId)) throw new Error('session_missing');
-  if (host === 'codex' && ['PreModelRequest', 'PostModelRequest'].includes(n.event)) {
-    await observeModelBoundary(n, stateDir);
-    return null;
-  }
   const protection = protectWrite(n);
   if (protection?.unscanned) {
     await recordStatus(stateDir, { host, event: n.event, mode: 'protect', status: 'partial', code: 'input_bound' });
@@ -154,8 +152,15 @@ export async function handleHook({ host, payload, stateDir, request }) {
   if (protection) return host === 'cursor' ? { permission: 'deny',
     user_message: protection.hookSpecificOutput.permissionDecisionReason,
     agent_message: protection.hookSpecificOutput.permissionDecisionReason } : protection;
+  // Credential storage/auth outages must never bypass the pre-tool credential defense above.
+  const authContext = requestContext ? await requestContext() : null;
+  if (authContext) ({ stateDir, request, captureOnly } = authContext);
+  if (host === 'codex' && ['PreModelRequest', 'PostModelRequest'].includes(n.event)) {
+    await observeModelBoundary(n, stateDir);
+    return null;
+  }
   const defaultOutput = () => port.defaultOutput?.(payload.hook_event_name) ?? null;
-  const queuedContext = host === 'grok' || host === 'cursor';
+  const queuedContext = !captureOnly && (host === 'grok' || host === 'cursor');
   const grokContextPath = join(stateDir, 'context', `${hash(`${host}:${n.sessionId}`)}.json`);
   let contextRequest;
   if (queuedContext && n.event === 'UserPromptSubmit') {
@@ -172,19 +177,19 @@ export async function handleHook({ host, payload, stateDir, request }) {
   const actions = [];
   const edited = n.event === 'PostToolUse' && mutatingTool(n.toolName)
     && n.raw?.tool_response?.is_error !== true && n.raw?.tool_response?.success !== false;
-  if (repo && (edited || ['Stop', 'SessionStart'].includes(n.event))) {
+  if (!captureOnly && repo && (edited || ['Stop', 'SessionStart'].includes(n.event))) {
     actions.push(runAction('reindex', n, stateDir, () => queueReindex({ normalized: n, repo, stateDir, request })));
   }
-  if (n.event === 'SessionStart') actions.push(runAction('deferred', n, stateDir, () => drainOne(stateDir, request)));
+  if (n.event === 'SessionStart') actions.push(runAction('deferred', n, stateDir, () => drainOne(stateDir, request, { captureOnly })));
   // Session capture belongs to the authenticated account even before a workspace has Git metadata.
   if (STREAM_EVENTS.has(n.event)) actions.push(runAction('stream', n, stateDir,
     () => streamSession({ payload: streamPayload, host, repo: repo?.name, stateDir, request })));
-  if (CHECKPOINT_EVENTS.has(n.event)) actions.push(runAction('checkpoint', n, stateDir,
+  if (!captureOnly && CHECKPOINT_EVENTS.has(n.event)) actions.push(runAction('checkpoint', n, stateDir,
     () => checkpointSession({ payload: streamPayload, host, repo: repo?.name, stateDir, request })));
   // Attach handlers before awaiting recall: other operations can finish while it is in flight.
   const completedActions = Promise.allSettled(actions);
   let context;
-  if (n.event === 'UserPromptSubmit') {
+  if (!captureOnly && n.event === 'UserPromptSubmit') {
     context = await runAction('context', n, stateDir, () => recall(n, repo, request));
   }
   await completedActions;
@@ -198,7 +203,7 @@ export async function handleHook({ host, payload, stateDir, request }) {
   }
   const contextBoundary = host === 'grok' && n.event === 'PreToolUse'
     || host === 'cursor' && ['PostToolUse', 'PostToolUseFailure'].includes(n.event);
-  if (contextBoundary) {
+  if (!captureOnly && contextBoundary) {
     const queued = await takeContext(grokContextPath, n.turnId);
     if (queued) {
       await recordStatus(stateDir, { host, event: n.event, mode: 'context',
