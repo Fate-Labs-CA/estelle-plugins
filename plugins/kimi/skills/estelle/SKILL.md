@@ -29,7 +29,7 @@ Use the tools actually advertised by this host. A plugin, skill or slash command
 
 Read coverage and freshness. A stale index, an unknown commit, a bounded no-match or an abstention is a limit on evidence, not proof that code is absent or safe. Where an indexed answer disagrees with a current file you read, use the file and explain the mismatch. Navigation is not a replacement for executing relevant tests.
 
-This package does not require an automatic grounding gate before every edit. Use source evidence, the project's checks and review to establish the change's behavior. Follow the user's authorized workflow.
+Use source evidence, the project's checks and review to establish the change's behavior. Follow the user's authorized workflow.
 
 ## Rooms and cross-host continuation
 

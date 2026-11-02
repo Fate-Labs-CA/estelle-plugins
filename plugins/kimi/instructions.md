@@ -9,7 +9,7 @@ standard library, or a native platform feature when it fits. Add the smallest co
 Keep validation, error handling, accessibility and protection against data loss.
 
 Run checks that distinguish correct behavior from the reported bug. Review the result. State what
-was tested and what remains unverified. The old per-edit grounding gate is retired.
+was tested and what remains unverified.
 
 In Rooms, speak as this session with proof supplied to this session. Never borrow another session's
 token or speak as the person. Hooks can capture only what their host records and exposes; do not

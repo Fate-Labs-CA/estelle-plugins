@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { handleHook, drainOne } from '../runtime/hooks.mjs';
+import { apiClient } from '../runtime/io.mjs';
 import { timelineIdentity } from '../runtime/identity.mjs';
 
 const AT = '2026-10-30T12:00:00.000Z';
@@ -51,6 +52,128 @@ function requestSpy() {
 
 const claudePayload = (f, event, extra = {}) => ({ session_id: 'claude-fixture', cwd: f.root,
   hook_event_name: event, transcript_path: null, ...extra });
+
+async function codexCaptureFixture(t, withGit = false) {
+  const f = await fixture(t);
+  const cwd = withGit ? f.root : join(f.directory, 'not-a-git-worktree');
+  if (!withGit) await mkdir(cwd);
+  const path = join(f.directory, 'codex-capture.jsonl');
+  await writeFile(path, JSON.stringify({ type: 'response_item', timestamp: AT,
+    payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Explain the local parser' }] } }) + '\n');
+  const payload = { session_id: 'repoless-codex', cwd, transcript_path: path, hook_event_name: 'PostToolUse',
+    model: 'fixture-model', turn_id: 'fixture-turn', permission_mode: 'default', tool_name: 'Read',
+    tool_input: { path: 'parser.js' }, tool_use_id: 'read-fixture', tool_response: { ok: true } };
+  return { ...f, payload };
+}
+
+test('Codex without a local Git repository streams its exact session without inventing a repository', async t => {
+  const f = await codexCaptureFixture(t);
+  const spy = requestSpy();
+  await handleHook({ host: 'codex', payload: f.payload, stateDir: f.stateDir, request: spy.request });
+  const batch = spy.calls.find(call => call.route === '/session/events');
+  assert.ok(batch, 'a Gitless workspace still has a session timeline');
+  assert.equal(batch.body.session_id, 'codex-repoless-codex');
+  assert.ok(batch.body.events.some(event => event.kind === 'customer_message'));
+  const started = batch.body.events.find(event => event.payload.reason === 'started');
+  assert.ok(started);
+  assert.equal(JSON.parse(JSON.stringify(started)).payload.repo, undefined, 'no Estelle/default/invented repository');
+  assert.equal(spy.calls.some(call => call.route !== '/session/events'), false);
+  const status = JSON.parse(await readFile(join(f.stateDir, 'status', 'codex-stream.json'), 'utf8'));
+  assert.equal(status.status, 'ok');
+  const sent = spy.calls.length;
+  await handleHook({ host: 'codex', payload: f.payload, stateDir: f.stateDir, request: spy.request });
+  assert.equal(spy.calls.length, sent, 'an ACKed transcript is not emitted twice');
+});
+
+test('Git capture retains its actual discovered repository and exact same session contract', async t => {
+  const f = await codexCaptureFixture(t, true);
+  const spy = requestSpy();
+  await handleHook({ host: 'codex', payload: f.payload, stateDir: f.stateDir, request: spy.request });
+  const batch = spy.calls.find(call => call.route === '/session/events');
+  assert.ok(batch);
+  assert.equal(batch.body.session_id, 'codex-repoless-codex');
+  assert.equal(batch.body.events.find(event => event.payload.reason === 'started').payload.repo, 'fixture/estelle-hooks');
+});
+
+test('Gitless prompt capture does not authorize repository recall or reindex', async t => {
+  const f = await codexCaptureFixture(t);
+  const spy = requestSpy();
+  const output = await handleHook({ host: 'codex', payload: { ...f.payload, hook_event_name: 'UserPromptSubmit',
+    prompt: 'Explain the local parser' }, stateDir: f.stateDir, request: spy.request });
+  assert.equal(output, null);
+  assert.ok(spy.calls.some(call => call.route === '/session/events'));
+  assert.equal(spy.calls.some(call => call.route !== '/session/events'), false, 'only capture, no repository guess');
+  assert.equal(JSON.parse(await readFile(join(f.stateDir, 'status', 'codex-context.json'), 'utf8')).status, 'skipped');
+});
+
+test('Gitless deferred exit captures checkpoint and events on a later drain with no repository fallback', async t => {
+  const f = await codexCaptureFixture(t);
+  const spy = requestSpy();
+  await handleHook({ host: 'codex', payload: { ...f.payload, hook_event_name: 'SessionEnd', reason: 'exit' },
+    stateDir: f.stateDir, request: spy.request });
+  assert.equal(spy.calls.length, 0, 'exit remains nonblocking and does not upload');
+  assert.equal((await readdir(join(f.stateDir, 'deferred'))).length, 1);
+  await drainOne(f.stateDir, spy.request);
+  const stream = spy.calls.find(call => call.route === '/session/events');
+  const checkpoint = spy.calls.find(call => call.route === '/checkpoint');
+  assert.ok(stream && checkpoint, 'a Gitless deferred reference must not be stranded as unavailable');
+  assert.equal(stream.body.session_id, 'codex-repoless-codex');
+  assert.equal(checkpoint.body.session_id, 'repoless-codex'); // Existing checkpoint/native identity contract.
+  assert.equal(JSON.parse(JSON.stringify(checkpoint.body)).client.repo, undefined);
+  assert.equal((await readdir(join(f.stateDir, 'deferred'))).length, 0);
+  await drainOne(f.stateDir, spy.request);
+  assert.equal(spy.calls.length, 2, 'completed deferred capture is removed once');
+});
+
+test('Gitless capture without authentication retains the cursor and reports pending, never successful capture', async t => {
+  const f = await codexCaptureFixture(t);
+  let fetched = 0;
+  const request = apiClient({ env: {}, fetchImpl: async () => { fetched++; throw new Error('must not fetch'); } });
+  await handleHook({ host: 'codex', payload: f.payload, stateDir: f.stateDir, request });
+  assert.equal(fetched, 0);
+  const status = JSON.parse(await readFile(join(f.stateDir, 'status', 'codex-stream.json'), 'utf8'));
+  assert.equal(status.status, 'pending');
+  const state = JSON.parse(await readFile(join(f.stateDir, 'codex-repoless-codex.stream.json'), 'utf8'));
+  assert.equal(state.offset, 0, 'no ACK has advanced the initial transcript');
+  assert.equal(state.last_error, 'stream upload pending');
+  assert.equal((await readdir(join(f.stateDir, 'spool'))).length, 1);
+});
+
+test('scan-bound partial status is silent in host context while Cursor keeps its native permission shape', async t => {
+  const f = await codexCaptureFixture(t);
+  const input = Array.from({ length: 10_001 }, () => 'ordinary');
+  const cases = [
+    ['codex', { ...f.payload, hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: input }, null],
+    ['claude-code', claudePayload(f, 'PreToolUse', { tool_name: 'Write', tool_input: input }), null],
+    ['cursor', { hook_event_name: 'preToolUse', conversation_id: 'scan-bound-cursor',
+      cwd: f.root, tool_name: 'Write', tool_input: input }, { permission: 'allow' }],
+  ];
+  for (const [host, payload, expected] of cases) await t.test(host, async () => {
+    let requests = 0;
+    const output = await handleHook({ host, payload, stateDir: f.stateDir,
+      request: async () => { requests++; throw new Error('must not request'); } });
+    assert.deepEqual(output, expected, 'unsupported scan is not per-edit advice or a clean-scan claim');
+    assert.equal(requests, 0);
+    const status = JSON.parse(await readFile(join(f.stateDir, 'status', `${host}-protect.json`), 'utf8'));
+    assert.equal(status.status, 'partial');
+    assert.equal(status.code, 'input_bound');
+  });
+});
+
+test('silent scan-bound handling does not change actual credential denial in Codex or Cursor', async t => {
+  const f = await codexCaptureFixture(t);
+  const value = 'ghp_' + 'a'.repeat(30); // Same synthetic shape as test/protect.test.mjs.
+  const input = { content: `key=${value}` };
+  const codex = await handleHook({ host: 'codex', payload: { ...f.payload, hook_event_name: 'PreToolUse',
+    tool_name: 'Write', tool_input: input }, stateDir: f.stateDir, request: async () => { throw new Error('must not request'); } });
+  assert.equal(codex.hookSpecificOutput.permissionDecision, 'deny');
+  assert.equal(JSON.stringify(codex).includes(value), false);
+  const cursor = await handleHook({ host: 'cursor', payload: { hook_event_name: 'preToolUse',
+    conversation_id: 'literal-cursor', cwd: f.root, tool_name: 'Write', tool_input: input },
+    stateDir: f.stateDir, request: async () => { throw new Error('must not request'); } });
+  assert.equal(cursor.permission, 'deny');
+  assert.equal(JSON.stringify(cursor).includes(value), false);
+});
 
 test('unwritable state during concurrent capture and slow recall cannot create an unhandled rejection', async t => {
   const f = await fixture(t);
