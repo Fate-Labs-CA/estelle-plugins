@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, readFile, rm, appendFile, readdir, stat } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { streamSession, mapClaude, mapCodex, mapKimi, mapCursor, mapGrok, safeSession, LIMITS } from '../runtime/stream.mjs';
+import { handleHook } from '../runtime/hooks.mjs';
 
 const AT = '2026-10-30T12:00:00.000Z';
 const claude = (uuid, type, content) => ({ uuid, timestamp: AT, type, message: { content } });
@@ -439,8 +440,9 @@ test('Codex native completion uses existing ACK cursor/spool and server replay i
   assert.equal(JSON.parse(await readFile(f.state, 'utf8')).offset, 0);
   const saved = await streamSession(f.options);
   assert.equal(saved.pending, undefined);
-  assert.equal(server.size, 4); // started, original call, native artifact, original result
-  assert.equal([...server.values()].map(JSON.parse).filter(e => e.kind === 'artifact').length, 1);
+  assert.equal(server.size, 5); // original four events plus the separate target candidate
+  assert.equal([...server.values()].map(JSON.parse).filter(e => e.payload.native_type === 'CommandExecution').length, 1);
+  assert.equal(prCandidates([...server.values()].map(JSON.parse)).length, 1);
   const state = JSON.parse(await readFile(f.state, 'utf8'));
   assert.equal(state.offset, Buffer.byteLength(records.map(line).join('')));
   assert.ok(!Object.keys(state).some(key => /codex|correlat|tombstone/.test(key)));
@@ -461,3 +463,212 @@ test('Codex native completion reuses existing credential filtering without stori
     assert.equal(change.payload.metadata_complete, ['failed', 'declined'].includes(status));
   }
 });
+
+const prCandidates = events => events.filter(e => e.payload.source === 'codex.gh_pr_create_candidate');
+const prNotes = { repository: 'fixture/repository' };
+test('Codex successful gh create observes separate target candidate without changing original artifact', () => {
+  const record = completed(nativeCommand());
+  const original = mapCodex(record, 7)[0];
+  const events = mapCodex(record, 7, prNotes);
+  assert.deepEqual(events[0], original);
+  const [candidate] = prCandidates(events);
+  assert.ok(candidate);
+  assert.equal(candidate.event_id, 'r7:pr-candidate');
+  assert.equal(candidate.payload.completion_event_id, original.event_id);
+  assert.equal(candidate.payload.url, 'https://github.com/fixture/repository/pull/1');
+  assert.equal(candidate.payload.repo, prNotes.repository);
+  assert.equal(candidate.payload.number, 1);
+  assert.equal(Object.hasOwn(candidate.payload, 'pr_url'), false);
+  assert.equal(Object.hasOwn(candidate.payload, 'output'), false);
+});
+
+test('Codex candidate supports only direct gh and one known shell command', () => {
+  for (const command of [['gh', 'pr', 'create', '--repo', 'fixture/repository'],
+    ['/bin/zsh', '-lc', "gh pr create --title 'A quoted title' --body 'one; two'"],
+    ['/bin/bash', '-c', 'gh pr create --body-file /tmp/owned-fixture.md']]) {
+    assert.equal(prCandidates(mapCodex(completed(nativeCommand({ command })), 8, prNotes)).length, 1);
+  }
+  for (const command of [['echo', 'gh pr create'], ['gh', 'pr', 'view'],
+    ['/bin/zsh', '-lc', 'gh pr create; echo forged'], ['/bin/zsh', '-lc', 'gh pr create && echo forged'],
+    ['/bin/zsh', '-lc', 'echo x | gh pr create'], ['/bin/zsh', '-lc', 'gh pr create > /tmp/out'],
+    ['/bin/zsh', '-lc', 'gh pr create --title "$(echo untrusted)"'],
+    ['/bin/zsh', '-lc', "gh pr create --title 'unterminated"],
+    ['node', '-e', 'gh pr create'], ['gh', 'pr', 'merge']]) {
+    assert.deepEqual(prCandidates(mapCodex(completed(nativeCommand({ command })), 8, prNotes)), []);
+  }
+});
+
+test('Codex candidate refuses unknown status, output, context and malformed target without storing output', () => {
+  for (const extra of [{ status: 'failed', exit_code: 1 }, { status: 'completed', exit_code: null },
+    { status: 'failed', exit_code: 0 }, { aggregated_output: 'A reply: https://github.com/fixture/repository/pull/1' },
+    { aggregated_output: 'https://github.com/fixture/repository/pull/1\nPRIVATE_TRAILING_TEXT' },
+    { aggregated_output: 'https://github.com/fixture/repository/pull/1?token=fixture' },
+    { aggregated_output: 'https://github.com/foreign/repository/pull/1' },
+    { aggregated_output: 'https://github.com/fixture/repository/pull/0' },
+    { aggregated_output: 'https://github.com/fixture/repository/pull/1\n' + 'x'.repeat(4096) }]) {
+    const events = mapCodex(completed(nativeCommand(extra)), 9, prNotes);
+    assert.deepEqual(prCandidates(events), []);
+    assert.equal(JSON.stringify(events).includes('PRIVATE_TRAILING_TEXT'), false);
+  }
+  assert.deepEqual(prCandidates(mapCodex(completed(nativeCommand()), 9)), []);
+});
+
+test('Codex candidate retry keeps immutable original and candidate IDs after a lost ACK', async t => {
+  const f = await fixture(t, 'codex');
+  const record = completed(nativeCommand());
+  await writeFile(f.transcript, line(record));
+  const server = new Map(); let lose = true;
+  f.options.request = async (_path, body) => {
+    for (const event of body.events) {
+      const bytes = JSON.stringify(event);
+      if (server.has(event.event_id)) assert.equal(server.get(event.event_id), bytes);
+      else server.set(event.event_id, bytes);
+    }
+    if (lose) throw Object.assign(new Error('owned lost ACK'), { status: 503 });
+    return { accepted: body.events.length };
+  };
+  assert.equal((await streamSession(f.options)).pending, true);
+  lose = false;
+  await streamSession(f.options);
+  const captured = [...server.values()].map(JSON.parse);
+  assert.equal(prCandidates(captured).length, 1);
+  assert.equal(captured.filter(e => e.payload.native_type === 'CommandExecution').length, 1);
+  assert.equal((await streamSession(f.options)).sent, 0);
+});
+
+
+test('Codex target output cap accepts exactly bounded URL output without truncating oversized data', () => {
+  const url = nativeCommand().aggregated_output;
+  const output = url + ' '.repeat(LIMITS.prResultBytes - Buffer.byteLength(url));
+  assert.equal(Buffer.byteLength(output), LIMITS.prResultBytes);
+  assert.equal(prCandidates(mapCodex(completed(nativeCommand({ aggregated_output: output })), 1, prNotes)).length, 1);
+  assert.equal(prCandidates(mapCodex(completed(nativeCommand({ aggregated_output: output + ' ' })), 1, prNotes)).length, 0);
+});
+
+test('Codex candidate pair does not cross the existing event window cap or drop its cursor', async t => {
+  const f = await fixture(t, 'codex');
+  const before = Array.from({ length: LIMITS.codexEvents - 1 }, (_, n) => rollout({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: `owned line ${n}` }] }));
+  const prefix = before.map(line).join('');
+  await writeFile(f.transcript, prefix + line(completed(nativeCommand())));
+  await streamSession(f.options);
+  assert.equal(JSON.parse(await readFile(f.state, 'utf8')).offset, Buffer.byteLength(prefix));
+  assert.equal(prCandidates(f.calls.flatMap(call => call.body.events)).length, 0);
+  await streamSession(f.options);
+  assert.equal(prCandidates(f.calls.flatMap(call => call.body.events)).length, 1);
+});
+
+test('Codex verification partial status preserves upload ACK and cursor without leaking reply fields', async t => {
+  for (const metadata of [undefined, { state: 'unavailable', linked: 0 },
+    { state: 'partial', linked: 1, deferred: 1, unconfirmed: 0 },
+    { state: 'linked', linked: 1, deferred: 0, unconfirmed: 0 }]) {
+    const f = await fixture(t, 'codex');
+    await writeFile(f.transcript, line(completed(nativeCommand())));
+    f.options.request = async (_route, body) => ({ accepted: body.events.length,
+      ...(metadata ? { captured_pr: metadata } : {}), raw: 'PRIVATE_REPLY_OMITTED' });
+    const out = await streamSession(f.options);
+    assert.equal(out.association_partial === true, metadata?.state !== 'linked');
+    assert.equal(out.pending, undefined);
+    assert.equal(JSON.parse(await readFile(f.state, 'utf8')).offset, Buffer.byteLength(line(completed(nativeCommand()))));
+    assert.equal(JSON.stringify(out).includes('PRIVATE_REPLY_OMITTED'), false);
+  }
+});
+
+async function spooledCandidate(t) {
+  const f = await fixture(t, 'codex');
+  await writeFile(f.transcript, line(completed(nativeCommand())));
+  f.options.request = async () => { throw Object.assign(new Error('owned upload unavailable'), { status: 503 }); };
+  assert.equal((await streamSession(f.options)).pending, true);
+  const next = join(f.dir, 'next.jsonl');
+  await writeFile(next, '');
+  const payload = { session_id: 'next-session', transcript_path: next, hook_event_name: 'PostToolUse' };
+  return { ...f, next, payload, spool: join(f.options.stateDir, 'spool') };
+}
+
+for (const state of ['unavailable', 'partial', 'linked']) {
+  test(`spooled candidate ${state} survives another session's replay without retrying its ACK`, async t => {
+    const f = await spooledCandidate(t);
+    const calls = [];
+    const request = async (_route, body) => {
+      calls.push(body);
+      return { captured_pr: { state, linked: state === 'linked' ? 1 : 0, deferred: state === 'partial' ? 1 : 0,
+        unconfirmed: 0 }, private: 'REPLAY_PRIVATE_RESPONSE' };
+    };
+    const result = await streamSession({ ...f.options, payload: f.payload, request });
+    assert.equal(result.association_partial === true, state !== 'linked');
+    assert.ok(result.replayed > 0);
+    assert.equal(result.sent, 0);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].session_id, 'codex-fixture-session');
+    assert.equal(prCandidates(calls[0].events).length, 1);
+    assert.deepEqual(await readdir(f.spool), [], 'ACKed batches are deleted even when verification is unknown');
+    assert.equal(JSON.parse(await readFile(f.state, 'utf8')).offset, 0, 'replay does not fabricate a source cursor ACK');
+    assert.equal(JSON.stringify(result).includes('REPLAY_PRIVATE_RESPONSE'), false);
+    await streamSession({ ...f.options, payload: f.payload, request });
+    assert.equal(calls.length, 1, 'no reupload or association retry was added');
+  });
+}
+
+test('spooled partial survives a linked fresh batch and stream early-return paths', async t => {
+  for (const path of ['fresh-linked', 'missing-transcript', 'pending']) {
+    const f = await spooledCandidate(t);
+    if (path !== 'missing-transcript') await writeFile(f.next, line(completed(nativeCommand())));
+    let calls = 0;
+    const request = async (_route, body) => {
+      if (++calls === 1) return { captured_pr: { state: 'unavailable', linked: 0 } };
+      if (path === 'pending') throw Object.assign(new Error('new upload unavailable'), { status: 503 });
+      return { captured_pr: { state: 'linked', linked: 1, deferred: 0, unconfirmed: 0 } };
+    };
+    const result = await streamSession({ ...f.options, payload: { ...f.payload,
+      transcript_path: path === 'missing-transcript' ? null : f.next }, request });
+    assert.equal(result.association_partial, true, path);
+    assert.equal(result.pending === true, path === 'pending');
+    assert.equal(calls, path === 'missing-transcript' ? 1 : 2);
+    assert.equal((await readdir(f.spool)).length, path === 'pending' ? 1 : 0);
+  }
+});
+
+test('multiple ACKed spool batches retain any partial result without retrying either batch', async t => {
+  const f = await spooledCandidate(t);
+  await writeFile(f.next, line(completed(nativeCommand())));
+  assert.equal((await streamSession({ ...f.options, payload: f.payload })).pending, true);
+  assert.equal((await readdir(f.spool)).length, 2);
+  await writeFile(f.next, '');
+  let calls = 0;
+  const request = async () => ({ captured_pr: ++calls === 1 ? { state: 'unavailable', linked: 0 }
+    : { state: 'linked', linked: 1, deferred: 0, unconfirmed: 0 } });
+  const result = await streamSession({ ...f.options, payload: { ...f.payload, session_id: 'drain-only' }, request });
+  assert.equal(calls, 2);
+  assert.equal(result.association_partial, true);
+  assert.deepEqual(await readdir(f.spool), []);
+});
+
+for (const state of ['unavailable', 'linked']) {
+  test(`deferred capture reports ${state} replay status without retaining successful work`, async t => {
+    const f = await spooledCandidate(t);
+    await writeFile(f.next, line(rollout({ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Owned next session' }] })));
+    const calls = [];
+    const request = async (route, body) => {
+      calls.push({ route, body });
+      return { captured_pr: { state, linked: state === 'linked' ? 1 : 0, deferred: 0, unconfirmed: 0 },
+        private: 'DEFERRED_PRIVATE_RESPONSE' };
+    };
+    const payload = { ...f.payload, cwd: f.dir, reason: 'exit', hook_event_name: 'SessionEnd' };
+    await handleHook({ host: 'codex', payload, stateDir: f.options.stateDir, request });
+    assert.equal(calls.length, 0, 'exit still only records a deferred reference');
+    const start = { session_id: 'third-session', cwd: f.dir, transcript_path: null,
+      hook_event_name: 'SessionStart', model: 'fixture-model', permission_mode: 'default', source: 'startup' };
+    await handleHook({ host: 'codex', payload: start, stateDir: f.options.stateDir, request });
+    const status = JSON.parse(await readFile(join(f.options.stateDir, 'status', 'codex-deferred.json'), 'utf8'));
+    assert.equal(status.status, state === 'linked' ? 'ok' : 'partial');
+    assert.equal(status.code, state === 'linked' ? undefined : 'association_unverified');
+    assert.equal(JSON.stringify(status).includes('DEFERRED_PRIVATE_RESPONSE'), false);
+    assert.equal(JSON.stringify(status).includes('pull/1'), false);
+    assert.deepEqual(await readdir(f.spool), []);
+    assert.deepEqual(await readdir(join(f.options.stateDir, 'deferred')), []);
+    assert.equal(calls.filter(call => prCandidates(call.body.events ?? []).length).length, 1);
+    assert.equal(calls.filter(call => call.route === '/checkpoint').length, 1);
+    const count = calls.length;
+    await handleHook({ host: 'codex', payload: start, stateDir: f.options.stateDir, request });
+    assert.equal(calls.length, count, 'completed deferred work is not retried for association');
+  });
+}

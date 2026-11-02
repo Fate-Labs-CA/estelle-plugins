@@ -10,7 +10,7 @@ export const LIMITS = Object.freeze({
   readBytes: 8_000_000, skipBytes: 256_000_000, batchEvents: 50, batchBytes: 2_000_000,
   claudeEvents: 200, codexEvents: 1_000, codexWindows: 4, lines: 10_000,
   spoolBytes: 64 * 1024 * 1024, spoolFiles: 4096, drainFiles: 64, stateBytes: 32_000,
-  messageBlocks: 100, directoryEntries: 2_000,
+  messageBlocks: 100, directoryEntries: 2_000, prResultBytes: 4096,
   subagents: 40, subagentEvents: 400,
 });
 const INJECTED = ['<system-reminder', '<command-', '<local-command', '<task-notification', '[SYSTEM NOTIFICATION', 'Caveat:'];
@@ -130,6 +130,7 @@ function claudeAttachment(entry, notes, child) {
 // Core rollout schema, not app-server v2: openai/codex rust-v0.166.0
 // protocol/src/items.rs (TurnItem) and protocol/src/protocol.rs (FileChange).
 // Stateless metadata artifacts do not claim canonical commands, edits, PR links or semantic deduplication.
+const PR_CANDIDATE_SOURCE = 'codex.gh_pr_create_candidate';
 const NATIVE_COMPLETION_STATUSES = new Set(['completed', 'failed', 'declined']);
 const nativeText = (value, limit = FIELD_CAP) => typeof value === 'string' && value.length > 0 && value.length <= limit ? value : null;
 
@@ -194,13 +195,55 @@ function nativeCompletion(item, id, at) {
   }))];
 }
 
+// A small single-command recognizer, not a general shell interpreter. Unsupported syntax stays metadata.
+function singleShellWords(text) {
+  if (typeof text !== 'string' || text.length > FIELD_CAP || /[\x00-\x1f]/.test(text)) return null;
+  const words = []; let part = '', quote = '', escaped = false, started = false;
+  for (const ch of text) {
+    if (quote === "'") { if (ch === "'") quote = ''; else part += ch; continue; }
+    if (escaped) { part += ch; escaped = false; continue; }
+    if (ch === '\\') { escaped = true; started = true; continue; }
+    if (ch === '$' || ch === '`') return null;
+    if (quote) { if (ch === quote) quote = ''; else part += ch; continue; }
+    if (ch === '"' || ch === "'") { quote = ch; started = true; continue; }
+    if (/[;&|<>(){}#]/.test(ch)) return null;
+    if (ch === ' ') { if (started) words.push(part); part = ''; started = false; }
+    else { part += ch; started = true; }
+  }
+  if (quote || escaped) return null;
+  if (started) words.push(part);
+  return words.length <= LIMITS.messageBlocks ? words : null;
+}
+
+function observedPrCandidate(item, id, at, repository, original) {
+  if (original.payload.completion !== 'succeeded' || !repository || typeof item.aggregated_output !== 'string'
+      || Buffer.byteLength(item.aggregated_output) > LIMITS.prResultBytes) return [];
+  let argv = original.payload.argv;
+  if (argv?.length === 3 && /(?:^|\/)(?:sh|bash|zsh)$/.test(argv[0]) && ['-c', '-lc'].includes(argv[1])) {
+    argv = singleShellWords(argv[2]);
+  }
+  if (!argv || !/(?:^|\/)gh$/.test(argv[0]) || argv[1] !== 'pr' || argv[2] !== 'create') return [];
+  const url = item.aggregated_output.trim();
+  const match = /^https:\/\/github\.com\/([A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100})\/pull\/([1-9][0-9]{0,7})$/.exec(url);
+  if (!match || match[1] !== repository || match[1].includes('..') || Number(match[2]) > 10_000_000) return [];
+  return [event(`${id}:pr-candidate`, 'artifact', agent('codex'), at, {
+    title: 'Observed pull request target candidate', source: PR_CANDIDATE_SOURCE,
+    completion_event_id: original.event_id, native_id: original.payload.native_id,
+    repo: match[1], number: Number(match[2]), url,
+  })];
+}
+
 export function mapCodex(record, offset, notes = {}) {
   if (!record || !validTime(record.timestamp)) return [];
   const at = record.timestamp;
   const id = `r${offset}`;
   const item = record.payload ?? record;
   if (record.type === 'event_msg') {
-    if (item.type === 'item_completed') return nativeCompletion(item.item, id, at);
+    if (item.type === 'item_completed') {
+      const original = nativeCompletion(item.item, id, at);
+      return item.item?.type === 'CommandExecution' && original.length
+        ? [...original, ...observedPrCandidate(item.item, id, at, notes.repository, original[0])] : original;
+    }
     return ['task_complete', 'turn_aborted'].includes(item.type)
       ? [lifecycle(`${id}:turn-end`, at, 'waiting_for_review', 'input_required')] : [];
   }
@@ -400,13 +443,22 @@ function retryable(error) {
   return !Number.isInteger(error.status) || error.status >= 500 || [401, 403, 408, 429].includes(error.status);
 }
 
+function associationPartial(response, events) {
+  if (!events.some(e => e.payload?.source === PR_CANDIDATE_SOURCE)) return false;
+  const row = response?.captured_pr;
+  return !(row?.state === 'linked' && row.linked === 1 && row.deferred === 0 && row.unconfirmed === 0);
+}
+
 async function sendBatch(request, session, events) {
   let pending = events;
   let dropped = 0;
   const bound = events.length + 1;
   for (let attempt = 0; attempt < bound; attempt++) {
     if (!pending.length) return { dropped };
-    try { await request('/session/events', { session_id: session, events: pending }); return { dropped }; }
+    try {
+      const response = await request('/session/events', { session_id: session, events: pending });
+      return { dropped, association_partial: associationPartial(response, pending) };
+    }
     catch (error) {
       const index = error.status === 400 ? /^event (\d+):/.exec(string(error.message))?.[1] : undefined;
       if (index === undefined || Number(index) >= pending.length) throw error;
@@ -432,17 +484,19 @@ async function spoolBatch(dir, session, events) {
 
 async function drainSpool(dir, request) {
   let replayed = 0;
+  let associationIncomplete = false;
   const files = (await listBounded(dir, LIMITS.spoolFiles)).slice(0, LIMITS.drainFiles);
   for (const file of files) {
     const record = await readJson(file, null, LIMITS.batchBytes + 2048);
     if (!record || !Array.isArray(record.events) || !string(record.session_id)) throw new Error('invalid stream spool record');
     try {
-      await sendBatch(request, record.session_id, record.events);
+      const result = await sendBatch(request, record.session_id, record.events);
+      associationIncomplete ||= result.association_partial === true;
       await unlink(file);
       replayed += record.events.length;
     } catch (error) { if (retryable(error)) break; }
   }
-  return replayed;
+  return { replayed, ...(associationIncomplete ? { association_partial: true } : {}) };
 }
 
 async function readWindow(file, offset) {
@@ -488,7 +542,7 @@ function collectWindow(window, host, notes, remaining, child = false) {
     let parsed;
     try { parsed = JSON.parse(buffer.subarray(from, end).toString('utf8')); } catch { invalid++; }
     const mapped = parsed ? mapper(parsed, window.start + from, notes, child) : [];
-    if (events.length && events.length + mapped.length > remaining) break;
+    if (events.length + mapped.length > remaining) break;
     events.push(...mapped);
     used = end;
     from = end;
@@ -535,14 +589,15 @@ export async function streamSession({ payload, host, repo, stateDir, request }) 
   if (typeof request !== 'function' || typeof stateDir !== 'string') throw new TypeError('stream request and state directory required');
   await mkdir(stateDir, { recursive: true, mode: 0o700 });
   const spoolDir = join(stateDir, 'spool');
-  const replayed = await drainSpool(spoolDir, request);
-  if (!string(payload.transcript_path)) return { sent: 0, replayed, incomplete: true, reason: 'host did not supply a transcript path' };
+  const replay = await drainSpool(spoolDir, request);
+  const { replayed } = replay;
+  if (!string(payload.transcript_path)) return { sent: 0, ...replay, incomplete: true, reason: 'host did not supply a transcript path' };
   const transcript = resolve(payload.transcript_path);
   const statePath = join(stateDir, `${harness}-${session}.stream.json`);
   const state = await readJson(statePath, { offset: 0, started: false, last_lifecycle: null });
   if (!Number.isSafeInteger(state.offset) || state.offset < 0) throw new Error('invalid transcript cursor');
   const timeline = timelineIdentity(host, session);
-  const notes = {};
+  const notes = { repository: repo };
   // Grok and Cursor transcript lines carry no verified timestamps; capture time stamps their events.
   if (harness === 'grok' || harness === 'cursor') notes.observedAt = new Date().toISOString();
   let events = [];
@@ -555,7 +610,7 @@ export async function streamSession({ payload, host, repo, stateDir, request }) 
   for (let pass = 0; pass < windows && events.length < budget; pass++) {
     const window = await readWindow(transcript, offset);
     if (window.oversized) {
-      if (window.skipTo === null) return { sent: 0, replayed, incomplete: true, reason: 'unterminated transcript line exceeds read bound; cursor retained' };
+      if (window.skipTo === null) return { sent: 0, ...replay, incomplete: true, reason: 'unterminated transcript line exceeds read bound; cursor retained' };
       offset = window.skipTo; skipped++; incomplete = offset < window.length;
       continue;
     }
@@ -584,19 +639,25 @@ export async function streamSession({ payload, host, repo, stateDir, request }) 
   const batches = eventBatches(collapsed.events.map(item => sanitize(item)));
   let sent = 0;
   let dropped = 0;
+  let associationIncomplete = replay.association_partial === true;
   for (const [index, batch] of batches.entries()) {
-    try { const result = await sendBatch(request, timeline, batch); dropped += result.dropped; sent += batch.length - result.dropped; }
+    try {
+      const result = await sendBatch(request, timeline, batch);
+      dropped += result.dropped; sent += batch.length - result.dropped;
+      associationIncomplete ||= result.association_partial === true;
+    }
     catch (error) {
       if (retryable(error)) {
         for (const remaining of batches.slice(index)) await spoolBatch(spoolDir, timeline, remaining);
       }
       // Spooling preserves the failed batch across transcript deletion; only server ACK advances cursor.
       await saveJson(statePath, { ...state, last_error: 'stream upload pending', invalid_lines: invalid });
-      return { sent, dropped, replayed, pending: true, incomplete: true, error: 'stream upload pending; cursor retained' };
+      return { sent, dropped, replayed, ...(associationIncomplete ? { association_partial: true } : {}),
+        pending: true, incomplete: true, error: 'stream upload pending; cursor retained' };
     }
   }
   await saveJson(statePath, { offset, started, last_at: events.at(-1)?.at ?? last, last_lifecycle: collapsed.last, invalid_lines: invalid, skipped_lines: skipped, last_error: null });
-  return { sent, dropped, replayed, backlog: incomplete, incomplete: incomplete || harness === 'kimi-code', invalid_lines: invalid, skipped_lines: skipped, offset, session_id: timeline,
+  return { sent, dropped, replayed, ...(associationIncomplete ? { association_partial: true } : {}), backlog: incomplete, incomplete: incomplete || harness === 'kimi-code', invalid_lines: invalid, skipped_lines: skipped, offset, session_id: timeline,
     ...(harness === 'kimi-code' ? { transcript_format: 'kimi-wire', current_format_verified: true,
       capture_scope: 'main-agent journal; stream includes recorded branch history' } : {}),
     ...(harness === 'grok' ? { transcript_format: 'grok-jsonl-inferred', current_format_verified: false,

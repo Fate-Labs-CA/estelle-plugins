@@ -118,3 +118,25 @@ test('generated artifact check detects a changed runner rather than trusting a s
   assert.notEqual(broken.status, 0);
   assert.match(broken.stderr, /Bundle differs: codex\/runtime/);
 });
+
+
+test('Codex hook commands identify Estelle and the native event with supported statusMessage', async () => {
+  const codex = await json('plugins/codex/hooks/hooks.json');
+  let count = 0;
+  for (const [event, groups] of Object.entries(codex.hooks)) for (const group of groups) {
+    for (const hook of group.hooks) {
+      assert.equal(hook.statusMessage, `Estelle: ${event}`);
+      assert.deepEqual(Object.keys(hook).sort(), ['command', 'statusMessage', 'timeout', 'type']);
+      assert.equal(hook.command, 'node "${PLUGIN_ROOT}/runtime/cli.mjs" hook codex');
+      assert.equal(hook.timeout, ['SessionEnd', 'Interrupt'].includes(event) ? 3 : 20);
+      count++;
+    }
+  }
+  assert.equal(count, 12);
+  for (const host of ['claude', 'grok']) {
+    const other = await json(`plugins/${host}/hooks/hooks.json`);
+    for (const groups of Object.values(other.hooks)) for (const group of groups) {
+      for (const hook of group.hooks) assert.equal(Object.hasOwn(hook, 'statusMessage'), false);
+    }
+  }
+});

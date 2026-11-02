@@ -494,3 +494,21 @@ test('all five hosts distinguish degraded empty recall from a healthy empty resu
     assert.equal(text, rules, `${host}: returned context and rules must remain unchanged even when degraded`);
   });
 });
+
+test('Codex observed PR verification partial is quiet nonblocking local status', async t => {
+  const f = await fixture(t);
+  const path = join(f.directory, 'codex-candidate.jsonl');
+  await writeFile(path, JSON.stringify({ timestamp: AT, type: 'event_msg', payload: { type: 'item_completed',
+    item: { type: 'CommandExecution', id: 'fixture-create', command: ['gh', 'pr', 'create'],
+      cwd: f.root, status: 'completed', exit_code: 0, aggregated_output: 'https://github.com/fixture/estelle-hooks/pull/7' } } }) + '\n');
+  const output = await handleHook({ host: 'codex', stateDir: f.stateDir,
+    payload: { session_id: 'owned-candidate', model: 'fixture-model', turn_id: 'fixture-turn', permission_mode: 'default',
+      tool_input: { path: 'fixture.js' }, tool_use_id: 'read-fixture', tool_response: { ok: true }, cwd: f.root, transcript_path: path, hook_event_name: 'PostToolUse', tool_name: 'Read' },
+    request: async () => ({ captured_pr: { state: 'partial', linked: 0, deferred: 1, unconfirmed: 0 }, private: 'NO_PRIVATE_DIAGNOSTIC' }) });
+  assert.equal(output, null);
+  const status = JSON.parse(await readFile(join(f.stateDir, 'status', 'codex-stream.json'), 'utf8'));
+  assert.equal(status.status, 'partial');
+  assert.equal(status.code, 'association_unverified');
+  assert.equal(JSON.stringify(status).includes('NO_PRIVATE_DIAGNOSTIC'), false);
+  assert.equal(JSON.stringify(status).includes('pull/7'), false);
+});

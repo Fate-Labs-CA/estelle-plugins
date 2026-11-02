@@ -91,7 +91,7 @@ export async function drainOne(stateDir, request) {
         await rename(path, join(stateDir, 'partial', name));
       } else await unlink(path);
     }
-    return;
+    return stream.association_partial ? { association_partial: true } : undefined;
   }
 }
 
@@ -101,7 +101,8 @@ async function runAction(mode, normalized, stateDir, operation) {
   try {
     result = await operation();
     const skipped = result?.unsupported || result?.incomplete || result?.saved === false;
-    row = result?.degraded ? { status: 'partial', code: 'recall_degraded' }
+    row = result?.association_partial ? { status: 'partial', code: 'association_unverified' }
+      : result?.degraded ? { status: 'partial', code: 'recall_degraded' }
       : { status: result?.pending ? 'pending' : result?.skipped ? 'skipped' : skipped ? 'partial' : 'ok' };
   } catch (error) {
     row = { status: 'failed', code: errorCode(error) };

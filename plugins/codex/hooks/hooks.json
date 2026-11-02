@@ -6,7 +6,8 @@
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/runtime/cli.mjs\" hook codex",
-            "timeout": 20
+            "timeout": 20,
+            "statusMessage": "Estelle: SessionStart"
           }
         ]
       }
@@ -17,7 +18,8 @@
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/runtime/cli.mjs\" hook codex",
-            "timeout": 20
+            "timeout": 20,
+            "statusMessage": "Estelle: UserPromptSubmit"
           }
         ]
       }
@@ -28,7 +30,8 @@
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/runtime/cli.mjs\" hook codex",
-            "timeout": 20
+            "timeout": 20,
+            "statusMessage": "Estelle: PostToolUse"
           }
         ]
       }
@@ -39,7 +42,8 @@
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/runtime/cli.mjs\" hook codex",
-            "timeout": 20
+            "timeout": 20,
+            "statusMessage": "Estelle: Stop"
           }
         ]
       }
@@ -50,7 +54,8 @@
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/runtime/cli.mjs\" hook codex",
-            "timeout": 20
+            "timeout": 20,
+            "statusMessage": "Estelle: SubagentStart"
           }
         ]
       }
@@ -61,7 +66,8 @@
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/runtime/cli.mjs\" hook codex",
-            "timeout": 20
+            "timeout": 20,
+            "statusMessage": "Estelle: SubagentStop"
           }
         ]
       }
@@ -72,7 +78,8 @@
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/runtime/cli.mjs\" hook codex",
-            "timeout": 20
+            "timeout": 20,
+            "statusMessage": "Estelle: PreCompact"
           }
         ]
       }
@@ -83,7 +90,8 @@
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/runtime/cli.mjs\" hook codex",
-            "timeout": 3
+            "timeout": 3,
+            "statusMessage": "Estelle: SessionEnd"
           }
         ]
       }
@@ -94,7 +102,8 @@
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/runtime/cli.mjs\" hook codex",
-            "timeout": 20
+            "timeout": 20,
+            "statusMessage": "Estelle: PreToolUse"
           }
         ]
       }
@@ -105,7 +114,8 @@
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/runtime/cli.mjs\" hook codex",
-            "timeout": 3
+            "timeout": 3,
+            "statusMessage": "Estelle: Interrupt"
           }
         ]
       }
@@ -116,7 +126,8 @@
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/runtime/cli.mjs\" hook codex",
-            "timeout": 20
+            "timeout": 20,
+            "statusMessage": "Estelle: PreModelRequest"
           }
         ]
       }
@@ -127,7 +138,8 @@
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/runtime/cli.mjs\" hook codex",
-            "timeout": 20
+            "timeout": 20,
+            "statusMessage": "Estelle: PostModelRequest"
           }
         ]
       }
