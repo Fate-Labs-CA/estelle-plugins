@@ -8,9 +8,9 @@ account must be available to the actual host process; hooks and MCP use the same
 macOS and Windows may not inherit your terminal environment. The plugin does not install the host or
 Node, or create an account. No backend clone or Estelle CLI is needed.
 
-Version: `0.0.8`.
+Version: `0.0.9`.
 
-[Release notes](docs/releases/v0.0.8.md)
+[Release notes](docs/releases/v0.0.9.md)
 
 | Host | Install instructions and copy/paste setup prompt |
 |---|---|
@@ -22,13 +22,17 @@ Version: `0.0.8`.
 
 ## Copy a setup prompt
 
-Paste the matching prompt into your coding agent.
+Paste the matching prompt into your coding agent. After native installation, the installer agent must
+explicitly run the [shipped setup command](docs/migration/from-cli.md#deterministic-setup) once.
+Native plugin installation and SessionStart hooks do not invoke setup automatically. Automated legacy
+cleanup currently supports Codex on POSIX; other hosts and Windows apply remain pending. No manual
+configuration surgery or automatic hook trust is part of this release.
 
 <details>
 <summary>Claude Code</summary>
 
 ```text
-Install or update Estelle for Claude Code from https://github.com/uqeu/estelle-plugins using plugins/claude. Follow docs/install/claude.md and docs/migration/from-cli.md. Preserve unrelated settings and active sessions; remove only verified legacy Estelle hook/MCP registrations. Never request or display credentials. Use native approval and a fresh session. Verify authentication with one advertised read-only MCP tool, then report package, MCP and hooks separately, with any pending step.
+Install or update Estelle for Claude Code from https://github.com/uqeu/estelle-plugins using plugins/claude. Follow docs/install/claude.md and docs/migration/from-cli.md. Use native approval and a fresh session; preserve unrelated settings and active sessions. After native installation, invoke the installed package runtime/cli.mjs setup claude --apply once as documented; do not manually edit configuration. Report unsupported or unavailable migration as pending. Keep hooks and MCP on the same environment key; never request or display credentials. Report package, authenticated MCP and observed hooks separately, including trust/reload and any pending step. The setup check does not prove hook execution. No paid installation tests.
 ```
 
 </details>
@@ -37,7 +41,7 @@ Install or update Estelle for Claude Code from https://github.com/uqeu/estelle-p
 <summary>Codex</summary>
 
 ```text
-Install or update Estelle for Codex from https://github.com/uqeu/estelle-plugins using plugins/codex. Follow docs/install/codex.md and docs/migration/from-cli.md. Preserve unrelated settings and active sessions; remove only verified legacy Estelle hook/MCP registrations. Never request or display credentials. Use native approval and a fresh session. Verify authentication with one advertised read-only MCP tool, then report package, MCP and hooks separately, with any pending step.
+Install or update Estelle for Codex from https://github.com/uqeu/estelle-plugins using plugins/codex. Follow docs/install/codex.md and docs/migration/from-cli.md. Use native approval and a fresh session; preserve unrelated settings and active sessions. After native installation, invoke the installed package runtime/cli.mjs setup codex --apply once as documented; do not manually edit configuration. Report unsupported or unavailable migration as pending. Keep hooks and MCP on the same environment key; never request or display credentials. Report package, authenticated MCP and observed hooks separately, including trust/reload and any pending step. The setup check does not prove hook execution. No paid installation tests.
 ```
 
 </details>
@@ -46,7 +50,7 @@ Install or update Estelle for Codex from https://github.com/uqeu/estelle-plugins
 <summary>Kimi Code</summary>
 
 ```text
-Check that Kimi Code is installed and that its actual process can find external Node.js 22+ and ESTELLE_API_KEY from my Estelle account; report any missing prerequisite without printing the key. Install Estelle with the native interactive command /plugins install https://github.com/uqeu/estelle-plugins. Follow docs/install/kimi.md and docs/migration/from-cli.md. For a fresh Estelle registration, use /plugins remove estelle and /reload first; preserve chats, unrelated settings, other hosts and shared memories. Use native approval and /reload after installation. Keep hooks and MCP on the same environment key; never request or display credentials. Verify authentication with one advertised read-only MCP tool, then report package, MCP and hooks separately, with any pending step. Do not run kimi -p '/plugins …' or launch a model turn as an installation test. If you cannot operate the interactive TUI, give me the exact GitHub install command and report installation pending.
+Check that Kimi Code is installed and that its actual process can find external Node.js 22+ and ESTELLE_API_KEY from my Estelle account; report any missing prerequisite without printing the key. Install Estelle with the native interactive command /plugins install https://github.com/uqeu/estelle-plugins. Follow docs/install/kimi.md and docs/migration/from-cli.md. For a fresh Estelle registration, use /plugins remove estelle and /reload first; preserve chats, unrelated settings, other hosts and shared memories. After native installation, invoke the installed package runtime/cli.mjs setup kimi --apply once as documented; do not manually edit configuration. Automated Kimi migration is currently pending_unsupported_host. Use native approval and /reload after installation. Keep hooks and MCP on the same environment key; never request or display credentials. Report package, authenticated MCP and observed hooks separately, including trust/reload and any pending step. The setup check does not prove hook execution. Do not run kimi -p '/plugins …' or launch a model turn as an installation test. If you cannot operate the interactive TUI, give me the exact GitHub install command and report installation pending.
 ```
 
 </details>
@@ -55,7 +59,7 @@ Check that Kimi Code is installed and that its actual process can find external 
 <summary>Grok Build</summary>
 
 ```text
-Install or update Estelle for Grok Build from https://github.com/uqeu/estelle-plugins using plugins/grok. Follow docs/install/grok.md and docs/migration/from-cli.md. Preserve unrelated settings and active sessions; remove only verified legacy Estelle hook/MCP registrations. Never request or display credentials. Use native approval and a fresh session. Verify authentication with one advertised read-only MCP tool, then report package, MCP and hooks separately, with any pending step.
+Install or update Estelle for Grok Build from https://github.com/uqeu/estelle-plugins using plugins/grok. Follow docs/install/grok.md and docs/migration/from-cli.md. Use native approval and a fresh session; preserve unrelated settings and active sessions. After native installation, invoke the installed package runtime/cli.mjs setup grok --apply once as documented; do not manually edit configuration. Report unsupported or unavailable migration as pending. Keep hooks and MCP on the same environment key; never request or display credentials. Report package, authenticated MCP and observed hooks separately, including trust/reload and any pending step. The setup check does not prove hook execution. No paid installation tests.
 ```
 
 </details>
@@ -64,7 +68,7 @@ Install or update Estelle for Grok Build from https://github.com/uqeu/estelle-pl
 <summary>Cursor</summary>
 
 ```text
-Install or update Estelle for Cursor from https://github.com/uqeu/estelle-plugins using plugins/cursor. Follow docs/install/cursor.md and docs/migration/from-cli.md. Preserve unrelated settings and active sessions; remove only verified legacy Estelle hook/MCP registrations. Never request or display credentials. Use native approval and a fresh session. Verify authentication with one advertised read-only MCP tool, then report package, MCP and hooks separately, with any pending step.
+Install or update Estelle for Cursor from https://github.com/uqeu/estelle-plugins using plugins/cursor. Follow docs/install/cursor.md and docs/migration/from-cli.md. Use native approval and a fresh session; preserve unrelated settings and active sessions. After native installation, invoke the installed package runtime/cli.mjs setup cursor --apply once as documented; do not manually edit configuration. Report unsupported or unavailable migration as pending. Keep hooks and MCP on the same environment key; never request or display credentials. Report package, authenticated MCP and observed hooks separately, including trust/reload and any pending step. The setup check does not prove hook execution. No paid installation tests.
 ```
 
 </details>
