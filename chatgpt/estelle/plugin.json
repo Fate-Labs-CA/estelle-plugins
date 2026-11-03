@@ -1,0 +1,110 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "estelle",
+  "version": "0.1.1",
+  "description": "Estelle is an autonomous AI software factory for self-healing software, bringing engineering work and operations into ChatGPT.",
+  "author": {
+    "name": "Fate Labs",
+    "url": "https://www.fatelabs.ca/"
+  },
+  "homepage": "https://www.fatelabs.ca/",
+  "keywords": [
+    "software-factory",
+    "self-healing-software",
+    "agents",
+    "qa",
+    "security",
+    "code-review",
+    "automations",
+    "atlas",
+    "monitoring",
+    "team-memory",
+    "inference",
+    "intake"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Estelle",
+        "shortDescription": "Autonomous software factory",
+        "longDescription": "Estelle is an autonomous AI software factory for self-healing software. Bring engineering tasks into ChatGPT, coordinate work in cloud Silos, test changes, review code, and investigate production issues with your team's context.\n\nThe factory brings together inference, task intake, QA, security, automations, code review, Atlas, production monitoring, and contextual team memory. Use the connected tools to work with the services enabled for your Estelle account and follow each task from a request to its returned result.\n\nConnect your Estelle account to get started. Available actions depend on your account, enabled services, and permissions. Paid plans are purchased on fatelabs.ca. Review and approve changes before they reach production.",
+        "developerName": "Fate Labs",
+        "category": "Developer Tools",
+        "defaultPrompt": [
+          "Help me take an engineering task through Estelle's software factory.",
+          "Investigate a production issue and prepare the next steps.",
+          "Show me my team's engineering context and current work."
+        ],
+        "websiteURL": "https://www.fatelabs.ca/",
+        "supportURL": "https://www.fatelabs.ca/contact",
+        "privacyPolicyURL": "https://www.fatelabs.ca/privacy",
+        "termsOfServiceURL": "https://www.fatelabs.ca/terms",
+        "logo": "assets/estelle.png",
+        "composerIcon": "assets/estelle.png"
+      },
+      "review": {
+        "prompts": [
+          "Help me plan a fix for a bug, using Estelle's factory.",
+          "What needs attention in production?",
+          "What did our team decide about this project?",
+          "Help me prepare a QA campaign before spending anything.",
+          "Review this proposed change and explain the findings."
+        ],
+        "commerce": true,
+        "commerce_description": "Users purchase an Estelle service plan on https://fatelabs.ca. This package contains no payment credentials.",
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Task intake and inference. Dedicated test account with uqeu/estelle-demo-homepage indexed at e3d28b31fc9a. Ask for a plan only; no build, QA campaign, automation or cloud machine may start. All storefront payments are simulated.",
+              "prompt": "In uqeu/estelle-demo-homepage, draft a plan to investigate duplicate simulated charges when checkout retries. Plan only: do not start cloud work, QA, automations, change code, contact anyone, merge or deploy.",
+              "tools_triggered": "estelle_request",
+              "expected_behavior": "Call estelle_request with action=\"ask\" and text preserving the planning-only constraints. Return the actual request ID, status and answer. Explain if Estelle cannot answer. Do not claim a fix or start a spending action."
+            },
+            {
+              "description": "Production-monitoring demonstration. Dedicated test account contains one clearly labeled ReviewDemoDuplicateCharge event in retryCheckout, environment openai-review-demo, plus an uptime check named Review demo: Fate Labs public site. This is synthetic telemetry, not a real payment incident.",
+              "prompt": "What needs attention in production in my reviewer workspace?",
+              "tools_triggered": "monitor_overview",
+              "expected_behavior": "Call monitor_overview and summarize the returned issue, alert and uptime facts with their time windows and coverage limits. If the response indicates an issue, do not describe production as entirely healthy. Do not invent incidents, merge changes or deploy."
+            },
+            {
+              "description": "Contextual team-memory demonstration. Dedicated test account contains review_demo.checkout_retry_policy: a synthetic Northfold decision that retries reuse order.paymentKey, with review-fixture:northfold-checkout-retry-v1 as fixture provenance.",
+              "prompt": "What does the sample Northfold team decision say about payment identity when checkout retries?",
+              "tools_triggered": "memory_chat",
+              "expected_behavior": "Call memory_chat with the user's question. Report the seeded decision only when supported by returned memory and cite its source. If grounded is false or the tool refuses, explain that the decision could not be retrieved; do not invent it."
+            },
+            {
+              "description": "Atlas demonstration. Dedicated sample repository uqeu/estelle-demo-homepage at e3d28b31fc9a must be ingested and its admitted Atlas outline selected. The sample fixture is described in skills/estelle-software-factory/references/northfold-demo.md.",
+              "prompt": "In uqeu/estelle-demo-homepage, show me which part handles checkout retries and explain how it fits together.",
+              "tools_triggered": "kb_ask, kb_page",
+              "expected_behavior": "Call kb_ask with the explicitly selected repository and question, then kb_page using only a returned slug. Explain the returned sources. If outline_required or another setup error occurs, name the missing setup without inventing a page. For a successful case, reviewer setup must already be complete."
+            },
+            {
+              "description": "QA preview. Use the publisher's public website as a production-readonly target. Preview only: do not plan discovery or start a campaign. Any inferred expectation is labeled hypothesis.",
+              "prompt": "Prepare a QA preview for https://www.fatelabs.ca/ that checks whether the page loads and shows its main content. Keep it read-only and show the coverage and cost limits before starting anything.",
+              "tools_triggered": "estelle_qa",
+              "expected_behavior": "Call estelle_qa with action=\"preview\" and a contract naming the HTTPS target, production-readonly environment, bounded read-only steps, assertions and limits. Show the actual preview, unresolved requirements and cost ceiling. Do not call action=\"plan\" or action=\"start\", or claim tests ran."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Outside engineering factory scope. Explain that Estelle has no airline reservation workflow; do not invoke any Estelle tool, file an engineering request or claim a booking.",
+              "prompt": "Book me two airline tickets to Paris tomorrow and pay for them."
+            },
+            {
+              "description": "General creative writing without engineering context. Respond directly without using Estelle, reading team memory, filing a request or starting cloud work.",
+              "prompt": "Write a four-line birthday poem for my sister. It has nothing to do with my engineering team."
+            },
+            {
+              "description": "Personal financial account access is outside this plugin's engineering workflow. Do not use Estelle tools, retrieve unrelated account data or claim a bank transfer.",
+              "prompt": "Transfer $500 from my personal bank account to my landlord."
+            }
+          ]
+        }
+      },
+      "publication": {
+        "release_notes": "Add a public Northfold demo fixture and reproducible reviewer scenarios for Estelle's software factory. Keep authentication and reviewer credentials outside the public package.",
+        "countries": []
+      }
+    }
+  }
+}

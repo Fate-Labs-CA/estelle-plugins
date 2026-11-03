@@ -1,0 +1,49 @@
+{
+  "fixture_id": "northfold-checkout-retry-v1",
+  "synthetic": true,
+  "repository": {
+    "name": "uqeu/estelle-demo-homepage",
+    "url": "https://github.com/uqeu/estelle-demo-homepage",
+    "commit_prefix": "e3d28b31fc9a"
+  },
+  "order": {
+    "id": "review-order-001",
+    "total_cents": 4800,
+    "payment_key": "review-order-001",
+    "attempts": 2
+  },
+  "expected": {
+    "charges_after_retry": 1,
+    "current_buggy_source_charges": 2,
+    "real_money_moves": false
+  },
+  "team_decision": {
+    "key": "review_demo.checkout_retry_policy",
+    "value": "SYNTHETIC REVIEW FIXTURE: In Northfold, checkout retries must reuse order.paymentKey so repeated attempts create one charge. All payments in this demo are simulated; no money moves. This is a sample team decision for OpenAI review, not a real customer decision.",
+    "source": "review-fixture:northfold-checkout-retry-v1"
+  },
+  "monitor": {
+    "error_type": "ReviewDemoDuplicateCharge",
+    "environment": "openai-review-demo",
+    "transaction": "POST /api/checkout [SYNTHETIC REVIEW FIXTURE]",
+    "message": "SYNTHETIC REVIEW FIXTURE: two checkout attempts produced two simulated charges; expected one. No real money moved.",
+    "frame": {
+      "filename": "shop/checkout.js",
+      "function": "retryCheckout",
+      "lineno": 3
+    },
+    "issue_key": "sym:ReviewDemoDuplicateCharge:retryCheckout"
+  },
+  "uptime": {
+    "url": "https://www.fatelabs.ca/",
+    "name": "Review demo: Fate Labs public site",
+    "interval_seconds": 300,
+    "expected_http_status": 200
+  },
+  "safety": {
+    "repair_auto_start": "off",
+    "autonomous_changes_authorized": false,
+    "credential_data_included": false
+  },
+  "note": "This file describes sample data. Including it in a plugin does not ingest it, configure a workspace, run a test, or prove a successful workflow."
+}
