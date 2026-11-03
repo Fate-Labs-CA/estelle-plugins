@@ -1,0 +1,28 @@
+*** Begin Patch
+*** Update File: /tmp/estelle-automatic-qa-admission-03d/src/estelle/qa/automatic.py
+@@
+ def deadline_connect(connect, deadline, now):
+@@
+     return attach
++
++
++def deadline_ports(ports):
++    """Cooperative checks before QA's paid callbacks; never prevent resource cleanup."""
++    if ports.deadline_at is None:
++        return ports
++
++    def guard(call):
++        if call is None:
++            return None
++
++        def checked(*args, **kwargs):
++            seconds_left(ports.deadline_at, ports.now)
++            return call(*args, **kwargs)
++        return checked
++
++    intent = ports.intent
++    if intent is not None:
++        intent = replace(intent, ask=guard(intent.ask), secret_env=guard(intent.secret_env))
++    return replace(ports, acquire=guard(ports.acquire), prepare=guard(ports.prepare),
++                   identity_envs=guard(ports.identity_envs), plan_ask=guard(ports.plan_ask), intent=intent)
+*** End Patch

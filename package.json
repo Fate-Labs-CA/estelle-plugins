@@ -1,6 +1,6 @@
 {
   "name": "@fatelabs/estelle-plugins",
-  "version": "0.0.9",
+  "version": "0.0.11",
   "private": true,
   "type": "module",
   "license": "Apache-2.0",
