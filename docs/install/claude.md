@@ -21,7 +21,7 @@ If you installed `estelle@fatelabs` or the older `estelle` CLI hooks, run this o
 node "<installed Estelle package>/runtime/cli.mjs" setup claude
 ```
 
-It changes nothing and reports one of two paths. `fresh` means there is nothing to migrate. `migrate` lists what it found. To migrate, run the same command with `--apply`. [What it changes and what it keeps](../migration/from-cli.md#claude-code).
+It changes nothing and reports one of two paths. `fresh` means there is nothing to migrate. `migrate` lists what it found. To migrate, run the same command with `--apply`. On Windows, `--apply` reports `pending_unsupported_platform` and changes nothing, so the old install stays. [What it changes and what it keeps](../migration/from-cli.md#claude-code).
 
 ## Session capture needs a key for now
 

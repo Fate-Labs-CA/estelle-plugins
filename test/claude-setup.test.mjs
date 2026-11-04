@@ -36,10 +36,30 @@ async function home(t, value = settings()) {
 
 const noKey = dir => ({ env: {}, home: dir });
 
+const windows = process.platform === 'win32';
+
+/** Apply refuses on Windows by design: the commit needs POSIX no-follow opens and a directory fsync. So on Windows a test
+ * that reaches apply proves that refusal against the real process.platform, and its name says so. Pinning a `linux` port
+ * here would turn the job green by certifying a path no Windows customer can reach. */
+async function refusedApply(t) {
+  const dir = await home(t);
+  const file = join(dir, '.claude', 'settings.json');
+  const before = await readFile(file);
+  let effects = 0;
+  const env = new Proxy({}, { get() { effects++; throw new Error('Windows apply must not read the environment'); } });
+  const native = async () => { effects++; throw new Error('Windows apply must not invoke native commands'); };
+  const result = await runClaudeSetup({ apply: true, env, home: dir }, { native });
+  assert.equal(result.status, 'pending_unsupported_platform');
+  assert.equal(effects, 0);
+  assert.deepEqual(await readFile(file), before);
+}
+
+const applyTest = (name, body) => (windows ? test(`${name} [Windows: apply refuses]`, refusedApply) : test(name, body));
+
 test('no old install is the fresh path and changes nothing, with or without --apply', async t => {
   const dir = await home(t, { permissions: { allow: [] } });
   const before = await readFile(join(dir, '.claude', 'settings.json'));
-  for (const apply of [false, true]) {
+  for (const apply of windows ? [false] : [false, true]) {
     const { native, calls } = nativeFor([row(NEW_PLUGIN)]);
     const result = await runClaudeSetup({ ...noKey(dir), apply }, { native });
     assert.equal(result.path, 'fresh');
@@ -64,7 +84,7 @@ test('a plan names an old plugin and legacy hooks and changes nothing', async t 
   assert.deepEqual(await readFile(join(dir, '.claude', 'settings.json')), before);
 });
 
-test('a migration removes the old install and keeps sessions and every unrelated setting', async t => {
+applyTest('a migration removes the old install and keeps sessions and every unrelated setting', async t => {
   const dir = await home(t);
   const { native, calls } = nativeFor([row(NEW_PLUGIN), row(OLD_PLUGIN), row('other@market')]);
   const result = await runClaudeSetup({ ...noKey(dir), apply: true }, { native });
@@ -84,7 +104,7 @@ test('a migration removes the old install and keeps sessions and every unrelated
   assert.equal(again.path, 'fresh', 'a second run finds nothing left to migrate');
 });
 
-test('legacy hooks alone are enough to migrate, with no plugin to remove', async t => {
+applyTest('legacy hooks alone are enough to migrate, with no plugin to remove', async t => {
   const dir = await home(t);
   const { native, calls } = nativeFor([row(NEW_PLUGIN)]);
   const result = await runClaudeSetup({ ...noKey(dir), apply: true }, { native });
@@ -93,7 +113,7 @@ test('legacy hooks alone are enough to migrate, with no plugin to remove', async
   assert(!calls.includes('uninstall'));
 });
 
-test('nothing is removed until the replacement is installed, so a customer is never left with neither', async t => {
+applyTest('nothing is removed until the replacement is installed, so a customer is never left with neither', async t => {
   const dir = await home(t);
   const before = await readFile(join(dir, '.claude', 'settings.json'));
   const { native, calls } = nativeFor([row(OLD_PLUGIN)]);
@@ -103,7 +123,7 @@ test('nothing is removed until the replacement is installed, so a customer is ne
   assert.deepEqual(await readFile(join(dir, '.claude', 'settings.json')), before);
 });
 
-test('a project-scoped old install stays and is reported, because that scope belongs to a repository', async t => {
+applyTest('a project-scoped old install stays and is reported, because that scope belongs to a repository', async t => {
   const dir = await home(t, {});
   const { native, calls } = nativeFor([row(NEW_PLUGIN), row(OLD_PLUGIN, 'project')]);
   const result = await runClaudeSetup({ ...noKey(dir), apply: true }, { native });
@@ -112,7 +132,7 @@ test('a project-scoped old install stays and is reported, because that scope bel
   assert(!calls.includes('uninstall'));
 });
 
-test('an uninstall the read-back contradicts is never reported as applied', async t => {
+applyTest('an uninstall the read-back contradicts is never reported as applied', async t => {
   const dir = await home(t, {});
   const calls = [];
   const native = async op => {
@@ -125,7 +145,7 @@ test('an uninstall the read-back contradicts is never reported as applied', asyn
   assert.equal(result.old_plugin, 'not_removed');
 });
 
-test('a plan that changed between preview and apply refuses', async t => {
+applyTest('a plan that changed between preview and apply refuses', async t => {
   const dir = await home(t);
   const first = nativeFor([row(NEW_PLUGIN), row(OLD_PLUGIN)]);
   const { plan_sha256: hash } = await runClaudeSetup(noKey(dir), { native: first.native });
@@ -138,7 +158,7 @@ test('a plan that changed between preview and apply refuses', async t => {
   assert(!second.calls.includes('uninstall'));
 });
 
-test('a settings file that cannot be read safely refuses without touching the plugin', async t => {
+applyTest('a settings file that cannot be read safely refuses without touching the plugin', async t => {
   const dir = await home(t, null);
   await writeFile(join(dir, '.claude', 'settings.json'), '{"a":1,"a":2}');
   const { native, calls } = nativeFor([row(NEW_PLUGIN), row(OLD_PLUGIN)]);
@@ -192,7 +212,7 @@ test('no key leaves capture off and says so, and asks the server nothing', async
   assert(result.next.some(step => /same Estelle account/.test(step)));
 });
 
-test('a rejected key is named in setup output and does not block the migration', async t => {
+applyTest('a rejected key is named in setup output and does not block the migration', async t => {
   const dir = await home(t);
   const { native } = nativeFor([row(NEW_PLUGIN), row(OLD_PLUGIN)]);
   const result = await runClaudeSetup({ env: { ESTELLE_API_KEY: 'fixture-key' }, home: dir, apply: true },

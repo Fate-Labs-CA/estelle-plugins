@@ -45,7 +45,7 @@ what to do next. No configuration backup containing authentication material is c
 values remain in their configuration file, never in the setup report.
 
 Cursor, Kimi and Grok have no automated cleanup, so do not run setup for them: it only reports
-`pending_unsupported_host`. Windows Codex apply returns `pending_unsupported_platform`. Their native
+`pending_unsupported_host`. On Windows, Codex and Claude Code apply return `pending_unsupported_platform`. Their native
 installation still works. Keep those migration steps pending rather than replacing them with ad hoc
 configuration surgery. Project hooks and unfamiliar MCP registrations also remain pending
 native-manager review.
