@@ -104,4 +104,10 @@ test('setup reports the measured review state and the next step, and never write
     readyPorts(async () => { throw new Error('codex gone'); }));
   assert.equal(broken.hook_review, 'unavailable');
   assert.equal(broken.next_step, UNREADABLE.next_step);
+  // The real probe, with no codex to start: the state right after a broken update. No port is injected.
+  const { hookTrust, ...realProbe } = readyPorts();
+  assert.equal(hookTrust, undefined);
+  const missing = await runSetup({ host: 'codex', env: { ...env, PATH: '/nonexistent' }, bundleRoot, home: '/nonexistent' }, realProbe);
+  assert.equal(missing.hook_review, 'unavailable');
+  assert.match(missing.next_step, /Run \/hooks in Codex/);
 });

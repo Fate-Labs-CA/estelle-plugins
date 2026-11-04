@@ -56,6 +56,14 @@ const EMPTY_PEM = /-----BEGIN ([A-Z ]*PRIVATE KEY)-----((?:\s|\\+[rn])*)(?:-----
 const SOURCE_END = /^(?:\\*["'`]|\/[gimsuy]*)(?:\s|\\+[rn])*(?:[,;)}\]]|$)/;
 const BEARER = /\bBearer\s+([A-Za-z0-9._~+/-]{8,}=*)/gi;
 const NAMED_HEX = /\bsession[_-]token\s+is\s+["'`]?[a-f0-9]{32,128}/i;
+// Any scheme with a userinfo password. The vendor list only knows one database scheme.
+const URL_USERINFO = /\b[a-z][a-z0-9+.-]{1,20}:\/\/[^\s:@/'"`]{0,128}:([^\s@/'"`]{3,256})@/gi;
+const PORT_ONLY = /^\d{1,5}$/;
+const COMMON_URL_WORDS = /^(?:password|pass|postgres|secret)$/i;
+const YAML_LINE_START = /^[+\- \t]*$/;
+const YAML_LINE_END = /[ \t]*(?:#[^\n]*)?(?:\r?\n|$)/y;
+const CLOSES_OBJECT = /\s*[}\])]/y;
+const CONTAINS_CREDENTIAL_WORD = /secret|token|passw|passphrase|key/;
 const QUOTED_VALUE_ON_NEXT_LINE = /\s*/y;
 const SAME_LINE_GAP = /[ \t]*/y;
 const OPERATOR = /\\*["'`]?\s*(:=|=>|=(?![=~])|:(?!:))/y;
@@ -198,10 +206,30 @@ function isDeclarationForm(text, label, labelStart, operatorText) {
   if (operatorText !== '=') return false;
   if (label.startsWith('--')) return true;
   if (label !== label.toUpperCase() || !/[A-Z]/.test(label)) return false;
-  const before = text.slice(Math.max(0, labelStart - MAX_LINE_LOOKBACK), labelStart);
+  const prefix = lineBefore(text, labelStart);
+  return prefix !== null && /^[+\- \t]*(?:export[ \t]+|set[ \t]+)?$/.test(prefix);
+}
+
+/** What precedes a position on its line, or null when that line is longer than the lookback. */
+function lineBefore(text, position) {
+  const before = text.slice(Math.max(0, position - MAX_LINE_LOOKBACK), position);
   const newline = before.lastIndexOf('\n');
-  if (newline < 0 && labelStart > before.length) return false;
-  return /^[+\- \t]*(?:export[ \t]+|set[ \t]+)?$/.test(before.slice(newline + 1));
+  if (newline < 0 && position > before.length) return null;
+  return before.slice(newline + 1);
+}
+
+/** A key and one lowercase word alone on a line: YAML's unquoted string. Anything that could be a
+ *  variable (punctuation, a trailing comma, the last property of an object) stays a reference. */
+function isLoneYamlWord(text, labelStart, value) {
+  const { body } = value;
+  if (!/^[a-z]+$/.test(body) || body.length < MIN_LITERAL) return false;
+  if (KEYWORD_VALUES.has(body) || CONTAINS_CREDENTIAL_WORD.test(body) || isPlaceholder(body)) return false;
+  const prefix = lineBefore(text, labelStart);
+  if (prefix === null || !YAML_LINE_START.test(prefix)) return false;
+  const end = matchAt(YAML_LINE_END, text, value.after);
+  if (!end) return false;
+  if (matchAt(CLOSES_OBJECT, text, end.index + end[0].length)) return false;
+  return true;
 }
 
 function bareLiteralIsCredential(body, strength) {
@@ -233,6 +261,7 @@ function assignmentIsCredential(text, label, labelStart, labelEnd) {
     const direct = assigned.quoted ? literalIsCredential(assigned.body, strength) : bareLiteralIsCredential(assigned.body, strength);
     return direct || expressionHoldsOpaqueLiteral(text, assignedStart);
   }
+  if (operator[1] === ':' && strength === 'strong' && !labelQuoted && isLoneYamlWord(text, labelStart, value)) return true;
   const reference = STORE_REFERENCE.test(value.body) || /^[$%]/.test(value.body);
   if (!reference && strength === 'strong' && gap[0] === '' && isDeclarationForm(text, label, labelStart, operator[0])) {
     return value.body.length >= MIN_LITERAL && !isTemplate(value.body) && !isPlaceholder(value.body);
@@ -241,13 +270,19 @@ function assignmentIsCredential(text, label, labelStart, labelEnd) {
   return expressionHoldsOpaqueLiteral(text, valueStart);
 }
 
+function urlPasswordIsReal(value) {
+  return !(isTemplate(value) || isPlaceholder(value) || COMMON_URL_WORDS.test(value) || PORT_ONLY.test(value));
+}
+
+function urlCredential(text) {
+  for (const match of text.matchAll(URL_USERINFO)) if (urlPasswordIsReal(match[1])) return true;
+  return false;
+}
+
 function vendorMatchIsReal(match) {
   const whole = match[0];
   if (EXACT_VENDOR_EXAMPLES.has(whole)) return false;
-  if (/^postgres/.test(whole)) {
-    const hidden = whole.slice(whole.lastIndexOf(':') + 1, -1);
-    return !(isTemplate(hidden) || isPlaceholder(hidden) || /^(?:password|pass|postgres|secret)$/i.test(hidden));
-  }
+  if (/^postgres/.test(whole)) return urlPasswordIsReal(whole.slice(whole.lastIndexOf(':') + 1, -1));
   if (whole.startsWith('-----BEGIN')) return true;
   return !/^x{6,}$/i.test(whole.slice(Math.max(whole.lastIndexOf('_'), whole.lastIndexOf('-')) + 1));
 }
@@ -285,7 +320,7 @@ export function fieldIsCredential(key, value) {
 /** Input size is capped at MAX_JSON_BYTES by the hook runner, so each scan below is bounded by it. */
 export function textHasCredential(source) {
   const text = withoutEmptyPem(source.replaceAll('\0', ''));
-  if (vendorCredential(text) || bearerCredential(text) || NAMED_HEX.test(text)) return true;
+  if (vendorCredential(text) || urlCredential(text) || bearerCredential(text) || NAMED_HEX.test(text)) return true;
   for (const match of text.matchAll(LABEL)) {
     if (assignmentIsCredential(text, match[0], match.index, match.index + match[0].length)) return true;
   }
