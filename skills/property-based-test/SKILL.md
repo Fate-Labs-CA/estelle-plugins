@@ -2,6 +2,8 @@
 name: property-based-test
 description: "State what must always be true, then hunt for a counterexample. Use when the task involves: property based, invariant, hypothesis, quickcheck, generative test, shrinking."
 user-invocable: false
+metadata:
+  short-description: "State what must always be true, then hunt for a counterexample."
 ---
 
 # property-based-test

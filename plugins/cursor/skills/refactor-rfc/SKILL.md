@@ -2,6 +2,8 @@
 name: refactor-rfc
 description: "Name the smell, the target shape, and the order to get there. Use when the task involves: refactor, rfc, debt, cleanup, restructure, smell."
 user-invocable: false
+metadata:
+  short-description: "Name the smell, the target shape, and the order to get there."
 ---
 
 # refactor-rfc

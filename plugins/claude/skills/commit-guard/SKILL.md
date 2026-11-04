@@ -2,6 +2,8 @@
 name: commit-guard
 description: "Format, lint, typecheck and test before a commit lands. Use when the task involves: commit, pre-commit, hook, staged, format, lint."
 user-invocable: false
+metadata:
+  short-description: "Format, lint, typecheck and test before a commit lands."
 ---
 
 # commit-guard

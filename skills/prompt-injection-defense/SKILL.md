@@ -2,6 +2,8 @@
 name: prompt-injection-defense
 description: "Stop text you did not write from giving your model orders. Use when the task involves: prompt injection, indirect injection, untrusted content, spotlighting, dual llm, camel."
 user-invocable: false
+metadata:
+  short-description: "Stop text you did not write from giving your model orders."
 ---
 
 # prompt-injection-defense

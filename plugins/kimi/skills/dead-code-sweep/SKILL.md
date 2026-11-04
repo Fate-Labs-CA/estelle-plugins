@@ -2,6 +2,8 @@
 name: dead-code-sweep
 description: "Find what nothing uses, and remove it safely. Use when the task involves: dead code, cleanup, unused, duplicate, refactor, remove."
 user-invocable: false
+metadata:
+  short-description: "Find what nothing uses, and remove it safely."
 ---
 
 # dead-code-sweep

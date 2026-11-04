@@ -2,6 +2,8 @@
 name: estelle
 description: "Use Estelle for repository evidence, shared memory, Rooms, production monitoring, Twice app testing, Silos, Security, CI, Orchestra, Atlas and engineering requests from Claude Code, Codex, Kimi Code, Grok Build or Cursor. Inspect the connected tool schemas before calling them."
 user-invocable: false
+metadata:
+  short-description: "Use Estelle for repository evidence, memory, Rooms, monitoring and cloud work."
 ---
 
 # Estelle

@@ -2,6 +2,8 @@
 name: context-checkpoint
 description: "Summarise, pin what matters, drop the noise, keep going. Use when the task involves: checkpoint, compact, context, summarize, phase, long session."
 user-invocable: false
+metadata:
+  short-description: "Summarise, pin what matters, drop the noise, keep going."
 ---
 
 # context-checkpoint

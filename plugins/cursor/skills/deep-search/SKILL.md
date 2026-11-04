@@ -2,6 +2,8 @@
 name: deep-search
 description: "Ask a question about your own repo and get a cited answer. Use when the task involves: deep search, deep-search, ask the codebase, natural language codebase question, question about the repo, grounded code q&a."
 user-invocable: false
+metadata:
+  short-description: "Ask a question about your own repo and get a cited answer."
 ---
 
 # deep-search

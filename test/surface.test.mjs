@@ -21,7 +21,7 @@ const frontMatter = text => {
 // `locate`, `scan`, `review`, `orchestra`) read as English outside code font, so they are checked only there.
 const TOOL_SHAPE = /\b(?:estelle_[a-z_]+|monitor_[a-z_]+|kb_[a-z_]+|research_[a-z_]+|find_[a-z_]+|list_[a-z_]+|get_session|memory_chat|session_message|dependency_path|blast_radius|import_cycles)\b/g;
 const CODE_WORD = /`([a-z]+)`/g;
-const CODE_WORDS_THAT_ARE_NOT_TOOLS = new Set(['list', 'get', 'tail', 'args', 'query', 'page', 'applied', 'unchanged', 'unknown', 'partial', 't']);
+const CODE_WORDS_THAT_ARE_NOT_TOOLS = new Set(['list', 'get', 'tail', 'args', 'query', 'page', 'applied', 'unchanged', 'unknown', 'partial', 't', 'confirmed', 'refuted']);
 function unknownTools(text) {
   const named = [...text.matchAll(TOOL_SHAPE)].map(match => match[0]);
   const codeWords = [...text.matchAll(CODE_WORD)].map(match => match[1]).filter(word => !CODE_WORDS_THAT_ARE_NOT_TOOLS.has(word));
@@ -69,7 +69,7 @@ test('retired names stay gone from every surface', async () => {
   assert.match(skill, /`estelle_docs`/);
 });
 
-test('each command is one plain line, on every host that shows commands', async () => {
+test('each command is one plain line, on every host', async () => {
   for (const name of COMMANDS) {
     const head = frontMatter(await read(`commands/${name}.md`));
     const rows = head.split('\n');
@@ -78,7 +78,13 @@ test('each command is one plain line, on every host that shows commands', async 
     assert(description.length <= MAX_DESCRIPTION, `${name}: ${description.length} characters`);
     assert.match(description, /^[A-Z][^:]*\.$/, `${name}: one sentence, no label`);
     assert.doesNotMatch(description, /Use when|Use for|you can|\bAI\b/, name);
-    for (const host of HOSTS) assert.equal(await read(`plugins/${host}/commands/${name}.md`), await read(`commands/${name}.md`), `${host}/${name}`);
+    for (const host of HOSTS.filter(host => host !== 'codex')) {
+      assert.equal(await read(`plugins/${host}/commands/${name}.md`), await read(`commands/${name}.md`), `${host}/${name}`);
+    }
+    const codex = await read(`plugins/codex/command-skills/${name}/SKILL.md`);
+    assert.match(frontMatter(codex), new RegExp(`^name: ${name}$`, 'm'));
+    assert(frontMatter(codex).includes(JSON.stringify(description)), `${name}: Codex shows a different line`);
+    assert.doesNotMatch(codex, /\$ARGUMENTS/, `${name}: Codex drops anything that uses this placeholder`);
   }
   assert.deepEqual((await readdir(join(root, 'commands'))).sort(), COMMANDS.map(name => `${name}.md`).sort(),
     'a new command reaches every editor; add it here on purpose, with a plain line');
@@ -117,10 +123,21 @@ test('agents can reach Estelle whichever way it was installed', async () => {
   }
 });
 
-test('the Codex package ships the commands, which Codex turns into skills when it installs', async () => {
-  const shipped = await readdir(join(root, 'plugins', 'codex', 'commands'));
-  assert.deepEqual(shipped.sort(), COMMANDS.map(name => `${name}.md`).sort());
-  for (const name of COMMANDS) assert.match(await read(`plugins/codex/commands/${name}.md`), /^---\ndescription: /, 'Codex skips a command with no description');
+test('every skill has one plain line for the pickers that prefer it', async () => {
+  for (const name of await readdir(join(root, 'skills'))) {
+    const head = frontMatter(await read(`skills/${name}/SKILL.md`));
+    const match = /^metadata:\n {2}short-description: "(.+)"$/m.exec(head);
+    assert(match, `${name} has no short description`);
+    assert(match[1].length <= MAX_DESCRIPTION, name);
+    assert.match(match[1], /\.$/, name);
+    assert.doesNotMatch(match[1], /Use when/, name);
+  }
+});
+
+test('the Codex package lists its command skills beside its skills', async () => {
+  const manifest = JSON.parse(await read('plugins/codex/.codex-plugin/plugin.json'));
+  assert.deepEqual(manifest.skills, ['./skills', './command-skills']);
+  assert.deepEqual((await readdir(join(root, 'plugins', 'codex', 'command-skills'))).sort(), [...COMMANDS].sort());
 });
 
 test('update copy names the exact Codex step, and the setup prompt defers to the person', async () => {

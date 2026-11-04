@@ -50,8 +50,18 @@ emit('plugins/claude/.claude-plugin/plugin.json', { ...manifest, license: 'Apach
 // URL only: Claude Code signs in with OAuth. A pinned header disables that, and an unset variable goes out literally.
 emit('plugins/claude/.mcp.json', { mcpServers: { Estelle: { type: 'http', url: server.url } } });
 emit('plugins/claude/hooks/hooks.json', nativeHooks('claude-code', 'CLAUDE_PLUGIN_ROOT', common));
-emit('plugins/codex/.codex-plugin/plugin.json', { ...manifest, skills: './skills',
+emit('plugins/codex/.codex-plugin/plugin.json', { ...manifest, skills: ['./skills', './command-skills'],
   hooks: './hooks/hooks.json', mcpServers: './.mcp.json' });
+// Codex has no command format of its own. It turns commands into skills at install, but silently skips any
+// command using $ARGUMENTS, which is all of ours. So the Codex package gets those skills generated here.
+for (const entry of (await readdir(join(root, 'commands'))).sort()) {
+  const name = entry.replace(/\.md$/, '');
+  const source = await readFile(join(root, 'commands', entry), 'utf8');
+  const [, description, body] = /^---\ndescription: (.+)\n---\n([\s\S]+)$/.exec(source) ?? [];
+  if (!description) throw new Error(`Command needs one description line: ${entry}`);
+  emit(`plugins/codex/command-skills/${name}/SKILL.md`, `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\n---\n\n`
+    + body.replaceAll('$ARGUMENTS', 'what the person asked for'));
+}
 emit('plugins/codex/.mcp.json', { mcpServers: { Estelle: server } });
 emit('plugins/codex/hooks/hooks.json', nativeHooks('codex', 'PLUGIN_ROOT', [...common, 'Interrupt']));
 const kimiManifest = { ...manifest, skills: ['./skills'], commands: ['./commands'],
@@ -79,7 +89,7 @@ emit('plugins/cursor/rules/estelle.mdc', '---\ndescription: Use Estelle tools fo
 
 const HOSTS = ['claude', 'codex', 'kimi', 'grok', 'cursor'];
 const ASSETS = ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE', 'NOTICE'];
-const assetsFor = host => [...ASSETS, 'commands', ...(host === 'claude' ? ['agents'] : [])];
+const assetsFor = host => [...ASSETS, ...(host === 'codex' ? [] : ['commands']), ...(host === 'claude' ? ['agents'] : [])];
 async function inventory(directory, prefix = '') {
   const output = new Map();
   for (const entry of await readdir(directory, { withFileTypes: true })) {
