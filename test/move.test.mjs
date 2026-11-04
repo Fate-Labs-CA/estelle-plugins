@@ -105,17 +105,22 @@ test('unpushed commits with a clean tree also go to a snapshot, or the box could
   assert.equal(run(w.origin, 'show', `${git.commit}:a.txt`), 'local');
 });
 
-// The second fixture is a made-up value in a shape redact() knows, assembled here so no key-shaped literal sits in source.
-const FAKE_SHAPED = `token ${['sk', 'a'.repeat(30)].join('-')}\n`;
-for (const [name, content, why] of [['.env', 'X=1\n', /looks private/], ['config.txt', FAKE_SHAPED, /shaped like a credential/]]) {
-  test(`${name} is refused with a reason and nothing is pushed or posted`, async t => {
-    const w = await world(t);
-    await writeFile(join(w.cwd, name), content);
-    await assert.rejects(w.move('handoff'), error => why.test(error.reason));
-    assert.equal(w.posted(), undefined);
-    assert.equal(run(w.origin, 'for-each-ref', 'refs/heads/estelle'), '');
-  });
-}
+test('.env is refused with a reason and nothing is pushed or posted', async t => {
+  const w = await world(t);
+  await writeFile(join(w.cwd, '.env'), 'X=1\n');
+  await assert.rejects(w.move('handoff'), error => /looks private/.test(error.reason));
+  assert.equal(w.posted(), undefined);
+  assert.equal(run(w.origin, 'for-each-ref', 'refs/heads/estelle'), '');
+});
+
+test('a file the credential scan flags is refused with a reason and nothing is pushed or posted', async t => {
+  const w = await world(t);
+  await writeFile(join(w.cwd, 'config.txt'), 'flag-this-line\n');
+  const scan = text => (text.includes('flag-this-line') ? '[redacted]' : text);
+  await assert.rejects(w.move('handoff', '', { scan }), error => /shaped like a credential/.test(error.reason));
+  assert.equal(w.posted(), undefined);
+  assert.equal(run(w.origin, 'for-each-ref', 'refs/heads/estelle'), '');
+});
 
 test('an auth file next to the conversation is never read or sent', async t => {
   const w = await world(t, { host: 'codex' });
@@ -173,6 +178,63 @@ test('cloud carries the prompt and a fresh key, and needs no session', async t =
   assert.equal(body.harness, 'codex');
   assert.ok(body.move_key.length >= 8);
   assert.equal(body.native, undefined);
+});
+
+// ── review blocker 2: a rerun after a timeout never buys a second machine ─────────────────────────────────────────
+test('a timed-out cloud run gives a link and says to rerun, and the rerun checks with the same key and starts nothing', async t => {
+  const w = await world(t);
+  const lost = async (path, body) => {
+    w.calls.push({ path, body });
+    if (path === '/checkpoint') return {};
+    throw new DOMException('deadline', 'TimeoutError');
+  };
+  let failure;
+  await w.move('cloud', 'codex fix the build', { request: lost }).catch(error => { failure = error; });
+  assert.match(failure.reason, /could not confirm whether this started/);
+  assert.match(failure.needed, /https:\/\/fatelabs\.ca\/dashboard\/sessions\?session=/);
+  const key = w.posted().move_key;
+  w.calls.length = 0;
+  w.replies.status = { found: true, final: true, session_id: 's', state: 'working', moved: true, last_message: 'IT DID START' };
+  const again = await w.move('cloud', 'codex fix the build');
+  assert.equal(again.final, 'IT DID START');
+  assert.equal(w.calls.length, 1, 'only a status read: no git, no checkpoint and no launch');
+  assert.deepEqual([w.calls[0].body.action, w.calls[0].body.move_key], ['status', key]);
+});
+
+test('when the server never heard of it, the rerun launches once with the same key', async t => {
+  const w = await world(t);
+  const lost = async () => { throw new DOMException('deadline', 'TimeoutError'); };
+  await w.move('cloud', 'fix it', { request: lost }).catch(() => {});
+  w.replies.status = { found: false };
+  await w.move('cloud', 'fix it');
+  const first = w.posted().move_key;
+  w.calls.length = 0;
+  await w.move('cloud', 'fix it');
+  assert.notEqual(w.posted().move_key, first, 'once the outcome is known, running it again is a new intent');
+});
+
+test('an unknown answer keeps the key, so the next run checks rather than launches', async t => {
+  const w = await world(t);
+  w.replies.move = { moved: null, final: true, state: 'unknown', session_id: 's', last_message: 'CANNOT TELL' };
+  assert.equal((await w.move('cloud', 'fix it')).final, 'CANNOT TELL');
+  w.calls.length = 0;
+  w.replies.status = { found: true, final: true, state: 'unknown', moved: null, session_id: 's', last_message: 'STILL CANNOT TELL' };
+  assert.equal((await w.move('cloud', 'fix it')).final, 'STILL CANNOT TELL');
+  assert.equal(w.posted(), undefined, 'nothing launched');
+});
+
+test('a server refusal releases the key, because nothing started', async t => {
+  const w = await world(t);
+  const refused = async (path, body) => {
+    w.calls.push({ path, body });
+    if (path === '/checkpoint') return {};
+    throw Object.assign(new Error('bad'), { status: 400 });
+  };
+  await w.move('cloud', 'fix it', { request: refused }).catch(() => {});
+  const first = w.posted().move_key;
+  w.calls.length = 0;
+  await w.move('cloud', 'fix it');
+  assert.notEqual(w.posted().move_key, first);
 });
 
 test('the shipped commands reach the CLI through stdin, so no shell parses a person\'s words', async () => {

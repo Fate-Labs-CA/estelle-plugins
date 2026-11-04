@@ -15,7 +15,7 @@ import { redact } from './redact.mjs';
 export const MOVING = 'moving this session to the cloud';
 export const MOVE_LIMITS = Object.freeze({
   snapshotFiles: 200, snapshotFileBytes: 2_000_000, pushMs: 60_000, requestMs: 120_000,
-  pollEveryMs: 5_000, polls: 36, wordsChars: 8_000, rolloutScan: 20_000 });
+  pollEveryMs: 5_000, polls: 36, wordsChars: 8_000, rolloutScan: 20_000, pendingMs: 86_400_000 });
 const HARNESSES = { codex: 'codex', claude: 'claude-code', 'claude-code': 'claude-code', cursor: 'cursor', kimi: 'kimi-code',
   'kimi-code': 'kimi-code', grok: 'grok' };
 const NATIVE_HOSTS = new Set(['claude-code', 'codex']);
@@ -80,7 +80,7 @@ function gitWrite(root, args, { env = {}, timeout = 10_000 } = {}) {
     stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
-async function assertSafeToPush(root, paths) {
+async function assertSafeToPush(root, paths, scan) {
   if (paths.length > MOVE_LIMITS.snapshotFiles) {
     throw refusal(`${paths.length} changed files is past the ${MOVE_LIMITS.snapshotFiles}-file snapshot bound.`,
       'Commit or stash some of them, or push your own branch, then run this again.');
@@ -95,7 +95,7 @@ async function assertSafeToPush(root, paths) {
       throw refusal(`${path} is past the snapshot's file bound.`, 'Commit it yourself or add it to .gitignore.');
     }
     const text = await readFile(full, 'utf8').catch(() => '');
-    if (redact(text) !== text) {
+    if (scan(text) !== text) {
       throw refusal(`${path} holds something shaped like a credential, so it was not pushed.`, 'Remove it, or add the file to .gitignore.');
     }
   }
@@ -103,8 +103,8 @@ async function assertSafeToPush(root, paths) {
 
 // A commit built on a temporary index and pushed to its own branch. HEAD, the index and the working tree are never touched,
 // and the push counts only once the remote reads back the same commit.
-async function pushSnapshot(root, session, paths) {
-  await assertSafeToPush(root, paths);
+async function pushSnapshot(root, session, paths, scan) {
+  await assertSafeToPush(root, paths, scan);
   const directory = await mkdtemp(join(tmpdir(), 'estelle-snapshot-'));
   try {
     const env = { GIT_INDEX_FILE: join(directory, 'index') };
@@ -130,14 +130,14 @@ function isPushed(root, commit) {
 }
 
 // What the box starts from. `pushed` work goes by commit; anything local goes through a snapshot branch or a refusal.
-export async function gitState(root, session) {
+export async function gitState(root, session, scan = redact) {
   const commit = git(root, ['rev-parse', 'HEAD']);
   if (!/^[a-f0-9]{40}$/.test(commit)) throw refusal('This repository has no commit to start from.', 'Commit something first.');
   const branch = git(root, ['branch', '--show-current']);
   const status = git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all'], { raw: true });
   const paths = status.split('\0').filter(Boolean).map(row => row.slice(3)).filter(Boolean);
   if (!paths.length && isPushed(root, commit)) return { state: { branch, commit, dirty: false }, snapshot: null };
-  const snapshot = await pushSnapshot(root, session, paths);
+  const snapshot = await pushSnapshot(root, session, paths, scan);
   return { state: { branch, commit: snapshot.commit, dirty: true, snapshot_branch: snapshot.branch }, snapshot };
 }
 
@@ -166,10 +166,32 @@ async function settle(request, sessionId, sleep) {
   return null;
 }
 
+// One intent keeps one key until its outcome is known, so a rerun after a timeout cannot buy a second machine. The key is
+// written before the request goes out: the request may reach the server and its answer may not reach us.
+const intentPath = (stateDir, root, sessionId, mode, words) => join(stateDir, 'moves',
+  `${hash([root, sessionId, mode, String(words ?? '').trim()].join('\x1f'))}.json`);
+
+async function readIntent(path, now) {
+  const held = await readJson(path, 4_000).catch(() => null);
+  return held?.key && now - Number(held.at || 0) < MOVE_LIMITS.pendingMs ? held : null;
+}
+
+function uncertain(sessionId, env, cause) {
+  const site = String(env.ESTELLE_SITE_URL || 'https://fatelabs.ca').replace(/\/$/, '');
+  const link = `${site}/dashboard/sessions${sessionId ? `?session=${encodeURIComponent(sessionId)}` : ''}`;
+  const error = refusal(`Estelle could not confirm whether this started (${cause}), so do not start it another way.`,
+    `Run this same command again: it only checks, and it will not start a second machine. Watch it here: ${link}`);
+  error.uncertain = true;
+  return error;
+}
+
+const causeOf = error => (error?.status ? `HTTP ${error.status}` : 'no answer from the server');
+const definitive = answer => answer.moved === true ? answer.final === true : answer.moved === false;
+
 // One move. `say` receives each line a person reads, so a host that can stream shows the first line before the wait.
 export async function runMove({ mode, words, env = process.env, cwd = process.cwd(), stateDir = stateDirectory(env), home,
   request = apiClient({ env, timeoutMs: MOVE_LIMITS.requestMs, deadline: Date.now() + MOVE_LIMITS.requestMs * 3 }),
-  say = () => {}, sleep = ms => new Promise(done => setTimeout(done, ms)) }) {
+  say = () => {}, sleep = ms => new Promise(done => setTimeout(done, ms)), now = Date.now, scan = redact }) {
   const repo = repository(cwd, env);
   if (!repo) throw refusal('This folder is not a Git repository with an origin on GitHub.', 'Run this from your repository.');
   const ask = parseWords(mode, words);
@@ -181,18 +203,42 @@ export async function runMove({ mode, words, env = process.env, cwd = process.cw
   const nativeSession = current?.sessionId || '';
   const sessionId = nativeSession ? timelineIdentity(host, nativeSession, env) : '';
   say(MOVING);
-  const { state, snapshot } = await gitState(repo.root, sessionId || randomUUID());
+  const path = intentPath(stateDir, repo.root, sessionId, mode, words);
+  const held = await readIntent(path, now());
+  if (held) {
+    // An earlier run never learned how this ended. Ask first; a record means it began, and nothing launches over it.
+    let seen;
+    try { seen = await request('/sessions/move', { action: 'status', move_key: held.key, ...(mode === 'handoff' ? { session_id: sessionId } : {}) }); }
+    catch (error) { throw uncertain(sessionId, env, causeOf(error)); }
+    if (seen.found === true) return finish(seen, seen, { path, request, sleep, snapshot: null, checkpoint: null });
+  }
+  const key = held?.key || randomUUID();
+  await writeJson(path, { key, at: now() });
+  const { state, snapshot } = await gitState(repo.root, sessionId || key, scan);
   const saved = await saveCheckpoint(current, repo, stateDir, request);
   const carried = mode === 'handoff' ? await conversation(host, nativeSession, current?.transcriptPath, home, env) : {};
-  const body = { mode, repo: repo.name, git: state, from_host: host || undefined, confirm: true, origin: 'plugin',
-    ...(sessionId ? { session_id: sessionId } : {}), ...(mode === 'cloud' ? { move_key: randomUUID() } : {}),
+  const body = { mode, repo: repo.name, git: state, from_host: host || undefined, confirm: true, origin: 'plugin', move_key: key,
+    ...(sessionId ? { session_id: sessionId } : {}),
     ...(ask.harness ? { harness: ask.harness } : {}), ...(ask.prompt ? { prompt: ask.prompt } : {}),
     ...(ask.note ? { note: ask.note } : {}), ...(carried.native ? { native: carried.native } : {}),
     ...(carried.unavailable ? { native_unavailable: carried.unavailable } : {}) };
-  const answer = await request('/sessions/move', body);
-  const settled = answer.moved === true && answer.final === false ? await settle(request, answer.session_id, sleep) : answer;
-  return { answer, settled, snapshot, checkpoint: saved, final: settled ? settled.last_message || settled.message
-    : `${answer.last_message}\nEstelle could not confirm the move in time, so keep this session open and watch the link.` };
+  let answer;
+  try { answer = await request('/sessions/move', body); }
+  catch (error) {
+    // A 4xx means the server refused the ask and started nothing. Anything else may have landed on either side.
+    if (error?.status >= 400 && error?.status < 500) { await rm(path, { force: true }); throw error; }
+    throw uncertain(sessionId, env, causeOf(error));
+  }
+  return finish(answer, answer, { path, request, sleep, snapshot, checkpoint: saved });
+}
+
+async function finish(answer, first, { path, request, sleep, snapshot, checkpoint }) {
+  const settled = answer.final === false ? await settle(request, answer.session_id, sleep) : answer;
+  // The key is released only once the outcome is known. Past that, running the command again is a new intent.
+  const known = settled && (settled.final === true || definitive(settled)) && settled.state !== 'unknown' && first.moved !== null;
+  if (known) await rm(path, { force: true });
+  return { answer: first, settled, snapshot, checkpoint, final: settled ? settled.last_message || settled.message
+    : `${first.last_message}\nEstelle could not confirm the move in time, so keep this session open and watch the link.` };
 }
 
 async function saveCheckpoint(current, repo, stateDir, request) {
@@ -216,6 +262,6 @@ export async function moveCommand(mode, input, { stdout = console.log, setExit =
     const result = await runMove({ mode, words: input, say: stdout });
     if (result.snapshot) stdout(`Uncommitted work is on branch ${result.snapshot.branch}. Your branch was not changed.`);
     stdout(result.final);
-    if (result.answer.moved !== true) setExit(1);
+    if (result.answer.moved === false || result.answer.moved === null) setExit(1);
   } catch (error) { stdout(messageOf(error)); setExit(1); }
 }
