@@ -17,7 +17,7 @@ For a nonmutating preview, omit `--apply`. The preview returns a public `plan_sh
 pass `--expect <that SHA256>` with `--apply` to refuse a changed plan. Do not paste configuration,
 credentials or command output from native MCP JSON listings into chat.
 
-The current automated migration supports **Codex on POSIX only**. It:
+Claude Code has [its own path](#claude-code). For Codex, the automated migration supports **POSIX only**. It:
 
 1. Requires the canonical `ESTELLE_API_KEY` in the setup process environment. It does not read
    credential files or accept a separate MCP OAuth login as hook authentication. Missing or
@@ -44,12 +44,30 @@ it does not retry or roll back another writer. Inspect the current native state 
 what to do next. No configuration backup containing authentication material is created. Foreign
 values remain in their configuration file, never in the setup report.
 
-For Claude Code, Cursor, Kimi and Grok, use the same entry with the host name to obtain
-`pending_unsupported_host`; Windows Codex apply returns `pending_unsupported_platform`. Their
-native installation still works, but automated legacy cleanup is not implemented here. Keep those
-migration steps pending rather than replacing them with ad hoc configuration surgery. Project hooks,
-old plugin registrations such as `estelle@fatelabs`, and unfamiliar MCP registrations also remain
-pending native-manager review.
+Cursor, Kimi and Grok have no automated cleanup, so do not run setup for them: it only reports
+`pending_unsupported_host`. Windows Codex apply returns `pending_unsupported_platform`. Their native
+installation still works. Keep those migration steps pending rather than replacing them with ad hoc
+configuration surgery. Project hooks and unfamiliar MCP registrations also remain pending
+native-manager review.
+
+## Claude Code
+
+`setup claude` needs no key and finds one of two paths. `fresh`: nothing to do. `migrate`: an old
+install was found. It requires the replacement `estelle@estelle-plugins` to be installed first, so a
+failed step never leaves you with neither.
+
+`setup claude --apply` makes two changes:
+
+1. It removes exact known legacy `estelle hook` commands from your user `settings.json` (under
+   `CLAUDE_CONFIG_DIR`, otherwise `~/.claude`). Other hooks, matchers, keys and order stay, and a
+   malformed or symlinked file refuses.
+2. It runs `claude plugin uninstall estelle@fatelabs --keep-data --scope user`, then reads the plugin
+   list back. An install in project or local scope stays and is reported, because that scope belongs to
+   a repository.
+
+Claude Code's sessions, Estelle's saved memory, the old plugin's saved data, other plugins and the
+registered `fatelabs` marketplace are not touched. An old `estelle` MCP server you added by hand also
+stays. Setup prints file names and counts, never a key or the contents of a shell file.
 
 ## Trust, reload and evidence
 

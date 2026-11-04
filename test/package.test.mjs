@@ -64,7 +64,7 @@ test('every host keeps its own manifest paths inside the installed package', asy
   const grok = await json('plugins/grok/.mcp.json');
   assert.equal(codex.mcpServers.Estelle.bearer_token_env_var, 'ESTELLE_API_KEY');
   assert.equal(grok.mcpServers.Estelle.bearer_token_env_var, 'ESTELLE_API_KEY');
-  assert.equal(claude.mcpServers.Estelle.headers.Authorization, 'Bearer ${ESTELLE_API_KEY}');
+  assert.deepEqual(claude.mcpServers.Estelle, { type: 'http', url: 'https://api.fatelabs.ca/mcp' });
 });
 
 test('five host folders have separate native discovery and exclude development notes or cross-host manifests', async () => {
