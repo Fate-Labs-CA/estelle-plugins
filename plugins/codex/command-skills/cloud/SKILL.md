@@ -9,8 +9,9 @@ The person asked to start a new cloud session. Their words: what the person aske
 Do it now. Say nothing first, check nothing first, and ask nothing: this folder names the repository, and no repository
 is fine. Do not call `estelle_resume`, `estelle_silo`, `session_message` or any other tool, and do not run git.
 
-Run this once with your shell tool and pass their words on stdin exactly as written. In Claude Code the file is `${CLAUDE_PLUGIN_ROOT}/runtime/cli.mjs`; elsewhere it is `runtime/cli.mjs` in
-the installed Estelle package, named at session start.
+Run this once with your shell tool and pass their words on stdin exactly as written. In Claude Code the file is
+`${CLAUDE_PLUGIN_ROOT}/runtime/cli.mjs`. Elsewhere it is `runtime/cli.mjs` at the root of the installed Estelle plugin: on Codex,
+`../../runtime/cli.mjs` from this skill's own folder.
 
 ```sh
 node "<Estelle cli.mjs>" move cloud <<'ESTELLE_MOVE'

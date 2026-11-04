@@ -365,36 +365,46 @@ test('text the scan flags in an unpushed commit is refused even when a later com
   assert.equal(run(w.origin, 'for-each-ref', 'refs/heads/estelle'), '');
 });
 
-for (const [answer, needle] of [[true, /is public/], [null, /could not tell/]]) {
-  test(`on a remote that ${answer ? 'is public' : 'nobody could read'} nothing enters history: on a key the files go by the box`, async t => {
+for (const [answer, kind] of [[true, 'public'], [null, 'unreadable']]) {
+  for (const request of ['key', 'no key']) {
+    test(`on a ${kind} remote with ${request} nothing leaves this machine, it is all named, and the handoff goes on`, async t => {
+      const w = await world(t);
+      await writeFile(join(w.cwd, 'a.txt'), 'two\n');
+      await writeFile(join(w.cwd, 'config.local.conf'), 'three\n');
+      const said = [];
+      const options = { isPublic: async () => answer, say: line => said.push(line) };
+      const { mcp } = await w.move('handoff', '', request === 'key' ? options : { ...options, request: null });
+      const sent = mcp ?? w.posted();
+      assert.equal(run(w.origin, 'for-each-ref', 'refs/heads/estelle'), '', 'nothing pushed');
+      assert.equal(sent.snapshot_branch ?? sent.git?.snapshot_branch, undefined);
+      assert.equal(sent.native?.files?.length ?? 0, 0, 'and nothing goes to the box either');
+      assert.deepEqual([...sent.left_behind].sort(), ['a.txt', 'config.local.conf']);
+      assert.ok(said.some(line => /stay on this machine/.test(line)), said.join('|'));
+    });
+  }
+  test(`on a ${kind} remote, unpushed commits stay too, and it starts from the commit origin has`, async t => {
     const w = await world(t);
-    await writeFile(join(w.cwd, 'a.txt'), 'two\n');
-    await writeFile(join(w.cwd, 'new.txt'), 'three\n');
-    await writeFile(join(w.cwd, 'big.txt'), 'x'.repeat(9000));
-    await writeFile(join(w.cwd, 'server.pem'), 'x\n');
-    await w.move('handoff', '', { isPublic: async () => answer });
-    const body = w.posted();
-    assert.equal(run(w.origin, 'for-each-ref', 'refs/heads/estelle'), '', 'nothing pushed');
-    assert.equal(body.git.snapshot_branch, undefined);
-    assert.equal(body.git.commit, run(w.cwd, 'rev-parse', 'HEAD'));
-    assert.deepEqual(body.native.files.map(file => [file.path, file.text]).sort(), [['a.txt', 'two\n'], ['new.txt', 'three\n']]);
-    assert.deepEqual(body.left_behind.sort(), ['big.txt', 'server.pem']);
-  });
-  test(`on a remote that ${answer ? 'is public' : 'nobody could read'} with no key there is no way to carry them, so it refuses in one line`, async t => {
-    const w = await world(t);
-    await writeFile(join(w.cwd, 'a.txt'), 'two\n');
-    await assert.rejects(w.move('handoff', '', { request: null, isPublic: async () => answer }),
-      error => /ESTELLE_API_KEY/.test(error.reason) && !error.reason.includes('\n') && (answer ? needle : /could not tell/).test(error.reason));
-    assert.equal(run(w.origin, 'for-each-ref', 'refs/heads/estelle'), '');
-  });
-  test(`on a remote that ${answer ? 'is public' : 'nobody could read'} unpushed commits refuse, because they would be history`, async t => {
-    const w = await world(t);
+    const pushed = run(w.cwd, 'rev-parse', 'HEAD');
     await writeFile(join(w.cwd, 'a.txt'), 'two\n');
     run(w.cwd, 'commit', '-q', '-am', 'local');
-    await assert.rejects(w.move('handoff', '', { isPublic: async () => answer }), error => /commits origin does not/.test(error.reason));
+    await w.move('handoff', '', { isPublic: async () => answer });
+    assert.equal(w.posted().git.commit, pushed);
+    assert.deepEqual(w.posted().left_behind, ['1 unpushed commit']);
     assert.equal(run(w.origin, 'for-each-ref', 'refs/heads/estelle'), '');
   });
 }
+
+test('the commands name a path that exists, and Codex documents the skill and says there is no slash command', async () => {
+  for (const name of ['handoff', 'cloud']) {
+    const text = await readFile(new URL(`../commands/${name}.md`, import.meta.url), 'utf8');
+    assert.doesNotMatch(text, /named at\s+session start/, 'nothing names it at session start');
+    const skill = new URL(`../plugins/codex/command-skills/${name}/`, import.meta.url);
+    assert.match(await readFile(new URL('../../runtime/cli.mjs', skill), 'utf8'), /move/, 'the Codex path resolves from the skill folder');
+  }
+  const docs = await readFile(new URL('../docs/install/codex.md', import.meta.url), 'utf8');
+  assert.match(docs, /`estelle:handoff`/);
+  assert.match(docs, /no `\/estelle:handoff` here/);
+});
 
 test('a public repository with nothing to snapshot still hands off, and a private one pushes', async t => {
   const w = await world(t);

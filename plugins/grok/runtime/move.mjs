@@ -3,11 +3,11 @@
 // file comes from the host's own hook, one named file, and nothing else under the home directory is touched.
 import { execFileSync } from 'node:child_process';
 import { lstat, mkdtemp, opendir, readFile, rm, writeFile } from 'node:fs/promises';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { apiClient, git, hash, readJson, repository, stateDirectory, writeJson } from './io.mjs';
-import { NATIVE_LIMITS, captureNativeTranscript, checkNativeRelativePath } from './native-export.mjs';
+import { captureNativeTranscript, checkNativeRelativePath } from './native-export.mjs';
 import { checkpointSession } from './checkpoint.mjs';
 import { canonicalHost, cloudExecutionIdentity, timelineIdentity } from './identity.mjs';
 import { isOpaque, textHasCredential } from './credential.mjs';
@@ -206,28 +206,11 @@ function readingGit(work) {
   }
 }
 
-// A public repository gets nothing in its history. The one way onto a box without git is the conversation import's own file list:
-// text only and small, on a key, with a conversation to ride beside. Anything outside those limits is named, and with no such
-// conversation the handoff refuses, because that is the only place left to put the work.
-async function filesForBox(root, safe, room) {
-  const files = [];
-  const skipped = [];
-  let left = room;
-  for (const path of safe) {
-    const info = await lstat(join(root, path)).catch(() => null);
-    const text = info?.isFile() && info.size <= NATIVE_LIMITS.blobBytes ? await readFile(join(root, path), 'utf8') : null;
-    const fits = text !== null && !text.includes('\0') && !text.includes('\ufffd') && Array.from(text).length <= NATIVE_LIMITS.blobBytes
-      && Buffer.byteLength(text) <= left && files.length < NATIVE_LIMITS.files;
-    if (!fits) { skipped.push(path); continue; }
-    left -= Buffer.byteLength(text);
-    files.push({ path, text, sha256: createHash('sha256').update(text).digest('hex') });
-  }
-  return { files, skipped };
-}
-
-// What the box starts from. `pushed` work goes by commit; changed files go through a snapshot branch, or on a public repository
-// through the box. `boxRoom` is what the conversation import has left, and zero means no import can carry them.
-export async function gitState(root, session, scan = secretShaped, isOpen = async () => false, boxRoom = 0) {
+// What the box starts from. `pushed` work goes by commit, and changed files go through a snapshot branch.
+// 🔴 A PUBLIC REPOSITORY CARRIES NOTHING FROM THIS MACHINE. Files sent to the box still reached the public remote: the box's own
+// snapshot and its agent's saves both push what they find, and no rule typed at an agent can promise otherwise. So the work stays here,
+// is named, and the handoff goes on from what origin already has. Unknown visibility is treated as public.
+export async function gitState(root, session, scan = secretShaped, isOpen = async () => false) {
   const { commit, branch, changed, pushed } = readingGit(() => {
     const head = git(root, ['rev-parse', 'HEAD'], { strict: true, timeout: MOVE_LIMITS.gitMs });
     const { tracked, untracked } = changedFiles(root);
@@ -235,19 +218,18 @@ export async function gitState(root, session, scan = secretShaped, isOpen = asyn
   });
   if (!/^[a-f0-9]{40}$/.test(commit)) throw refusal('This repository has no commit to start from.', 'Commit something first.');
   const { safe, skipped } = await sortForPush(root, changed, scan);
-  const clean = { state: { branch, commit, dirty: false }, snapshot: null, carried: 0, boxFiles: [], skipped };
-  if (!safe.length && pushed) return clean;
-  const open = await isOpen();
-  if (open !== false) {
-    const why = open === true ? 'is public, so its history is no place for your work' : 'may be public, because Estelle could not tell';
-    if (!pushed) throw refusal(`Nothing was pushed: this repository ${why}, and it has commits origin does not.`, 'Push them yourself, then run this again.');
-    if (!boxRoom) throw refusal(`Nothing was pushed: this repository ${why}, and only a conversation carried with ESTELLE_API_KEY can take files without git.`, 'Commit and push what it needs, or set that key, then run this again.');
-    const { files, skipped: tooLarge } = await filesForBox(root, safe, boxRoom);
-    return { ...clean, boxFiles: files, skipped: [...skipped, ...tooLarge] };
-  }
+  if (!safe.length && pushed) return { state: { branch, commit, dirty: false }, snapshot: null, carried: 0, skipped };
+  if (await isOpen() !== false) return readingGit(() => stayingHere(root, commit, branch, changed));
   assertSafeHistory(root, scan);
   const snapshot = await pushSnapshot(root, session, safe);
-  return { state: { branch, commit: snapshot.commit, dirty: true, snapshot_branch: snapshot.branch }, snapshot, carried: safe.length, boxFiles: [], skipped };
+  return { state: { branch, commit: snapshot.commit, dirty: true, snapshot_branch: snapshot.branch }, snapshot, carried: safe.length, skipped };
+}
+
+function stayingHere(root, head, branch, changed) {
+  const start = startingPoint(root, head, branch);
+  const commits = start.unpushed ? [plural(start.unpushed, 'unpushed commit')] : [];
+  return { state: start.commit ? { ...(start.branch ? { branch: start.branch } : {}), commit: start.commit, dirty: false } : {}, snapshot: null, carried: 0,
+    skipped: [...commits, ...changed], publicRepo: true };
 }
 
 const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
@@ -366,10 +348,9 @@ export async function runMove({ mode, words, env = process.env, cwd = process.cw
   }
   const key = held?.key || randomUUID();
   await writeJson(path, { key, at: now() });
+  const { state, snapshot, carried: went, skipped, publicRepo } = await gitState(repo.root, sessionId || key, scan, isOpen);
+  if (publicRepo) say(PUBLIC_LINE);
   const carried = await conversation(host, nativeSession, current?.transcriptPath, home, env);
-  const room = carried.native ? NATIVE_LIMITS.bytes - Buffer.byteLength(carried.native.transcript) : 0;
-  const { state, snapshot, carried: went, boxFiles, skipped } = await gitState(repo.root, sessionId || key, scan, isOpen, Math.max(room, 0));
-  if (carried.native) carried.native.files = boxFiles;
   const saved = await saveCheckpoint(current, repo, stateDir, request);
   const body = { mode, repo: repo.name, git: state, from_host: host || undefined, confirm: true, origin: 'plugin', move_key: key,
     ...(sessionId ? { session_id: sessionId } : {}), ...contextOf(mode, nativeSession, sessionId),
@@ -386,6 +367,7 @@ export async function runMove({ mode, words, env = process.env, cwd = process.cw
   return finish(answer, { path, snapshot, checkpoint: saved });
 }
 
+const PUBLIC_LINE = 'This repository is public or unreadable, so your changes stay on this machine and the handoff goes on without them.';
 const whatWent = (went, skipped) => ({ ...(went ? { files_carried: went } : {}),
   ...(skipped?.length ? { left_behind: skipped.slice(0, MOVE_LIMITS.untrackedSent) } : {}) });
 
@@ -414,8 +396,9 @@ const contextOf = (mode, nativeSession, sessionId) => (mode === 'handoff' && nat
 // The key is derived, not stored: this process never learns the answer, and the same tree and words are the same intent.
 async function viaMcp({ mode, ask, repo, cwd, host, sessionId, nativeSession, scan, isOpen, say }) {
   const cloud = mode === 'cloud';
-  const { state, snapshot, carried, skipped, startsFrom } = cloud ? cloudState(repo) : await gitState(repo.root, sessionId || repo.name, scan, isOpen);
+  const { state, snapshot, carried, skipped, startsFrom, publicRepo } = cloud ? cloudState(repo) : await gitState(repo.root, sessionId || repo.name, scan, isOpen);
   if (startsFrom) say(startsFrom);
+  if (publicRepo) say(PUBLIC_LINE);
   const intent = cloud ? cloudKey(repo, cwd, sessionId, ask, state.commit)
     : `plugin-${hash([repo.name, sessionId, mode, ask.harness, ask.note, state.commit].join('\x1f')).slice(0, 40)}`;
   const args = { mode, ...(repo ? { repo: repo.name } : {}), move_key: intent, confirm: true, ...(state.commit ? { commit: state.commit } : {}),

@@ -8,8 +8,8 @@ Do it now. Say nothing first, check nothing first, and ask nothing: this folder 
 
 Empty words mean finish what this session is coding. Run this once with your shell tool and pass their words on stdin
 exactly as written. In Claude Code the file is
-`${CLAUDE_PLUGIN_ROOT}/runtime/cli.mjs`; elsewhere it is `runtime/cli.mjs` in the installed Estelle package, named at
-session start.
+`${CLAUDE_PLUGIN_ROOT}/runtime/cli.mjs`. Elsewhere it is `runtime/cli.mjs` at the root of the installed Estelle plugin: on Codex,
+`../../runtime/cli.mjs` from this skill's own folder.
 
 ```sh
 node "<Estelle cli.mjs>" move handoff <<'ESTELLE_MOVE'
