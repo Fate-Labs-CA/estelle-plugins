@@ -335,6 +335,14 @@ test('when everything is skipped there is no snapshot, and the handoff still goe
   assert.equal(run(w.origin, 'for-each-ref', 'refs/heads/estelle'), '');
 });
 
+test('past the list sent, the count of what stayed is still true', async t => {
+  const w = await world(t);
+  for (let n = 0; n < 70; n += 1) await writeFile(join(w.cwd, `key${n}.pem`), 'x\n');
+  await w.move('handoff');
+  assert.equal(w.posted().left_behind.length, 64);
+  assert.equal(w.posted().left_behind_more, 6);
+});
+
 test('a line origin already has is not refused for sitting beside a new one', async t => {
   const w = await world(t);
   await writeFile(join(w.cwd, 'a.txt'), 'flag-this-line\none\n');

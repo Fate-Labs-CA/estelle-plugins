@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { prepareContinuation, continueCloud } from '../runtime/native-export.mjs';
+import { prepareContinuation, continueCloud, runNativeContinue } from '../runtime/native-export.mjs';
 
 const sid = '11111111-2222-4333-8444-555555555555';
 
@@ -35,6 +35,14 @@ test('explicit selected session and supported dirty file are posted without unre
   assert.equal(sent.body.native.files[0].text, 'print(2)\n');
   assert.match(sent.body.native.transcript, /native-only-marker/);
   assert.equal(out.safe_to_close_laptop, false);
+});
+
+test('continue-cloud carries nothing from a public repository, or one nobody could read', async t => {
+  const f = await fixture(t);
+  for (const answer of [true, null]) {
+    const args = ['--consent', '--replace', '--harness', 'codex', '--session', f.sessionId, '--transcript', f.transcriptPath, '--repo', f.cwd, '--silo', 'own'];
+    await assert.rejects(runNativeContinue(args, { isPublic: async () => answer }), /native_public_repository/);
+  }
 });
 
 test('missing consent refuses before file reads or requests', async () => {

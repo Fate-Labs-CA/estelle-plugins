@@ -369,7 +369,8 @@ export async function runMove({ mode, words, env = process.env, cwd = process.cw
 
 const PUBLIC_LINE = 'This repository is public or unreadable, so your changes stay on this machine and the handoff goes on without them.';
 const whatWent = (went, skipped) => ({ ...(went ? { files_carried: went } : {}),
-  ...(skipped?.length ? { left_behind: skipped.slice(0, MOVE_LIMITS.untrackedSent) } : {}) });
+  ...(skipped?.length ? { left_behind: skipped.slice(0, MOVE_LIMITS.untrackedSent) } : {}),
+  ...(skipped?.length > MOVE_LIMITS.untrackedSent ? { left_behind_more: skipped.length - MOVE_LIMITS.untrackedSent } : {}) });
 
 async function cloudViaKey({ ask, repo, cwd, host, sessionId, request, say, env }) {
   const { state, startsFrom } = cloudState(repo);

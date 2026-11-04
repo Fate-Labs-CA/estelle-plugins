@@ -19,7 +19,7 @@ const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 const RESERVED = new Set(['.git', '.env', '.claude', '.codex', '.kimi', '.kimi-code', '.estelle', '.estelle-plugins',
   'stress_accounts.json', 'estelle_accounts.json', 'estelle_experience.json']);
 const digest = text => createHash('sha256').update(text).digest('hex');
-const SAFE_CODES = new Set(['native_artifact_bound', 'native_artifact_changed', 'native_artifact_shape',
+const SAFE_CODES = new Set(['native_public_repository', 'native_artifact_bound', 'native_artifact_changed', 'native_artifact_shape',
   'native_selection', 'native_repository', 'native_private_reasoning_unsupported', 'native_credential_field',
   'native_consent_required', 'native_staged_changes_unsupported', 'native_untracked_changes_unsupported',
   'native_tree_transport_unsupported', 'native_untracked_selection_required', 'native_restore_unverified', 'native_index_state_unsupported',
@@ -176,7 +176,7 @@ export async function continueCloud(options, request = apiClient({ timeoutMs: 80
     note: 'Native import requested. Authentication, context readiness and local/cloud handover still need verification.' };
 }
 
-export async function runNativeContinue(args) {
+export async function runNativeContinue(args, { isPublic } = {}) {
   const names = { '--harness': 'harness', '--session': 'sessionId', '--transcript': 'transcriptPath', '--repo': 'cwd', '--silo': 'siloId' };
   const options = {};
   for (let i = 0; i < args.length; i++) {
@@ -191,6 +191,12 @@ export async function runNativeContinue(args) {
       options[name] = args[++i];
     }
     else throw new Error('native_arguments');
+  }
+  // 🔴 This carries files to a box, and a box pushes what it finds. A public repository, or one nobody could read, gets none (`move.mjs`).
+  const repo = repository(options.cwd);
+  if (repo) {
+    const ask = isPublic ?? (await import('./move.mjs')).isPublicRepo;
+    if (await ask(repo.name) !== false) throw new Error('native_public_repository');
   }
   if (options.preserveTree) return (await import('./native-tree.mjs')).continueTreeCloud(options);
   if (options.selectedUntracked) throw new Error('native_arguments');
