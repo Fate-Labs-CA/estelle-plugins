@@ -34,8 +34,11 @@ test('callback recognition does not waive quoted or bare credential-like data', 
 test('callback allowance ends at the argument boundary and never enters block comments', () => {
   const opaque = 'c6'.repeat(32);
   for (const code of [`replace(intent, ${field}=${callback} + "${opaque}")`,
-    `/*\n${source}\n*/`, `/* comment\n${source}\nmore */`]) {
+    `/*\nvalue = replace(intent, ${proofField}="${opaque}")\n*/`]) {
     assert.equal(protectWrite(input(code))?.hookSpecificOutput.permissionDecision, 'deny');
   }
-  assert.equal(protectWrite(input(`/* preceding comment */\n${source}`)), null);
+  // A comment can leak a literal (refused above) but a comment holding only a reference leaks nothing.
+  for (const code of [`/* preceding comment */\n${source}`, `/*\n${source}\n*/`, `/* comment\n${source}\nmore */`]) {
+    assert.equal(protectWrite(input(code)), null);
+  }
 });

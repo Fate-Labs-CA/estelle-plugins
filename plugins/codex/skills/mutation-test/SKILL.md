@@ -1,6 +1,9 @@
 ---
 name: mutation-test
 description: "Break the code on purpose and see if your tests notice. Use when the task involves: mutation testing, kill mutants, test effectiveness, mutmut, pitest, unasserted."
+user-invocable: false
+metadata:
+  short-description: "Break the code on purpose and see if your tests notice."
 ---
 
 # mutation-test

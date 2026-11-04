@@ -72,7 +72,8 @@ stays. Setup prints file names and counts, never a key or the contents of a shel
 ## Trust, reload and evidence
 
 Use the host's normal hook approval and reload flow, then start a fresh session. In Codex `/hooks`,
-`t` grants trust while space only toggles enablement. Setup never changes trust, global permissions,
+`t` grants trust while space only toggles enablement, and [every update needs this again](../install/codex.md#approve-the-hooks-after-installing-and-after-every-update).
+Setup reads whether Codex's hooks need review and says so. It never changes trust, global permissions,
 active sessions, plugin caches, `AGENTS.md` or `CLAUDE.md`.
 
 Versions 0.0.7 and 0.0.8 used version-root hook commands. A native upgrade can remove the old cache

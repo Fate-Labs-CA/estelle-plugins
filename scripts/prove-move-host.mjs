@@ -173,6 +173,29 @@ async function proveClaude(port, state, base) {
   }, detail: { native: door.native ? 'carried' : door.native_unavailable, flagged, exit: result.code, stderr: result.err.slice(-300) }, door };
 }
 
+// The usual path: this host signed in with OAuth, so the CLI holds no key. It must not reach for the server, and the model
+// must be handed the MCP call. The stub model cannot make that call, so this stops at showing it was handed over.
+async function proveClaudeOAuth(port, state, base) {
+  const home = join(base, 'claude-oauth-home');
+  await mkdir(join(home, '.claude'), { recursive: true });
+  const cwd = await fixtureRepo(join(base, 'claude-oauth'));
+  const plugin = join(ROOT, 'plugins/claude');
+  const env = cleanEnv(home, port, { CLAUDE_CONFIG_DIR: join(home, '.claude'), ANTHROPIC_BASE_URL: `http://127.0.0.1:${port}`, ANTHROPIC_API_KEY: THROWAWAY,
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', DISABLE_AUTOUPDATER: '1' });
+  delete env.ESTELLE_API_KEY;
+  state.command = `node "${plugin}/runtime/cli.mjs" move handoff <<'ESTELLE_MOVE'\nfinish the tests\nESTELLE_MOVE`;
+  state.trigger = "<<'ESTELLE_MOVE'";
+  state.door.length = 0; state.modelCalls.length = 0; state.ran = false;
+  const result = await run('claude', ['-p', '/estelle:handoff finish the tests', '--plugin-dir', plugin, '--dangerously-skip-permissions',
+    '--output-format', 'text', '--model', 'claude-sonnet-4-5'], { env, cwd });
+  const call = state.modelCalls.find(text => text.includes('ESTELLE_MCP_CALL') && text.includes('move_key'));
+  return { checks: {
+    'the door was not called, because this process cannot authenticate to it': state.door.length === 0,
+    'the model was handed one exact estelle_move call': Boolean(call),
+    'and it was not told the move could not be confirmed': !state.modelCalls.some(text => text.includes('could not confirm whether')),
+  }, detail: { exit: result.code, err: result.err.slice(-200) } };
+}
+
 // Where #1274 writes the file, on a machine that never held this session, read by the real CLI.
 async function proveClaudeResume(port, state, base, door) {
   if (!door.native?.transcript) return { checks: { 'a conversation file was available to resume': false }, detail: { reason: door.native_unavailable } };
@@ -204,20 +227,20 @@ async function proveCodex(port, state, base) {
   const market = await run('codex', ['plugin', 'marketplace', 'add', ROOT], { env, cwd });
   const add = await run('codex', ['plugin', 'add', 'estelle@estelle-plugins'], { env, cwd });
   const list = await run('codex', ['plugin', 'list'], { env, cwd });
-  const installed = execFileSync('find', [codexHome, '-type', 'f', '-path', '*estelle-handoff/SKILL.md'], { encoding: 'utf8' }).trim().split('\n')[0];
+  const installed = execFileSync('find', [codexHome, '-type', 'f', '-path', '*command-skills/handoff/SKILL.md'], { encoding: 'utf8' }).trim().split('\n')[0];
   const cli = installed ? resolve(installed, '../../../runtime/cli.mjs') : '';
   // Codex lists a skill by name and its model opens the file, so the stub acts on the listing. This does not prove the
   // skill's body was read; a separate check below pins that the shipped body holds the command.
   state.command = `node "${cli}" move handoff <<'ESTELLE_MOVE'\n\nESTELLE_MOVE`;
-  state.trigger = 'estelle-handoff';
-  const result = await run('codex', ['exec', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '$estelle-handoff'], { env, cwd });
+  state.trigger = 'handoff';
+  const result = await run('codex', ['exec', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '$handoff'], { env, cwd });
   const door = state.door.at(-1) || {};
   return { checks: {
     'the marketplace added from this branch': market.code === 0,
     'the plugin installed': add.code === 0,
     'it is listed': /estelle/.test(list.out),
     'the handoff skill was installed': Boolean(installed),
-    'its name reached the model': state.modelCalls.some(text => text.includes('estelle-handoff')),
+    'its name reached the model': state.modelCalls.some(text => text.includes('handoff')),
     'the installed skill body holds the command': (await readFile(installed, 'utf8')).includes("move handoff <<'ESTELLE_MOVE'"),
     'the door was called': state.door.length === 1,
     'as a handoff': door.mode === 'handoff',
@@ -244,7 +267,7 @@ async function proveCodexResume(port, state, base, door) {
   const env = cleanEnv(home, port, { CODEX_HOME: codexHome, STUB_MODEL_ACCESS: THROWAWAY });
   state.command = ''; state.modelCalls.length = 0;
   const resumed = await run('codex', ['exec', '--skip-git-repo-check', 'resume', sid, 'continue'], { env, cwd });
-  return { checks: { 'codex resume sent the conversation\'s words to the model': state.modelCalls.some(text => text.includes('$estelle-handoff')),
+  return { checks: { 'codex resume sent the conversation\'s words to the model': state.modelCalls.some(text => text.includes('$handoff')),
     'and refused nothing': resumed.code === 0 }, detail: { exit: resumed.code, err: resumed.err.slice(-240) } };
 }
 
@@ -269,6 +292,8 @@ try {
       await saveForServer('claude-code', first.door);
       const second = await proveClaudeResume(port, state, base, first.door);
       passed = report('claude-code --resume', second.checks, second.detail) && passed;
+      const oauth = await proveClaudeOAuth(port, state, base);
+      passed = report('claude-code, signed in with OAuth', oauth.checks, oauth.detail) && passed;
     } else {
       const proved = await proveCodex(port, state, base);
       passed = report('codex', proved.checks, proved.detail) && passed;

@@ -1,6 +1,9 @@
 ---
 name: continuity-brief
 description: "Start a session knowing what the last one did and decided. Use when the task involves: session start, what did i do last, wake up, continuity, resume, brief."
+user-invocable: false
+metadata:
+  short-description: "Start a session knowing what the last one did and decided."
 ---
 
 # continuity-brief

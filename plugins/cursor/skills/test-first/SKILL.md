@@ -1,6 +1,9 @@
 ---
 name: test-first
 description: "One test, one thin slice, then the next. Use when the task involves: tdd, test, test-first, red green, coverage, unit test."
+user-invocable: false
+metadata:
+  short-description: "One test, one thin slice, then the next."
 ---
 
 # test-first

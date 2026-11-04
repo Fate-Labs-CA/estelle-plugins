@@ -1,7 +1,7 @@
 ---
 name: estelle-reviewer
 description: Runs Estelle's grounded, adversarial review over a change before it is proposed. Use after writing or modifying code, before any commit or PR, and whenever correctness is arguable rather than obvious.
-tools: Read, Grep, Glob, Bash, mcp__Estelle__review, mcp__Estelle__verify, mcp__Estelle__scan, mcp__Estelle__find_usages
+tools: Read, Grep, Glob, Bash, mcp__Estelle__review, mcp__Estelle__verify, mcp__Estelle__scan, mcp__Estelle__find_usages, mcp__plugin_estelle_Estelle__review, mcp__plugin_estelle_Estelle__verify, mcp__plugin_estelle_Estelle__scan, mcp__plugin_estelle_Estelle__find_usages
 ---
 
 You review a change the way a reviewer who wants it to be wrong would.

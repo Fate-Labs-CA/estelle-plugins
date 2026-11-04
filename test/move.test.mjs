@@ -45,9 +45,110 @@ async function world(t, { host = 'claude-code', transcript = true } = {}) {
     if (path === '/checkpoint') return {};
     return body.action === 'status' ? replies.status : replies.move;
   };
-  const move = (mode, words = '', over = {}) => runMove({ mode, words, env, cwd, stateDir, home, request, sleep: async () => {}, ...over });
+  const move = (mode, words = '', over = {}) => runMove({ mode, words, env, cwd, stateDir, home, request, sleep: async () => {},
+    isPublic: async () => false, ...over });
   return { cwd, origin, calls, replies, move, home, transcriptPath, posted: () => calls.find(c => c.path === '/sessions/move' && !c.body.action)?.body };
 }
+
+// ── second review ─────────────────────────────────────────────────────────────────────────────────────────────────
+test('with no API key the plugin pushes what it must and hands the model one exact MCP call', async t => {
+  const w = await world(t);
+  await writeFile(join(w.cwd, 'a.txt'), 'two\n');
+  const { final, mcp } = await w.move('handoff', 'finish it', { request: null });
+  const [marker, json] = final.split('\n');
+  assert.equal(marker, 'ESTELLE_MCP_CALL');
+  assert.deepEqual(JSON.parse(json), mcp);
+  assert.equal(mcp.mode, 'handoff');
+  assert.equal(mcp.confirm, true);
+  assert.equal(mcp.note, 'finish it');
+  assert.equal(mcp.session_id, `claude-code-${SID}`);
+  assert.equal(run(w.origin, 'rev-parse', `refs/heads/${mcp.snapshot_branch}`), mcp.commit, 'the box can check it out');
+  assert.equal(mcp.native, undefined, 'a tool call cannot carry the conversation');
+  assert.doesNotMatch(final, /could not confirm/);
+  assert.equal(w.calls.length, 0, 'nothing reached for a server this process cannot authenticate to');
+});
+
+test('the MCP call is a body the tool schema accepts: flat fields only', async t => {
+  const w = await world(t);
+  const { mcp } = await w.move('cloud', 'codex fix it', { request: null });
+  for (const value of Object.values(mcp)) assert.notEqual(typeof value, 'object');
+  assert.equal(mcp.harness, 'codex');
+  assert.equal(mcp.prompt, 'fix it');
+});
+
+test('with no key, the same tree and words are the same intent and a changed tree is a new one', async t => {
+  const w = await world(t);
+  await writeFile(join(w.cwd, 'a.txt'), 'two\n');
+  const first = (await w.move('handoff', 'go', { request: null })).mcp;
+  const again = (await w.move('handoff', 'go', { request: null })).mcp;
+  assert.equal(again.move_key, first.move_key);
+  assert.equal(again.commit, first.commit, 'a rerun pushes the same commit');
+  await writeFile(join(w.cwd, 'a.txt'), 'three\n');
+  assert.notEqual((await w.move('handoff', 'go', { request: null })).mcp.move_key, first.move_key);
+});
+
+test('a failed status poll after the move started never reads as could not start', async t => {
+  const w = await world(t);
+  const request = async (path, body) => {
+    if (path === '/checkpoint') return {};
+    if (body.action === 'status') throw Object.assign(new Error('busy'), { status: 503 });
+    return { moved: true, final: false, session_id: 's', last_message: 'STARTING THE SESSION' };
+  };
+  const { final } = await w.move('cloud', 'fix it', { request });
+  assert.match(final, /STARTING THE SESSION/);
+  assert.match(final, /keep this session open/);
+  assert.doesNotMatch(final, /could not start/i);
+});
+
+for (const name of ['config/master.key', 'deploy/server.pem', '.aws/credentials']) {
+  test(`${name} never reaches origin and the refusal names it`, async t => {
+    const w = await world(t);
+    await mkdir(join(w.cwd, name, '..'), { recursive: true });
+    await writeFile(join(w.cwd, name), 'plain words\n');
+    await assert.rejects(w.move('handoff'), error => error.reason?.includes(name));
+    assert.equal(w.posted(), undefined);
+    assert.equal(run(w.origin, 'for-each-ref', 'refs/heads/estelle'), '');
+  });
+}
+
+test('every problem is listed at once, not one per run', async t => {
+  const w = await world(t);
+  await mkdir(join(w.cwd, 'config'));
+  await writeFile(join(w.cwd, 'config/master.key'), 'x\n');
+  await writeFile(join(w.cwd, 'id_rsa'), 'x\n');
+  await assert.rejects(w.move('handoff'), error => /master\.key/.test(error.reason) && /id_rsa/.test(error.reason));
+});
+
+test('text the scan flags in an unpushed commit is refused even when a later commit deleted it', async t => {
+  const w = await world(t);
+  await writeFile(join(w.cwd, 'a.txt'), 'flag-this-line\n');
+  run(w.cwd, 'commit', '-q', '-am', 'oops');
+  await writeFile(join(w.cwd, 'a.txt'), 'clean\n');
+  run(w.cwd, 'commit', '-q', '-am', 'fixed it');
+  const scan = text => text.includes('flag-this-line');
+  await assert.rejects(w.move('handoff', '', { scan }), error => /in their history/.test(error.reason));
+  assert.equal(run(w.origin, 'for-each-ref', 'refs/heads/estelle'), '');
+});
+
+test('a public remote is warned about before the push, and a remote nobody could read is warned about too', async t => {
+  for (const [answer, needle] of [[true, /is public/], [null, /could not tell/]]) {
+    const w = await world(t);
+    await writeFile(join(w.cwd, 'a.txt'), 'two\n');
+    const said = [];
+    await w.move('handoff', '', { say: line => said.push(line), isPublic: async () => answer });
+    assert.ok(said.some(line => needle.test(line)), said.join('|'));
+  }
+  const w = await world(t);
+  await writeFile(join(w.cwd, 'a.txt'), 'two\n');
+  const said = [];
+  await w.move('handoff', '', { say: line => said.push(line) });
+  assert.ok(!said.some(line => /Warning/.test(line)), 'a private remote gets no warning');
+});
+
+test('a long note is refused rather than quietly cut', () => {
+  assert.throws(() => parseWords('handoff', 'x'.repeat(601)), /move_refused/);
+  assert.equal(parseWords('handoff', 'x'.repeat(600)).note.length, 600);
+});
 
 test('a bare handoff needs no harness and no words', () => {
   assert.deepEqual(parseWords('handoff', ''), { harness: '', note: '' });
@@ -108,7 +209,7 @@ test('unpushed commits with a clean tree also go to a snapshot, or the box could
 test('.env is refused with a reason and nothing is pushed or posted', async t => {
   const w = await world(t);
   await writeFile(join(w.cwd, '.env'), 'X=1\n');
-  await assert.rejects(w.move('handoff'), error => /looks private/.test(error.reason));
+  await assert.rejects(w.move('handoff'), error => /\.env: a private path/.test(error.reason));
   assert.equal(w.posted(), undefined);
   assert.equal(run(w.origin, 'for-each-ref', 'refs/heads/estelle'), '');
 });
@@ -116,7 +217,7 @@ test('.env is refused with a reason and nothing is pushed or posted', async t =>
 test('a file the credential scan flags is refused with a reason and nothing is pushed or posted', async t => {
   const w = await world(t);
   await writeFile(join(w.cwd, 'config.txt'), 'flag-this-line\n');
-  const scan = text => (text.includes('flag-this-line') ? '[redacted]' : text);
+  const scan = text => text.includes('flag-this-line');
   await assert.rejects(w.move('handoff', '', { scan }), error => /shaped like a credential/.test(error.reason));
   assert.equal(w.posted(), undefined);
   assert.equal(run(w.origin, 'for-each-ref', 'refs/heads/estelle'), '');
@@ -241,7 +342,7 @@ test('the shipped commands reach the CLI through stdin, so no shell parses a per
   for (const name of ['handoff', 'cloud']) {
     const text = await readFile(new URL(`../commands/${name}.md`, import.meta.url), 'utf8');
     assert.match(text, new RegExp(`move ${name} <<'ESTELLE_MOVE'`));
-    assert.match(text, /disable-model-invocation: true/);
+    assert.match(text, /only act on this when the person typed the command themselves/i);
     assert.doesNotMatch(text, /!`/, 'no shell injection line holds $ARGUMENTS');
   }
 });

@@ -1,6 +1,9 @@
 ---
 name: bug-hunt
 description: "Reproduce, shrink, instrument, fix — then lock it with a test. Use when the task involves: bug, debug, diagnose, crash, incident, repro."
+user-invocable: false
+metadata:
+  short-description: "Reproduce, shrink, instrument, fix — then lock it with a test."
 ---
 
 # bug-hunt

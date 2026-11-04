@@ -1,6 +1,9 @@
 ---
 name: api-call-ground
 description: "Check a function really exists before your code calls it. Use when the task involves: tool call grounding, API call grounding, hallucinated tool call, function calling, argument arity check, resolve callee signature."
+user-invocable: false
+metadata:
+  short-description: "Check a function really exists before your code calls it."
 ---
 
 # api-call-ground

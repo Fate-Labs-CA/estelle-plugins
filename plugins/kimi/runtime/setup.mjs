@@ -7,6 +7,7 @@ import { open } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { launchCredential } from './auth.mjs';
+import { UNREADABLE, codexHookTrust } from './codex-trust.mjs';
 import { inspectHooks, planHooks, commitHooks } from './migration.mjs';
 import { VERSION } from './version.mjs';
 
@@ -141,6 +142,15 @@ export async function runSetup({host,apply=false,expect,env=process.env,home=hom
  const authenticate=ports.authenticate||(k=>probeMcp(k,{deadline}));
  try{if(await authenticate(key)!==true)return projection('pending_auth');}
  catch{return projection('pending_auth');}
+ const review=await(ports.hookTrust||(()=>codexHookTrust(process.cwd(),{env})))().catch(()=>UNREADABLE);
+ return withReview(await migrateCodex({home,env,native,expect,apply}),review);
+}
+
+// Setup measures hook review so it can say the next step. Approving stays with the person, in Codex.
+const withReview=(result,review)=>({...result,hook_review:review.status,trust:'not_changed',
+ ...(review.next_step?{next_step:review.next_step}:{})});
+
+async function migrateCodex({home,env,native,expect,apply}) {
  try{
   const codexHome=env.CODEX_HOME?resolve(env.CODEX_HOME):join(home,'.codex'),file=join(codexHome,'hooks.json');
   const snapshot=await inspectHooks(file),plan=snapshot?planHooks(snapshot.bytes):{removed:0};

@@ -1,6 +1,9 @@
 ---
 name: diff-review
 description: "Review a change against both the house style and what was asked. Use when the task involves: review, pr, code review, diff, standards, spec."
+user-invocable: false
+metadata:
+  short-description: "Review a change against both the house style and what was asked."
 ---
 
 # diff-review
