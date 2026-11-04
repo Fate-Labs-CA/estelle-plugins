@@ -17,6 +17,7 @@ changes. So every Estelle update needs one approval:
 
 - **When Codex starts:** choose **Trust all and continue**.
 - **In a running session:** run `/hooks` and press `t`. Space only turns a hook on or off.
+- **In the desktop app:** select **Review hooks** in the composer, or open **Settings > Hooks**.
 
 Until you do, Codex shows `Hook failed: plugin contents changed; hook approval required` for each hook it
 skips. Those hooks do not run at all, so Estelle captures nothing and does not check file writes for

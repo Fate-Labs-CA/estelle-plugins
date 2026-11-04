@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
+import { fileURLToPath } from 'node:url';
 import { REVIEW_STEP, codexHookTrust, summarizeHooks } from '../runtime/codex-trust.mjs';
 import { runSetup } from '../runtime/setup.mjs';
 import { VERSION } from '../runtime/version.mjs';
@@ -88,7 +89,7 @@ const readyPorts = hookTrust => ({
 
 test('setup reports the measured review state and the next step, and never writes trust', async () => {
   const env = { [CREDENTIAL_NAME]: 'fixture', CODEX_HOME: '/nonexistent/estelle-setup-test' };
-  const bundleRoot = new URL('../plugins/codex', import.meta.url).pathname;
+  const bundleRoot = fileURLToPath(new URL('../plugins/codex', import.meta.url));
   const needed = await runSetup({ host: 'codex', env, bundleRoot, home: '/nonexistent' },
     readyPorts(async () => summarizeHooks([row('modified')])));
   assert.equal(needed.hook_review, 'review_required');

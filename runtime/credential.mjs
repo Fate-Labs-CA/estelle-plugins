@@ -60,7 +60,7 @@ const QUOTED_VALUE_ON_NEXT_LINE = /\s*/y;
 const SAME_LINE_GAP = /[ \t]*/y;
 const OPERATOR = /\\*["'`]?\s*(:=|=>|=(?![=~])|:(?!:))/y;
 const QUOTE_OPEN = /([frbuFRBU]{0,2})(\\*)(["'`])/y;
-const BARE_VALUE = /[^\s,;)}\]]{1,512}/y;
+const BARE_VALUE = /[^\s,;)}\]"'`]{1,512}/y;
 // A type hint can sit between the name and the value, in Python and TypeScript annotations alike.
 const TYPE_THEN_ASSIGN = /[A-Za-z_][\w.]*(?:\[[^\]\n]{0,128}\])?(?:\s*\|\s*[A-Za-z_][\w.]*(?:\[[^\]\n]{0,64}\])?){0,4}\??\s*=(?![=~>])[ \t]*/y;
 const TYPE_NAME = /^[A-Z][\w.]*(?:\[.*)?$|^(?:str|string|bytes|int|bool|number|any|object|None|null|undefined)(?:\[.*)?\??$/;
@@ -104,7 +104,7 @@ function shannonBits(text) {
 
 /** Random-looking: the shape of a generated value rather than of a name, path, URL or sentence. */
 export function isOpaque(value) {
-  if (value.length < MIN_OPAQUE || /\s|:\/\//.test(value)) return false;
+  if (value.length < MIN_OPAQUE || /:\/\//.test(value) || !/^[\w\-./:=+~]+$/.test(value)) return false;
   const hex = new RegExp(`^[a-fA-F0-9]{${MIN_HEX},}$`);
   if (hex.test(value)) return true;
   const segments = value.split(/[-_./:=+]/);
@@ -216,6 +216,8 @@ function assignmentIsCredential(text, label, labelStart, labelEnd) {
   if (strength === 'none') return false;
   const operator = matchAt(OPERATOR, text, labelEnd);
   if (!operator) return false;
+  // A segment of a colon-separated path, as in a cloud resource name, is not a name being assigned.
+  if (operator[1] === ':' && text[labelStart - 1] === ':') return false;
   const labelQuoted = /["'`]/.test(operator[0]);
   const start = operator.index + operator[0].length;
   const gap = matchAt(labelQuoted ? QUOTED_VALUE_ON_NEXT_LINE : SAME_LINE_GAP, text, start);
@@ -223,11 +225,13 @@ function assignmentIsCredential(text, label, labelStart, labelEnd) {
   const value = readValue(text, valueStart);
   if (value.quoted) return literalIsCredential(value.body, strength) || expressionHoldsOpaqueLiteral(text, value.after);
   if (!value.body) return false;
-  if (operator[1] === ':' && TYPE_NAME.test(value.body)) {
+  if (operator[1] === ':' && TYPE_NAME.test(value.body) && !isOpaque(value.body) && !/(?:\D*\d){3}/.test(value.body)) {
     const typed = matchAt(TYPE_THEN_ASSIGN, text, valueStart);
     if (!typed) return false;
-    const assigned = readValue(text, valueStart + typed[0].length);
-    return assigned.quoted ? literalIsCredential(assigned.body, strength) : bareLiteralIsCredential(assigned.body, strength);
+    const assignedStart = valueStart + typed[0].length;
+    const assigned = readValue(text, assignedStart);
+    const direct = assigned.quoted ? literalIsCredential(assigned.body, strength) : bareLiteralIsCredential(assigned.body, strength);
+    return direct || expressionHoldsOpaqueLiteral(text, assignedStart);
   }
   const reference = STORE_REFERENCE.test(value.body) || /^[$%]/.test(value.body);
   if (!reference && strength === 'strong' && gap[0] === '' && isDeclarationForm(text, label, labelStart, operator[0])) {
