@@ -2,21 +2,21 @@
 // The server picks the harness and writes the words. This file never reads an auth file or a credential: the conversation
 // file comes from the host's own hook, one named file, and nothing else under the home directory is touched.
 import { execFileSync } from 'node:child_process';
-import { lstat, mkdtemp, opendir, readFile, rm } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { lstat, mkdtemp, opendir, readFile, rm, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { apiClient, git, hash, readJson, repository, stateDirectory, writeJson } from './io.mjs';
-import { captureNativeTranscript, checkNativeRelativePath } from './native-export.mjs';
+import { NATIVE_LIMITS, captureNativeTranscript, checkNativeRelativePath } from './native-export.mjs';
 import { checkpointSession } from './checkpoint.mjs';
-import { canonicalHost, timelineIdentity } from './identity.mjs';
+import { canonicalHost, cloudExecutionIdentity, timelineIdentity } from './identity.mjs';
 import { isOpaque, textHasCredential } from './credential.mjs';
 
 export const MOVING = 'moving this session to the cloud';
 export const MOVE_LIMITS = Object.freeze({
-  snapshotFiles: 200, snapshotFileBytes: 2_000_000, pushMs: 60_000, requestMs: 120_000,
-  pollEveryMs: 5_000, polls: 36, wordsChars: 8_000, noteChars: 600, rolloutScan: 20_000, pendingMs: 86_400_000,
-  unpushedDiffBytes: 8_000_000, visibilityMs: 5_000 });
+  snapshotFiles: 200, snapshotFileBytes: 2_000_000, pushMs: 45_000, requestMs: 60_000,
+  wordsChars: 8_000, noteChars: 600, rolloutScan: 20_000, pendingMs: 86_400_000,
+  unpushedDiffBytes: 8_000_000, visibilityMs: 5_000, gitMs: 20_000, untrackedSent: 64 });
 // Paths that hold credentials by their nature, whatever is in them: a scan cannot see inside an encrypted or binary key.
 const PRIVATE_PATH = /(?:^|\/)(?:\.env(?:\.[^/]*)?|\.npmrc|\.netrc|\.pypirc|\.git-credentials|\.dockercfg|\.docker\/config\.json|\.aws\/credentials|\.ssh\/[^/]+|id_(?:rsa|dsa|ecdsa|ed25519)|master\.key|credentials\.yml\.enc|secrets?\.(?:ya?ml|json|toml|env)|credentials\.json|service[-_]account[^/]*\.json|[^/]+\.(?:pem|key|p12|pfx|jks|keystore|ppk|kdbx))$/i;
 // A lockfile is full of opaque digests under prefixes, and publishing it is normal.
@@ -96,20 +96,22 @@ function gitWrite(root, args, { env = {}, timeout = 10_000 } = {}) {
     stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
-// Everything wrong with this push, at once, so one fix does not reveal the next refusal.
-async function unsafeToPush(root, paths, scan) {
-  const problems = [];
+// 🔴 THE FOUNDER'S RULING: "Handoff just push untrack continue." So a file is carried or it is named, and neither stops the handoff.
+// Credential paths never go, and neither does a file the scan flags or one too large to scan.
+async function sortForPush(root, paths, scan) {
+  const safe = [];
+  const skipped = [];
   for (const path of paths) {
-    try { checkNativeRelativePath(path); }
-    catch { problems.push(`${path}: a private path`); continue; }
-    if (PRIVATE_PATH.test(path)) { problems.push(`${path}: a file that holds credentials by its nature`); continue; }
+    let held = false;
+    try { checkNativeRelativePath(path); } catch { held = true; }
+    if (held || PRIVATE_PATH.test(path)) { skipped.push(path); continue; }
     const full = join(root, path);
     const info = await lstat(full).catch(() => null);
-    if (!info || !info.isFile() || LOCKFILE.test(path)) continue; // A deletion or a symlink carries no text to scan.
-    if (info.size > MOVE_LIMITS.snapshotFileBytes) { problems.push(`${path}: past the snapshot's file bound, so it could not be scanned`); continue; }
-    if (scan(await readFile(full, 'latin1'))) problems.push(`${path}: holds something shaped like a credential`);
+    if (!info || !info.isFile() || LOCKFILE.test(path)) { safe.push(path); continue; } // A deletion or a symlink carries no text to scan.
+    if (info.size > MOVE_LIMITS.snapshotFileBytes || scan(await readFile(full, 'latin1'))) { skipped.push(path); continue; }
+    safe.push(path);
   }
-  return problems;
+  return { safe: safe.slice(0, MOVE_LIMITS.snapshotFiles), skipped: [...skipped, ...safe.slice(MOVE_LIMITS.snapshotFiles)] };
 }
 
 // The commits this push would carry that origin has not seen, because a value deleted in a later commit is still history.
@@ -126,18 +128,16 @@ function unpushedHistory(root, scan) {
     { encoding: 'latin1', timeout: 20_000, maxBuffer: MOVE_LIMITS.unpushedDiffBytes, stdio: ['ignore', 'pipe', 'ignore'] });
   } catch { return ['your unpushed commits: too large to scan, so they could not be cleared']; }
   const named = names.filter(name => PRIVATE_PATH.test(name)).map(name => `${name}: in an unpushed commit, and holds credentials by its nature`);
-  return [...new Set(named), ...(scan(diff) ? ['your unpushed commits: something shaped like a credential is in their history'] : [])];
+  const added = diff.split('\n').filter(line => line.startsWith('+') && !line.startsWith('+++')).join('\n');
+  return [...new Set(named), ...(scan(added) ? ['your unpushed commits: something shaped like a credential is in their history'] : [])];
 }
 
-async function assertSafeToPush(root, paths, scan) {
-  if (paths.length > MOVE_LIMITS.snapshotFiles) {
-    throw refusal(`${paths.length} changed files is past the ${MOVE_LIMITS.snapshotFiles}-file snapshot bound.`,
-      'Commit or stash some of them, or push your own branch, then run this again.');
-  }
-  const problems = [...await unsafeToPush(root, paths, scan), ...unpushedHistory(root, scan)];
+// A commit cannot lose one file, so history is the one thing that still refuses the whole handoff.
+function assertSafeHistory(root, scan) {
+  const problems = unpushedHistory(root, scan);
   if (problems.length) {
-    throw refusal(`Nothing was pushed, because this snapshot would carry credentials to your remote:\n- ${problems.join('\n- ')}\n`,
-      'Remove them or add them to .gitignore, then run this again.');
+    throw refusal(`Nothing was pushed, because your unpushed commits would carry credentials to your remote: ${problems.join('; ')}.`,
+      'Remove them from those commits, then run this again.');
   }
 }
 
@@ -151,18 +151,20 @@ export async function isPublicRepo(name, fetchImpl = fetch) {
 }
 
 // A commit built on a temporary index and pushed to its own branch. HEAD, the index and the working tree are never touched,
-// and the push counts only once the remote reads back the same commit.
-async function pushSnapshot(root, session, paths, scan, warn) {
-  await assertSafeToPush(root, paths, scan);
-  await warn();
+// and the push counts only once the remote reads back the same commit. Only the files named go, literally, so a skipped one cannot.
+async function pushSnapshot(root, session, safe) {
   const directory = await mkdtemp(join(tmpdir(), 'estelle-snapshot-'));
   try {
-    const env = { GIT_INDEX_FILE: join(directory, 'index') };
+    const env = { GIT_INDEX_FILE: join(directory, 'index'), GIT_LITERAL_PATHSPECS: '1' };
     gitWrite(root, ['read-tree', 'HEAD'], { env });
-    gitWrite(root, ['add', '-A', '--', '.'], { env, timeout: 30_000 });
+    if (safe.length) {
+      const list = join(directory, 'paths');
+      await writeFile(list, safe.join('\0'));
+      gitWrite(root, ['add', '-A', `--pathspec-from-file=${list}`, '--pathspec-file-nul'], { env, timeout: 30_000 });
+    }
     const tree = gitWrite(root, ['write-tree'], { env });
     // Dated from HEAD, so the same tree is the same commit: a rerun pushes nothing new and names the same intent.
-    const when = git(root, ['log', '-1', '--format=%cI', 'HEAD']);
+    const when = git(root, ['log', '-1', '--format=%cI', 'HEAD'], { strict: true, timeout: MOVE_LIMITS.gitMs });
     const commit = gitWrite(root, ['commit-tree', tree, '-p', 'HEAD', '-m', 'Estelle snapshot of uncommitted work'],
       { env: { GIT_AUTHOR_NAME: 'Estelle', GIT_AUTHOR_EMAIL: 'noreply@fatelabs.ca', GIT_COMMITTER_NAME: 'Estelle',
         GIT_COMMITTER_EMAIL: 'noreply@fatelabs.ca', GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when } });
@@ -175,22 +177,110 @@ async function pushSnapshot(root, session, paths, scan, warn) {
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
 
-function isPushed(root, commit) {
-  const upstream = git(root, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
-  if (upstream && !git(root, ['rev-list', '--max-count=1', `${upstream}..${commit}`])) return true;
-  return git(root, ['ls-remote', 'origin', 'HEAD']).startsWith(commit);
+// `--porcelain -z`: a rename or copy is followed by its old path as a bare entry, which is no row of its own.
+function changedFiles(root) {
+  const rows = git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all'], { raw: true, strict: true, timeout: MOVE_LIMITS.gitMs }).split('\0');
+  const tracked = [];
+  const untracked = [];
+  for (let at = 0; at < rows.length; at += 1) {
+    const row = rows[at];
+    if (!row) continue;
+    (row.startsWith('??') ? untracked : tracked).push(row.slice(3));
+    if (/^[RC]/.test(row)) at += 1;
+  }
+  return { tracked, untracked };
 }
 
-// What the box starts from. `pushed` work goes by commit; anything local goes through a snapshot branch or a refusal.
-export async function gitState(root, session, scan = secretShaped, warn = async () => {}) {
-  const commit = git(root, ['rev-parse', 'HEAD']);
+// 🔴 UNKNOWN IS NOT CLEAN OR PUSHED. A slow `git status` used to answer empty, and that read as nothing to carry.
+function isPushed(root, commit) {
+  const upstream = git(root, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
+  if (upstream && !git(root, ['rev-list', '--max-count=1', `${upstream}..${commit}`], { strict: true, timeout: MOVE_LIMITS.gitMs })) return true;
+  return git(root, ['ls-remote', 'origin', 'HEAD'], { timeout: MOVE_LIMITS.gitMs }).startsWith(commit);
+}
+
+function readingGit(work) {
+  try { return work(); }
+  catch (error) {
+    if (error?.message !== 'git_failed') throw error;
+    throw refusal('Estelle could not read this repository in time, and it will not guess that nothing changed.', 'Nothing was pushed. Run this again.');
+  }
+}
+
+// A public repository gets nothing in its history. The one way onto a box without git is the conversation import's own file list:
+// text only and small, on a key, with a conversation to ride beside. Anything outside those limits is named, and with no such
+// conversation the handoff refuses, because that is the only place left to put the work.
+async function filesForBox(root, safe, room) {
+  const files = [];
+  const skipped = [];
+  let left = room;
+  for (const path of safe) {
+    const info = await lstat(join(root, path)).catch(() => null);
+    const text = info?.isFile() && info.size <= NATIVE_LIMITS.blobBytes ? await readFile(join(root, path), 'utf8') : null;
+    const fits = text !== null && !text.includes('\0') && !text.includes('\ufffd') && Array.from(text).length <= NATIVE_LIMITS.blobBytes
+      && Buffer.byteLength(text) <= left && files.length < NATIVE_LIMITS.files;
+    if (!fits) { skipped.push(path); continue; }
+    left -= Buffer.byteLength(text);
+    files.push({ path, text, sha256: createHash('sha256').update(text).digest('hex') });
+  }
+  return { files, skipped };
+}
+
+// What the box starts from. `pushed` work goes by commit; changed files go through a snapshot branch, or on a public repository
+// through the box. `boxRoom` is what the conversation import has left, and zero means no import can carry them.
+export async function gitState(root, session, scan = secretShaped, isOpen = async () => false, boxRoom = 0) {
+  const { commit, branch, changed, pushed } = readingGit(() => {
+    const head = git(root, ['rev-parse', 'HEAD'], { strict: true, timeout: MOVE_LIMITS.gitMs });
+    const { tracked, untracked } = changedFiles(root);
+    return { commit: head, branch: git(root, ['branch', '--show-current']), changed: [...tracked, ...untracked], pushed: isPushed(root, head) };
+  });
   if (!/^[a-f0-9]{40}$/.test(commit)) throw refusal('This repository has no commit to start from.', 'Commit something first.');
-  const branch = git(root, ['branch', '--show-current']);
-  const status = git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all'], { raw: true });
-  const paths = status.split('\0').filter(Boolean).map(row => row.slice(3)).filter(Boolean);
-  if (!paths.length && isPushed(root, commit)) return { state: { branch, commit, dirty: false }, snapshot: null };
-  const snapshot = await pushSnapshot(root, session, paths, scan, warn);
-  return { state: { branch, commit: snapshot.commit, dirty: true, snapshot_branch: snapshot.branch }, snapshot };
+  const { safe, skipped } = await sortForPush(root, changed, scan);
+  const clean = { state: { branch, commit, dirty: false }, snapshot: null, carried: 0, boxFiles: [], skipped };
+  if (!safe.length && pushed) return clean;
+  const open = await isOpen();
+  if (open !== false) {
+    const why = open === true ? 'is public, so its history is no place for your work' : 'may be public, because Estelle could not tell';
+    if (!pushed) throw refusal(`Nothing was pushed: this repository ${why}, and it has commits origin does not.`, 'Push them yourself, then run this again.');
+    if (!boxRoom) throw refusal(`Nothing was pushed: this repository ${why}, and only a conversation carried with ESTELLE_API_KEY can take files without git.`, 'Commit and push what it needs, or set that key, then run this again.');
+    const { files, skipped: tooLarge } = await filesForBox(root, safe, boxRoom);
+    return { ...clean, boxFiles: files, skipped: [...skipped, ...tooLarge] };
+  }
+  assertSafeHistory(root, scan);
+  const snapshot = await pushSnapshot(root, session, safe);
+  return { state: { branch, commit: snapshot.commit, dirty: true, snapshot_branch: snapshot.branch }, snapshot, carried: safe.length, boxFiles: [], skipped };
+}
+
+const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
+
+// A new session starts from a prompt, so it pushes nothing, and it says so before the machine starts: its task may be a question,
+// and a conversation is no reason to publish work. It starts from what origin already has.
+function cloudState(repo) {
+  if (!repo) return { state: {}, snapshot: null, startsFrom: '' };
+  return readingGit(() => {
+    const head = git(repo.root, ['rev-parse', 'HEAD'], { strict: true, timeout: MOVE_LIMITS.gitMs });
+    const branch = git(repo.root, ['branch', '--show-current']);
+    const { tracked, untracked } = changedFiles(repo.root);
+    const left = tracked.length + untracked.length;
+    const start = startingPoint(repo.root, head, branch);
+    const notes = [left ? `Your ${plural(left, 'uncommitted file')} aren't included.`.replace(/1 uncommitted file aren't/, "1 uncommitted file isn't") : '',
+      start.unpushed ? `Your ${plural(start.unpushed, 'unpushed commit')} aren't included.`.replace(/1 unpushed commit aren't/, "1 unpushed commit isn't") : ''].filter(Boolean);
+    const named = start.commit ? `${start.label} at ${start.commit.slice(0, 7)}` : 'the default branch';
+    return { state: start.commit ? { ...(start.branch ? { branch: start.branch } : {}), commit: start.commit, dirty: false } : {}, snapshot: null,
+      startsFrom: notes.length ? `Starts from ${named}. ${notes.join(' ')}` : '' };
+  });
+}
+
+function startingPoint(root, head, branch) {
+  if (/^[a-f0-9]{40}$/.test(head) && isPushed(root, head)) return { commit: head, branch, label: branch || 'this commit', unpushed: 0 };
+  const upstream = git(root, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
+  if (upstream) {
+    const name = upstream.replace(/^origin\//, '');
+    const unpushed = Number(git(root, ['rev-list', '--count', `${upstream}..HEAD`], { strict: true, timeout: MOVE_LIMITS.gitMs }));
+    return { commit: git(root, ['rev-parse', upstream], { strict: true, timeout: MOVE_LIMITS.gitMs }), branch: name, label: name, unpushed };
+  }
+  const remote = git(root, ['ls-remote', 'origin', 'HEAD'], { timeout: MOVE_LIMITS.gitMs }).split(/\s+/)[0];
+  const known = /^[a-f0-9]{40}$/.test(remote) ? Number(git(root, ['rev-list', '--count', 'HEAD', '--not', '--remotes'], { timeout: MOVE_LIMITS.gitMs }) || 0) : 0;
+  return { commit: /^[a-f0-9]{40}$/.test(remote) ? remote : '', branch: '', label: 'the default branch', unpushed: known };
 }
 
 // captureNativeTranscript takes a home and appends the host's folder, so a relocated config folder needs its parent.
@@ -207,17 +297,6 @@ async function conversation(host, nativeSession, transcriptPath, home, env) {
     const reasons = { native_artifact_bound: 'the conversation is over the 512 KiB bound', native_credential_field: 'the conversation holds a credential field' };
     return { unavailable: reasons[error?.message] || 'the conversation file could not be read safely' };
   }
-}
-
-// A status read that fails is a read that failed, never news about the move: the machine may be fine. It keeps asking,
-// inside the same bound, and an unanswered bound is reported by the caller as "keep this open".
-async function settle(request, sessionId, sleep) {
-  for (let poll = 0; poll < MOVE_LIMITS.polls; poll += 1) {
-    await sleep(MOVE_LIMITS.pollEveryMs);
-    const view = await request('/sessions/move', { action: 'status', session_id: sessionId }).catch(() => null);
-    if (view?.final === true) return view;
-  }
-  return null;
 }
 
 // One intent keeps one key until its outcome is known, so a rerun after a timeout cannot buy a second machine. The key is
@@ -240,14 +319,29 @@ function uncertain(sessionId, env, cause) {
 }
 
 const causeOf = error => (error?.status ? `HTTP ${error.status}` : 'no answer from the server');
-const definitive = answer => answer.moved === true ? answer.final === true : answer.moved === false;
+
+// A new session's key is its intent, so the same ask from the same place asks the server about the same machine: still running says
+// so with its link, and over means a new one. A folder is part of the intent, so one prompt from two folders is two sessions.
+const cloudKey = (repo, cwd, sessionId, ask, commit) => `plugin-${hash([repo?.name || cwd, sessionId, 'cloud', ask.harness, ask.prompt, commit].join('\x1f')).slice(0, 40)}`;
+
+// One remote the box can clone. Any other host's `owner/name` is a different repository on GitHub, or none.
+function refuseOtherHost(repo, env) {
+  if (!repo || env.ESTELLE_REPO) return;
+  const remote = git(repo.root, ['remote', 'get-url', 'origin']);
+  const host = /^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?([^/:]+)[:/]/i.exec(remote)?.[1]?.toLowerCase();
+  if (host !== 'github.com') {
+    throw refusal(`Estelle can only start from GitHub, and this repository's origin is ${host || 'not one it can read'}, so nothing was started.`);
+  }
+}
 
 // One move. `say` receives each line a person reads, so a host that can stream shows the first line before the wait.
 export async function runMove({ mode, words, env = process.env, cwd = process.cwd(), stateDir = stateDirectory(env), home,
-  request = hasServerAccess(env) ? apiClient({ env, timeoutMs: MOVE_LIMITS.requestMs, deadline: Date.now() + MOVE_LIMITS.requestMs * 3 }) : null,
-  say = () => {}, sleep = ms => new Promise(done => setTimeout(done, ms)), now = Date.now, scan = secretShaped,
-  isPublic = isPublicRepo }) {
+  request = hasServerAccess(env) ? apiClient({ env, timeoutMs: MOVE_LIMITS.requestMs, deadline: Date.now() + MOVE_LIMITS.requestMs }) : null,
+  say = () => {}, now = Date.now, scan = secretShaped, isPublic = isPublicRepo }) {
+  // ⚠️ A box's own plugin stops here. A caller that skips the plugin is bounded by the account's Silo cap and its credits, not by depth.
+  if (cloudExecutionIdentity(env)) throw refusal('This session is already running in the cloud, so nothing new was started.');
   const repo = repository(cwd, env);
+  refuseOtherHost(repo, env);
   if (!repo && mode === 'handoff') throw refusal('This folder is not a Git repository with an origin on GitHub.', 'Run this from your repository.');
   const ask = parseWords(mode, words);
   const current = repo ? await currentSession(stateDir, repo.root, env, home) : null;
@@ -257,30 +351,29 @@ export async function runMove({ mode, words, env = process.env, cwd = process.cw
   const host = current?.host ? canonicalHost(current.host) : '';
   const nativeSession = current?.sessionId || '';
   const sessionId = nativeSession ? timelineIdentity(host, nativeSession, env) : '';
-  say(MOVING);
-  const path = intentPath(stateDir, repo?.root || cwd, sessionId, mode, words);
-  const warn = async () => {
-    const open = await isPublic(repo.name);
-    if (open === true) say(`Warning: ${repo.name} is public, so the snapshot branch below is readable by anyone.`);
-    if (open === null) say(`Warning: could not tell whether ${repo.name} is public. The snapshot branch below may be readable by anyone.`);
-  };
-  if (!request) return viaMcp({ mode, ask, repo, host, sessionId, nativeSession, scan, warn, say });
+  if (mode === 'handoff') say(MOVING);
+  const isOpen = () => isPublic(repo.name);
+  if (!request) return viaMcp({ mode, ask, repo, cwd, host, sessionId, nativeSession, scan, isOpen, say });
+  if (mode === 'cloud') return cloudViaKey({ ask, repo, cwd, host, sessionId, request, say, env });
+  const path = intentPath(stateDir, repo.root, sessionId, mode, words);
   const held = await readIntent(path, now());
   if (held) {
     // An earlier run never learned how this ended. Ask first; a record means it began, and nothing launches over it.
     let seen;
     try { seen = await request('/sessions/move', { action: 'status', move_key: held.key, ...(mode === 'handoff' ? { session_id: sessionId } : {}) }); }
     catch (error) { throw uncertain(sessionId, env, causeOf(error)); }
-    if (seen.found === true) return finish(seen, seen, { path, request, sleep, snapshot: null, checkpoint: null });
+    if (seen.found === true) return finish(seen, { path, snapshot: null, checkpoint: null });
   }
   const key = held?.key || randomUUID();
   await writeJson(path, { key, at: now() });
-  const { state, snapshot } = mode === 'cloud' ? cloudState(repo) : await gitState(repo.root, sessionId || key, scan, warn);
-  const saved = mode === 'cloud' ? null : await saveCheckpoint(current, repo, stateDir, request);
-  const carried = mode === 'handoff' ? await conversation(host, nativeSession, current?.transcriptPath, home, env) : {};
-  const body = { mode, ...(repo ? { repo: repo.name } : {}), git: state, from_host: host || undefined, confirm: true, origin: 'plugin', move_key: key,
+  const carried = await conversation(host, nativeSession, current?.transcriptPath, home, env);
+  const room = carried.native ? NATIVE_LIMITS.bytes - Buffer.byteLength(carried.native.transcript) : 0;
+  const { state, snapshot, carried: went, boxFiles, skipped } = await gitState(repo.root, sessionId || key, scan, isOpen, Math.max(room, 0));
+  if (carried.native) carried.native.files = boxFiles;
+  const saved = await saveCheckpoint(current, repo, stateDir, request);
+  const body = { mode, repo: repo.name, git: state, from_host: host || undefined, confirm: true, origin: 'plugin', move_key: key,
     ...(sessionId ? { session_id: sessionId } : {}), ...contextOf(mode, nativeSession, sessionId),
-    ...(ask.harness ? { harness: ask.harness } : {}), ...(ask.prompt ? { prompt: ask.prompt } : {}),
+    ...(ask.harness ? { harness: ask.harness } : {}), ...whatWent(went, skipped),
     ...(ask.note ? { note: ask.note } : {}), ...(carried.native ? { native: carried.native } : {}),
     ...(carried.unavailable ? { native_unavailable: carried.unavailable } : {}) };
   let answer;
@@ -290,49 +383,54 @@ export async function runMove({ mode, words, env = process.env, cwd = process.cw
     if (error?.status >= 400 && error?.status < 500) { await rm(path, { force: true }); throw error; }
     throw uncertain(sessionId, env, causeOf(error));
   }
-  return finish(answer, answer, { path, request, sleep, snapshot, checkpoint: saved });
+  return finish(answer, { path, snapshot, checkpoint: saved });
 }
 
-// A new session starts from a prompt, so it pushes nothing: its task may be a question, and a conversation is no reason to
-// publish uncommitted work or to be refused over it. It starts at this commit once origin has it, else at the default branch.
-function cloudState(repo) {
-  if (!repo) return { state: {}, snapshot: null };
-  const commit = git(repo.root, ['rev-parse', 'HEAD']);
-  const known = /^[a-f0-9]{40}$/.test(commit) && isPushed(repo.root, commit);
-  return { state: known ? { branch: git(repo.root, ['branch', '--show-current']), commit, dirty: false } : {}, snapshot: null };
+const whatWent = (went, skipped) => ({ ...(went ? { files_carried: went } : {}),
+  ...(skipped?.length ? { left_behind: skipped.slice(0, MOVE_LIMITS.untrackedSent) } : {}) });
+
+async function cloudViaKey({ ask, repo, cwd, host, sessionId, request, say, env }) {
+  const { state, startsFrom } = cloudState(repo);
+  if (startsFrom) say(startsFrom);
+  const body = { mode: 'cloud', ...(repo ? { repo: repo.name } : {}), git: state, from_host: host || undefined, confirm: true, origin: 'plugin',
+    move_key: cloudKey(repo, cwd, sessionId, ask, state.commit), ...(ask.harness ? { harness: ask.harness } : {}), prompt: ask.prompt };
+  let answer;
+  try { answer = await request('/sessions/move', body); }
+  catch (error) {
+    if (error?.status >= 400 && error?.status < 500) throw error;
+    throw uncertain(sessionId, env, causeOf(error));
+  }
+  return finish(answer, { snapshot: null, checkpoint: null });
 }
 
 // A host's hooks checkpoint under its own id, and a move names the timeline id, so the server is told both.
 const contextOf = (mode, nativeSession, sessionId) => (mode === 'handoff' && nativeSession && nativeSession !== sessionId
   ? { context_session_id: nativeSession } : {});
 
-export const NO_CONVERSATION_LINE = 'This sign-in cannot carry this conversation to the cloud. The new session gets your code and your '
-  + 'note, and anything Estelle already saved for this session. Set ESTELLE_API_KEY and run this again to carry the conversation.';
-
 // 🔴 THE USUAL PATH: Claude Code signs in to Estelle with OAuth, and that sign-in belongs to the host, so this process
 // holds no key and cannot reach the server. It does the part only it can (the git state and the snapshot) and hands the
 // model one MCP call. A tool call cannot carry a conversation file, and this process cannot save a checkpoint either, so
-// it says so here, before a machine starts, and the server's last message says what actually travelled.
+// the server's last message says what actually travelled.
 // The key is derived, not stored: this process never learns the answer, and the same tree and words are the same intent.
-async function viaMcp({ mode, ask, repo, host, sessionId, nativeSession, scan, warn, say }) {
-  const { state, snapshot } = mode === 'cloud' ? cloudState(repo) : await gitState(repo.root, sessionId || repo.name, scan, warn);
-  if (mode === 'handoff') say(NO_CONVERSATION_LINE);
-  const intent = `plugin-${hash([repo?.name, sessionId, mode, ask.harness, ask.note ?? ask.prompt, state.commit].join('\x1f')).slice(0, 40)}`;
+async function viaMcp({ mode, ask, repo, cwd, host, sessionId, nativeSession, scan, isOpen, say }) {
+  const cloud = mode === 'cloud';
+  const { state, snapshot, carried, skipped, startsFrom } = cloud ? cloudState(repo) : await gitState(repo.root, sessionId || repo.name, scan, isOpen);
+  if (startsFrom) say(startsFrom);
+  const intent = cloud ? cloudKey(repo, cwd, sessionId, ask, state.commit)
+    : `plugin-${hash([repo.name, sessionId, mode, ask.harness, ask.note, state.commit].join('\x1f')).slice(0, 40)}`;
   const args = { mode, ...(repo ? { repo: repo.name } : {}), move_key: intent, confirm: true, ...(state.commit ? { commit: state.commit } : {}),
     ...(state.branch ? { branch: state.branch } : {}), ...(state.snapshot_branch ? { snapshot_branch: state.snapshot_branch } : {}),
-    ...(host ? { from_host: host } : {}), ...(sessionId ? { session_id: sessionId } : {}), ...contextOf(mode, nativeSession, sessionId),
-    ...(ask.harness ? { harness: ask.harness } : {}),
+    ...(host ? { from_host: host } : {}), ...(sessionId && !cloud ? { session_id: sessionId } : {}), ...contextOf(mode, nativeSession, sessionId),
+    ...(ask.harness ? { harness: ask.harness } : {}), ...whatWent(carried, skipped),
     ...(ask.prompt ? { prompt: ask.prompt } : {}), ...(ask.note ? { note: ask.note } : {}) };
   return { answer: { moved: undefined }, snapshot, mcp: args, final: `ESTELLE_MCP_CALL\n${JSON.stringify(args)}` };
 }
 
-async function finish(answer, first, { path, request, sleep, snapshot, checkpoint }) {
-  const settled = answer.final === false ? await settle(request, answer.session_id, sleep) : answer;
-  // The key is released only once the outcome is known. Past that, running the command again is a new intent.
-  const known = settled && (settled.final === true || definitive(settled)) && settled.state !== 'unknown' && first.moved !== null;
-  if (known) await rm(path, { force: true });
-  return { answer: first, settled, snapshot, checkpoint, final: settled ? settled.last_message || settled.message
-    : `${first.last_message}\nEstelle could not confirm the move in time, so keep this session open and watch the link.` };
+// 🔴 THE COMMAND ENDS HERE, AT THE LINK. It used to poll until the work landed, so a host's 120 s shell timeout killed it holding a
+// billing machine and no link. Status is a separate read, on the page. An outcome nobody knows keeps its key, so a rerun only asks.
+async function finish(answer, { path, snapshot, checkpoint }) {
+  if (path && answer.moved !== null && answer.state !== 'unknown') await rm(path, { force: true });
+  return { answer, snapshot, checkpoint, final: answer.last_message || answer.message };
 }
 
 async function saveCheckpoint(current, repo, stateDir, request) {
@@ -355,8 +453,7 @@ export async function moveCommand(mode, input, { stdout = console.log, setExit =
   if (mode !== 'handoff' && mode !== 'cloud') { stdout('Use `move handoff` or `move cloud`.'); setExit(2); return; }
   try {
     const result = await runMove({ mode, words: input, say: stdout });
-    if (result.snapshot) stdout(`Uncommitted work is on branch ${result.snapshot.branch}. Your branch was not changed.`);
     stdout(result.final);
-    if (result.answer.moved === false || result.answer.moved === null) setExit(1);
+    if ((result.answer.moved === false && result.answer.already_running !== true) || result.answer.moved === null) setExit(1);
   } catch (error) { stdout(messageOf(error)); setExit(1); }
 }

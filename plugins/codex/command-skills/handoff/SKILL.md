@@ -20,6 +20,6 @@ ESTELLE_MOVE
 ```
 
 If it prints `ESTELLE_MCP_CALL` and a JSON line, this host signed in to Estelle with OAuth: call the MCP tool `estelle_move` once
-with exactly that JSON as its arguments. Your whole reply is then one line: the tool's `last_message`, or otherwise the last
-line the command printed, as it is. It holds the link. If it says the move could not run, that is the answer: do not retry
+with exactly that JSON as its arguments. Your whole reply is then any line starting `Starts from`, and one line more: the tool's
+`last_message`, or otherwise the last line the command printed, as it is. It holds the link. If it says the move could not run, that is the answer: do not retry
 and do not start a machine another way. Never say a session resumed unless that line says so.
