@@ -1,6 +1,7 @@
 ---
 name: incident-rca
 description: "Triage a firing incident without guessing what to look at. Use when the task involves: incident, alert, pager, triage, sev, anomaly."
+user-invocable: false
 ---
 
 # incident-rca

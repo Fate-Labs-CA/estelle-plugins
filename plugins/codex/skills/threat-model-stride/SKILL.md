@@ -1,6 +1,7 @@
 ---
 name: threat-model-stride
 description: "Walk the data flow and ask how each step gets abused. Use when the task involves: threat model, stride, attack surface, trust boundary, spoofing tampering, mitigation."
+user-invocable: false
 ---
 
 # threat-model-stride

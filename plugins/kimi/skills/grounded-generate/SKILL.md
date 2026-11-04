@@ -1,6 +1,7 @@
 ---
 name: grounded-generate
 description: "Write several answers, keep the one that passes its own tests. Use when the task involves: best of n, dual-execution consensus, package hallucination, slopsquatting, grounded generation, execution filter."
+user-invocable: false
 ---
 
 # grounded-generate

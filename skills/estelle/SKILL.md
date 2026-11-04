@@ -1,6 +1,7 @@
 ---
 name: estelle
 description: "Use Estelle for repository evidence, shared memory, Rooms, production monitoring, Twice app testing, Silos, Security, CI, Orchestra, Atlas and engineering requests from Claude Code, Codex, Kimi Code, Grok Build or Cursor. Inspect the connected tool schemas before calling them."
+user-invocable: false
 ---
 
 # Estelle
@@ -38,6 +39,11 @@ Report `applied` or `unchanged` only when the actual setup result says so. Prese
 Keep package installation, MCP authentication and observed hooks separate. Use normal native approval
 and reload; never force trust or global permissions. Raw native plugin-add has no setup callback.
 Do not rerun migration on SessionStart, every tool, ordinary coding or routine MCP use.
+
+On Codex, every plugin update turns Estelle's hooks off until the person approves them again. Codex prints
+`Hook failed: plugin contents changed; hook approval required` for each hook it skips, and while it does,
+nothing is captured and file writes are not checked for credentials. Tell the person once: run `/hooks` and
+press `t`, or choose **Trust all and continue** when Codex starts. Approving is theirs to do, never yours.
 
 ## Start and inspect
 

@@ -1,6 +1,7 @@
 ---
 name: root-cause-loop
 description: "Find why it happens before changing anything. Use when the task involves: debug, root cause, systematic, heisenbug, flaky, investigate."
+user-invocable: false
 ---
 
 # root-cause-loop

@@ -1,6 +1,7 @@
 ---
 name: estelle-monitor-install
 description: "Wire Estelle Monitor into this repo — traces, subjects and outcomes. Use when the task involves: production monitoring, monitor my app, monitor my agent, watch production, is it working in production, went wrong in production."
+user-invocable: false
 ---
 
 # estelle-monitor-install

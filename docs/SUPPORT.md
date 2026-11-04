@@ -10,7 +10,7 @@
 | Transcript capture | Bounded JSONL | Bounded rollout | Bounded main-agent journal | Bounded JSONL (inferred dialect) | Bounded JSONL (inferred dialect) |
 | Checkpoints | Bounded conversation | Bounded conversation | Active main-agent branch | Bounded conversation (inferred dialect) | Bounded conversation (inferred dialect) |
 | Exit save | Reference; retry later | Reference; retry later | Reference; retry later | Reference; retry later | Reference; retry later |
-| Model-request observation | No | Native observers | No | No | No |
+| Hook approval after an update | Not required | Required; see [Codex](install/codex.md) | Host prompt | Host prompt | Host prompt |
 
 This table describes packaged paths, not a claim that a particular installation has run. Check
 package loading, MCP authentication and actual hook execution separately. Successful empty recall

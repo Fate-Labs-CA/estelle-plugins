@@ -1,6 +1,7 @@
 ---
 name: coding-workflow
 description: "Use for implementing features, fixing bugs and refactoring with existing code, native capabilities, measured tests and review. Keep the change as small as the real contract allows."
+user-invocable: false
 ---
 
 # Coding workflow

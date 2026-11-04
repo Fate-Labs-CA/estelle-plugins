@@ -1,6 +1,7 @@
 ---
 name: change-impact
 description: "Change this and what else has to change? Nothing missed. Use when the task involves: change impact, blast radius, cross-cutting change, what breaks if I change, ripple effect, impact analysis."
+user-invocable: false
 ---
 
 # change-impact

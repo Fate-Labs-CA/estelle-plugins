@@ -1,6 +1,7 @@
 ---
 name: estelle-loop
 description: "Complete a bounded implementation or repair loop. Use for autonomous build loops, iterative repair, acceptance tests, and propose-test-repair work."
+user-invocable: false
 ---
 
 # estelle-loop

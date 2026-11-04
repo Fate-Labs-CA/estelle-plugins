@@ -1,6 +1,7 @@
 ---
 name: chain-of-verification
 description: "Ask the questions that would prove a draft answer wrong. Use when the task involves: chain of verification, cove, verification questions, independent recall, strike unsupported clauses, draft then verify."
+user-invocable: false
 ---
 
 # chain-of-verification

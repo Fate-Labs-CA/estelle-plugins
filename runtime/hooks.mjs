@@ -15,17 +15,6 @@ const CHECKPOINT_EVENTS = new Set(['Stop', 'SubagentStop', 'PreCompact', 'Interr
 const STREAM_EVENTS = new Set(['UserPromptSubmit', 'PostToolUse', 'Stop', 'SubagentStop', 'PreCompact', 'Interrupt']);
 const MAX_DEFERRED_SCAN = 512;
 
-async function observeModelBoundary(n, stateDir) {
-  const fields = ['input_tokens', 'output_tokens', 'cached_input_tokens', 'total_tokens', 'reasoning_output_tokens'];
-  const usage = Object.fromEntries(fields.filter(key => Number.isSafeInteger(n.raw?.token_usage?.[key])
-    && n.raw.token_usage[key] >= 0).map(key => [key, n.raw.token_usage[key]]));
-  await writeJson(join(stateDir, 'model', `${hash(`${n.host}:${n.sessionId}`)}.json`), {
-    at: new Date().toISOString(), event: n.event, model: redact(n.model || '').slice(0, 200),
-    status: n.raw.status || 'request-started', usage,
-  });
-  await recordStatus(stateDir, { host: n.host, event: n.event, mode: 'model-request', status: 'observed' });
-}
-
 async function adapter(host) {
   if (host === 'claude-code') return { normalize: claude, formatContext: claudeContext };
   if (host === 'codex') return { normalize: codex, formatContext: codexContext };
@@ -142,10 +131,6 @@ export async function handleHook({ host, payload, stateDir, request }) {
   const n = port.normalize(payload);
   if (!n.event) throw new Error('event_missing');
   if (!safeSession(n.sessionId)) throw new Error('session_missing');
-  if (host === 'codex' && ['PreModelRequest', 'PostModelRequest'].includes(n.event)) {
-    await observeModelBoundary(n, stateDir);
-    return null;
-  }
   const protection = protectWrite(n);
   if (protection?.unscanned) {
     await recordStatus(stateDir, { host, event: n.event, mode: 'protect', status: 'partial', code: 'input_bound' });

@@ -3,6 +3,7 @@ import { statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { HOOK_EVENTS as CURSOR_EVENTS } from '../adapters/cursor.mjs';
+import { FILE_WRITE_MATCHER } from '../runtime/protect.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const check = process.argv.includes('--check');
@@ -34,8 +35,12 @@ emit('.agents/plugins/marketplace.json', marketplace('codex'));
 emit('.grok-plugin/marketplace.json', { name: 'estelle-plugins', plugins: [{ name: 'estelle', source: './plugins/grok' }] });
 emit('.cursor-plugin/marketplace.json', marketplace('cursor'));
 
+// Codex prints one line per handler run, including every run it refuses after a plugin update, so a
+// handler that does nothing for a given tool is a line of noise at the worst moment. The write guard
+// only ever acts on file writes; other hosts' PreToolUse also carries queued context and stays unfiltered.
+const matcherFor = (host, event) => (host === 'codex' && event === 'PreToolUse' ? { matcher: FILE_WRITE_MATCHER } : {});
 function nativeHooks(host, variable, events) {
-  return { hooks: Object.fromEntries(events.map(event => [event, [{ hooks: [{ type: 'command',
+  return { hooks: Object.fromEntries(events.map(event => [event, [{ ...matcherFor(host, event), hooks: [{ type: 'command',
     command: command(host, variable), timeout: ['SessionEnd', 'Interrupt'].includes(event) ? 3 : 20,
     ...(host === 'codex' ? { statusMessage: `Estelle: ${event}` } : {}) }],
   }]])) };
@@ -48,8 +53,7 @@ emit('plugins/claude/hooks/hooks.json', nativeHooks('claude-code', 'CLAUDE_PLUGI
 emit('plugins/codex/.codex-plugin/plugin.json', { ...manifest, skills: './skills',
   hooks: './hooks/hooks.json', mcpServers: './.mcp.json' });
 emit('plugins/codex/.mcp.json', { mcpServers: { Estelle: server } });
-emit('plugins/codex/hooks/hooks.json', nativeHooks('codex', 'PLUGIN_ROOT', [...common, 'Interrupt',
-  'PreModelRequest', 'PostModelRequest']));
+emit('plugins/codex/hooks/hooks.json', nativeHooks('codex', 'PLUGIN_ROOT', [...common, 'Interrupt']));
 const kimiManifest = { ...manifest, skills: ['./skills'], commands: ['./commands'],
   sessionStart: { skill: 'estelle' },
   mcpServers: { Estelle: { transport: 'http', url: server.url, bearerTokenEnvVar: 'ESTELLE_API_KEY' } },
@@ -75,7 +79,7 @@ emit('plugins/cursor/rules/estelle.mdc', '---\ndescription: Use Estelle tools fo
 
 const HOSTS = ['claude', 'codex', 'kimi', 'grok', 'cursor'];
 const ASSETS = ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE', 'NOTICE'];
-const assetsFor = host => [...ASSETS, ...(host === 'codex' ? [] : ['commands']), ...(host === 'claude' ? ['agents'] : [])];
+const assetsFor = host => [...ASSETS, 'commands', ...(host === 'claude' ? ['agents'] : [])];
 async function inventory(directory, prefix = '') {
   const output = new Map();
   for (const entry of await readdir(directory, { withFileTypes: true })) {

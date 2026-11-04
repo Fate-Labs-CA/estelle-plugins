@@ -29,6 +29,8 @@ installation. Native plugin installation and SessionStart hooks do not invoke se
 Automated legacy cleanup supports Codex on POSIX and Claude Code; other hosts and Windows apply remain
 pending. No manual configuration surgery or automatic hook trust is part of this release.
 
+On Codex, every update needs one hook approval from you. [Here is what to do](docs/install/codex.md#approve-the-hooks-after-installing-and-after-every-update).
+
 <details>
 <summary>Claude Code</summary>
 
@@ -42,7 +44,7 @@ Install or update Estelle for Claude Code from https://github.com/uqeu/estelle-p
 <summary>Codex</summary>
 
 ```text
-Install or update Estelle for Codex from https://github.com/uqeu/estelle-plugins using plugins/codex. Follow docs/install/codex.md and docs/migration/from-cli.md. Use native approval and a fresh session; preserve unrelated settings and active sessions. After native installation, invoke the installed package runtime/cli.mjs setup codex --apply once as documented; do not manually edit configuration. Report unsupported or unavailable migration as pending. Keep hooks and MCP on the same environment key; never request or display credentials. Report package, authenticated MCP and observed hooks separately, including trust/reload and any pending step. The setup check does not prove hook execution. No paid installation tests.
+Install or update Estelle for Codex from https://github.com/uqeu/estelle-plugins using plugins/codex. Follow docs/install/codex.md and docs/migration/from-cli.md. Use native approval and a fresh session; preserve unrelated settings and active sessions. After native installation, invoke the installed package runtime/cli.mjs setup codex --apply once as documented; do not manually edit configuration. Report unsupported or unavailable migration as pending. Keep hooks and MCP on the same environment key; never request or display credentials. If setup reports hook_review as review_required, tell me its next_step word for word and do not approve hooks for me. Report package, authenticated MCP and observed hooks separately, including trust/reload and any pending step. The setup check does not prove hook execution. No paid installation tests.
 ```
 
 </details>

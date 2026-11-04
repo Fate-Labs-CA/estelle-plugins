@@ -1,6 +1,7 @@
 ---
 name: evidence-traceability-audit
 description: "Re-open every citation and check it says what was claimed. Use when the task involves: evidence traceability, traceable to evidence, fabricated citation, unreproducible number, untraceable claim, citation audit."
+user-invocable: false
 ---
 
 # evidence-traceability-audit
