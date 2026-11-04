@@ -248,9 +248,9 @@ export async function runMove({ mode, words, env = process.env, cwd = process.cw
   say = () => {}, sleep = ms => new Promise(done => setTimeout(done, ms)), now = Date.now, scan = secretShaped,
   isPublic = isPublicRepo }) {
   const repo = repository(cwd, env);
-  if (!repo) throw refusal('This folder is not a Git repository with an origin on GitHub.', 'Run this from your repository.');
+  if (!repo && mode === 'handoff') throw refusal('This folder is not a Git repository with an origin on GitHub.', 'Run this from your repository.');
   const ask = parseWords(mode, words);
-  const current = await currentSession(stateDir, repo.root, env, home);
+  const current = repo ? await currentSession(stateDir, repo.root, env, home) : null;
   if (mode === 'handoff' && !current?.sessionId) {
     throw refusal('Estelle has not seen this session, so it does not know what to continue.', 'Check the plugin is enabled with `doctor`, send one message here, then run this again.');
   }
@@ -258,7 +258,7 @@ export async function runMove({ mode, words, env = process.env, cwd = process.cw
   const nativeSession = current?.sessionId || '';
   const sessionId = nativeSession ? timelineIdentity(host, nativeSession, env) : '';
   say(MOVING);
-  const path = intentPath(stateDir, repo.root, sessionId, mode, words);
+  const path = intentPath(stateDir, repo?.root || cwd, sessionId, mode, words);
   const warn = async () => {
     const open = await isPublic(repo.name);
     if (open === true) say(`Warning: ${repo.name} is public, so the snapshot branch below is readable by anyone.`);
@@ -275,10 +275,10 @@ export async function runMove({ mode, words, env = process.env, cwd = process.cw
   }
   const key = held?.key || randomUUID();
   await writeJson(path, { key, at: now() });
-  const { state, snapshot } = await gitState(repo.root, sessionId || key, scan, warn);
-  const saved = await saveCheckpoint(current, repo, stateDir, request);
+  const { state, snapshot } = mode === 'cloud' ? cloudState(repo) : await gitState(repo.root, sessionId || key, scan, warn);
+  const saved = mode === 'cloud' ? null : await saveCheckpoint(current, repo, stateDir, request);
   const carried = mode === 'handoff' ? await conversation(host, nativeSession, current?.transcriptPath, home, env) : {};
-  const body = { mode, repo: repo.name, git: state, from_host: host || undefined, confirm: true, origin: 'plugin', move_key: key,
+  const body = { mode, ...(repo ? { repo: repo.name } : {}), git: state, from_host: host || undefined, confirm: true, origin: 'plugin', move_key: key,
     ...(sessionId ? { session_id: sessionId } : {}), ...contextOf(mode, nativeSession, sessionId),
     ...(ask.harness ? { harness: ask.harness } : {}), ...(ask.prompt ? { prompt: ask.prompt } : {}),
     ...(ask.note ? { note: ask.note } : {}), ...(carried.native ? { native: carried.native } : {}),
@@ -291,6 +291,15 @@ export async function runMove({ mode, words, env = process.env, cwd = process.cw
     throw uncertain(sessionId, env, causeOf(error));
   }
   return finish(answer, answer, { path, request, sleep, snapshot, checkpoint: saved });
+}
+
+// A new session starts from a prompt, so it pushes nothing: its task may be a question, and a conversation is no reason to
+// publish uncommitted work or to be refused over it. It starts at this commit once origin has it, else at the default branch.
+function cloudState(repo) {
+  if (!repo) return { state: {}, snapshot: null };
+  const commit = git(repo.root, ['rev-parse', 'HEAD']);
+  const known = /^[a-f0-9]{40}$/.test(commit) && isPushed(repo.root, commit);
+  return { state: known ? { branch: git(repo.root, ['branch', '--show-current']), commit, dirty: false } : {}, snapshot: null };
 }
 
 // A host's hooks checkpoint under its own id, and a move names the timeline id, so the server is told both.
@@ -306,10 +315,10 @@ export const NO_CONVERSATION_LINE = 'This sign-in cannot carry this conversation
 // it says so here, before a machine starts, and the server's last message says what actually travelled.
 // The key is derived, not stored: this process never learns the answer, and the same tree and words are the same intent.
 async function viaMcp({ mode, ask, repo, host, sessionId, nativeSession, scan, warn, say }) {
-  const { state, snapshot } = await gitState(repo.root, sessionId || repo.name, scan, warn);
+  const { state, snapshot } = mode === 'cloud' ? cloudState(repo) : await gitState(repo.root, sessionId || repo.name, scan, warn);
   if (mode === 'handoff') say(NO_CONVERSATION_LINE);
-  const intent = `plugin-${hash([repo.name, sessionId, mode, ask.harness, ask.note ?? ask.prompt, state.commit].join('\x1f')).slice(0, 40)}`;
-  const args = { mode, repo: repo.name, move_key: intent, confirm: true, commit: state.commit,
+  const intent = `plugin-${hash([repo?.name, sessionId, mode, ask.harness, ask.note ?? ask.prompt, state.commit].join('\x1f')).slice(0, 40)}`;
+  const args = { mode, ...(repo ? { repo: repo.name } : {}), move_key: intent, confirm: true, ...(state.commit ? { commit: state.commit } : {}),
     ...(state.branch ? { branch: state.branch } : {}), ...(state.snapshot_branch ? { snapshot_branch: state.snapshot_branch } : {}),
     ...(host ? { from_host: host } : {}), ...(sessionId ? { session_id: sessionId } : {}), ...contextOf(mode, nativeSession, sessionId),
     ...(ask.harness ? { harness: ask.harness } : {}),
@@ -334,9 +343,11 @@ async function saveCheckpoint(current, repo, stateDir, request) {
   } catch { return { saved: false, reason: 'the checkpoint could not be saved' }; }
 }
 
-export function messageOf(error) {
-  if (error?.message === 'move_refused') return `${error.reason} ${error.needed}`.trim();
-  return `Estelle could not start this (${error?.status ? `HTTP ${error.status}: ${error.message}` : 'network error'}). Nothing was confirmed as started.`;
+// Every last line carries a link. The refusal that could not tell already holds its session's.
+const sessionsLink = env => `${String(env.ESTELLE_SITE_URL || 'https://fatelabs.ca').replace(/\/$/, '')}/dashboard/sessions`;
+export function messageOf(error, env = process.env) {
+  if (error?.message === 'move_refused') return error.uncertain ? `${error.reason} ${error.needed}`.trim() : `${error.reason} ${error.needed} ${sessionsLink(env)}`.replace(/\s+/g, ' ').trim();
+  return `Estelle could not start this (${error?.status ? `HTTP ${error.status}: ${error.message}` : 'network error'}). Nothing was confirmed as started. ${sessionsLink(env)}`;
 }
 
 // The CLI door: `move <handoff|cloud>` with the person's words on stdin, so no shell ever parses them.

@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MOVING, NO_CONVERSATION_LINE, noteCurrentSession, parseWords, runMove } from '../runtime/move.mjs';
+import { MOVING, NO_CONVERSATION_LINE, messageOf, noteCurrentSession, parseWords, runMove } from '../runtime/move.mjs';
 
 const SID = '11111111-2222-4333-8444-555555555555';
 const run = (cwd, ...args) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env,
@@ -123,6 +123,58 @@ for (const [name, value] of Object.entries(SHAPED)) {
     run(w.cwd, 'commit', '-q', '-am', 'oops');
     await assert.rejects(w.move('handoff', '', { request: null }), error => /in their history/.test(error.reason));
     assert.equal(run(w.origin, 'for-each-ref', 'refs/heads/estelle'), '');
+  });
+}
+
+test('a new session pushes nothing and is not refused over the tree it started beside', async t => {
+  const w = await world(t);
+  await writeFile(join(w.cwd, 'config.key'), 'plain words\n');
+  await writeFile(join(w.cwd, 'a.txt'), 'uncommitted\n');
+  await w.move('cloud', 'talk to it about the weather');
+  const body = w.posted();
+  assert.equal(body.git.commit, run(w.cwd, 'rev-parse', 'HEAD'), 'the commit origin already has');
+  assert.equal(body.git.snapshot_branch, undefined);
+  assert.equal(run(w.origin, 'for-each-ref', 'refs/heads/estelle'), '');
+  assert.equal(w.calls.filter(c => c.path === '/checkpoint').length, 0, 'there is no session to save for a new one');
+});
+
+test('a new session on an unpushed commit starts from the default branch rather than pushing it', async t => {
+  const w = await world(t);
+  await writeFile(join(w.cwd, 'a.txt'), 'two\n');
+  run(w.cwd, 'commit', '-q', '-am', 'local only');
+  const { mcp } = await w.move('cloud', 'fix it', { request: null });
+  assert.equal(mcp.commit, undefined);
+  assert.equal(run(w.origin, 'for-each-ref', 'refs/heads/estelle'), '');
+});
+
+test('a new session needs no repository at all, and a handoff still does', async t => {
+  const base = await mkdtemp(join(tmpdir(), 'estelle-no-repo-'));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const env = { ...process.env, ESTELLE_REPO: '' };
+  const calls = [];
+  const request = async (path, body) => { calls.push(body); return { moved: true, final: true, session_id: 's', last_message: 'LINE' }; };
+  const options = { env, cwd: base, stateDir: join(base, 'state'), request, sleep: async () => {} };
+  const { final } = await runMove({ mode: 'cloud', words: 'talk about the weather', ...options });
+  assert.equal(final, 'LINE');
+  assert.equal(calls[0].repo, undefined);
+  assert.deepEqual(calls[0].git, {});
+  assert.equal((await runMove({ mode: 'cloud', words: 'talk about the weather', ...options, request: null })).mcp.repo, undefined);
+  await assert.rejects(runMove({ mode: 'handoff', words: '', ...options }), error => /not a Git repository/.test(error.reason));
+});
+
+test('every refusal ends on a link, and one that could not tell keeps its own', () => {
+  const env = { ESTELLE_SITE_URL: 'https://example.test/' };
+  assert.match(messageOf(Object.assign(new Error('move_refused'), { reason: 'No.', needed: 'Do this.' }), env), /^No\. Do this\. https:\/\/example\.test\/dashboard\/sessions$/);
+  assert.match(messageOf(new Error('boom'), env), /https:\/\/example\.test\/dashboard\/sessions$/);
+  assert.doesNotMatch(messageOf(Object.assign(new Error('move_refused'), { reason: 'Unsure.', needed: 'Watch it: https://x.test/a', uncertain: true }), env), /example\.test/);
+});
+
+for (const name of ['cloud', 'handoff']) {
+  test(`/estelle ${name} tells the model to just do it, with one line back`, async () => {
+    const text = await readFile(new URL(`../commands/${name}.md`, import.meta.url), 'utf8');
+    for (const word of ['Say nothing first', '`estelle_resume`', '`estelle_silo`', '`session_message`', 'do not run git', 'one line', 'link']) {
+      assert.ok(text.includes(word), word);
+    }
   });
 }
 
