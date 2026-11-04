@@ -2,6 +2,7 @@
 
 Use Estelle's MCP tools for repository navigation, saved decisions, Rooms, monitoring and cloud work.
 Call `estelle_resume` before planning. Read each tool's current schema; do not invent commands.
+For a question about Estelle itself (Twice, Silos, Security, CI, Orchestra, Atlas), call `estelle_docs`.
 If a requested capability is not exposed, name the missing capability rather than claiming it ran.
 
 Read the affected code and its callers before changing it. Reuse an existing implementation, the

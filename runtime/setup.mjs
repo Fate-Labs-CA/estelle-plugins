@@ -126,6 +126,10 @@ async function applyPlan(file,snapshot,legacy,native) {
 
 export async function runSetup({host,apply=false,expect,env=process.env,home=homedir(),
  bundleRoot=resolve(import.meta.dirname,'..')}={},ports={}) {
+ if(host==='claude'){
+  const {runClaudeSetup}=await import('./claude-setup.mjs');
+  return runClaudeSetup({apply,expect,env,home},ports);
+ }
  if(host!=='codex')return {status:'pending_unsupported_host',host:typeof host==='string'&&/^[a-z-]{1,20}$/.test(host)?host:'unknown'};
  if(apply&&(ports.platform||process.platform)==='win32')return projection('pending_unsupported_platform');
  // Do not invoke the legacy auth-file fallback. Hooks and MCP must share this one canonical variable.

@@ -2,6 +2,7 @@
 import { readFile, opendir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { apiBase, apiClient, errorCode, MAX_JSON_BYTES, readJson, recordStatus, stateDirectory } from './io.mjs';
+import { checkKey, KEY_MESSAGES } from './key-check.mjs';
 import { VERSION } from './version.mjs';
 
 async function readInput() {
@@ -33,9 +34,13 @@ async function status(stateDir) {
 async function doctor() {
   const api = apiBase();
   const keyPresent = Boolean(process.env.ESTELLE_API_KEY);
+  // Presence is not validity: a revoked key is present. Anything but `accepted` is not a pass.
+  const keyCheck = keyPresent ? await checkKey(process.env.ESTELLE_API_KEY, { base: api, version: VERSION }) : 'not_checked_no_key';
   console.log(JSON.stringify({ version: VERSION, node: process.version, api,
-    credential: keyPresent ? 'environment' : 'missing', status: await status(stateDirectory()) }, null, 2));
-  if (!keyPresent) process.exitCode = 1;
+    credential: keyPresent ? 'environment' : 'missing', key_check: keyCheck,
+    ...(KEY_MESSAGES[keyCheck] ? { key_message: KEY_MESSAGES[keyCheck] } : {}),
+    status: await status(stateDirectory()) }, null, 2));
+  if (keyCheck !== 'accepted') process.exitCode = 1;
 }
 
 const [command, host] = process.argv.slice(2);
