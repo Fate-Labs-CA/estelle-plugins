@@ -45,7 +45,8 @@ async function doctor() {
     ...(KEY_MESSAGES[keyCheck] ? { key_message: KEY_MESSAGES[keyCheck] } : {}),
     ...(codexHooks ? { codex_hooks: codexHooks } : {}),
     status: await status(stateDirectory()) }, null, 2));
-  if (keyCheck !== 'accepted' || codexHooks?.status === 'review_required') process.exitCode = 1;
+  // As with the key: not being able to tell that hooks will run is not a pass.
+  if (keyCheck !== 'accepted' || (codexHooks && codexHooks.status !== 'trusted')) process.exitCode = 1;
 }
 
 const [command, host] = process.argv.slice(2);

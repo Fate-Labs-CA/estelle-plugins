@@ -7,7 +7,7 @@ import { open } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { launchCredential } from './auth.mjs';
-import { codexHookTrust } from './codex-trust.mjs';
+import { UNREADABLE, codexHookTrust } from './codex-trust.mjs';
 import { inspectHooks, planHooks, commitHooks } from './migration.mjs';
 import { VERSION } from './version.mjs';
 
@@ -142,7 +142,7 @@ export async function runSetup({host,apply=false,expect,env=process.env,home=hom
  const authenticate=ports.authenticate||(k=>probeMcp(k,{deadline}));
  try{if(await authenticate(key)!==true)return projection('pending_auth');}
  catch{return projection('pending_auth');}
- const review=await(ports.hookTrust||(()=>codexHookTrust(process.cwd(),{env})))().catch(()=>({status:'unavailable'}));
+ const review=await(ports.hookTrust||(()=>codexHookTrust(process.cwd(),{env})))().catch(()=>UNREADABLE);
  return withReview(await migrateCodex({home,env,native,expect,apply}),review);
 }
 

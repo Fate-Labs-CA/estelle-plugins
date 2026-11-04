@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { REVIEW_STEP, codexHookTrust, summarizeHooks } from '../runtime/codex-trust.mjs';
+import { REVIEW_STEP, UNREADABLE, codexHookTrust, summarizeHooks } from '../runtime/codex-trust.mjs';
 import { runSetup } from '../runtime/setup.mjs';
 import { VERSION } from '../runtime/version.mjs';
 
@@ -34,8 +34,9 @@ test('an unreadable inventory is never reported as trusted', () => {
   assert.deepEqual(summarizeHooks([]), { status: 'not_installed' });
   assert.deepEqual(summarizeHooks([row('modified', { pluginId: 'other@elsewhere' })]), { status: 'not_installed' });
   for (const value of [undefined, null, {}, 'hooks', Array.from({ length: 65 }, () => row('trusted'))]) {
-    assert.deepEqual(summarizeHooks(value), { status: 'unavailable' });
+    assert.deepEqual(summarizeHooks(value), UNREADABLE);
   }
+  assert.match(UNREADABLE.next_step, /Run \/hooks in Codex/, 'a failed read must still say what to do');
 });
 
 function fakeCodex(answer) {
@@ -69,13 +70,13 @@ test('the check speaks only initialize and hooks/list, then closes the process i
 
 test('a silent, missing or malformed Codex reads as unavailable within the deadline', async () => {
   const silent = fakeCodex(() => null);
-  assert.deepEqual(await codexHookTrust('/x', { spawnImpl: () => silent.child, deadlineMs: 20 }), { status: 'unavailable' });
+  assert.deepEqual(await codexHookTrust('/x', { spawnImpl: () => silent.child, deadlineMs: 20 }), UNREADABLE);
   assert.equal(silent.child.killed, true);
   const garbage = fakeCodex(() => null);
   const pending = codexHookTrust('/x', { spawnImpl: () => garbage.child });
   garbage.child.stdout.write('not json\n');
-  assert.deepEqual(await pending, { status: 'unavailable' });
-  assert.deepEqual(await codexHookTrust('/x', { spawnImpl: () => { throw new Error('ENOENT'); } }), { status: 'unavailable' });
+  assert.deepEqual(await pending, UNREADABLE);
+  assert.deepEqual(await codexHookTrust('/x', { spawnImpl: () => { throw new Error('ENOENT'); } }), UNREADABLE);
 });
 
 const readyPorts = hookTrust => ({
@@ -102,4 +103,5 @@ test('setup reports the measured review state and the next step, and never write
   const broken = await runSetup({ host: 'codex', env, bundleRoot, home: '/nonexistent' },
     readyPorts(async () => { throw new Error('codex gone'); }));
   assert.equal(broken.hook_review, 'unavailable');
+  assert.equal(broken.next_step, UNREADABLE.next_step);
 });

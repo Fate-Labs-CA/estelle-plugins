@@ -9,10 +9,13 @@ const MAX_HOOK_ROWS = 64;
 export const REVIEW_STEP = 'Codex turned off Estelle\'s hooks because the plugin changed. Run /hooks in Codex and press t, '
   + 'or choose "Trust all and continue" the next time Codex starts. Until then Estelle captures nothing from this '
   + 'machine and does not check file writes for credentials.';
+// Right after an update is when this read is most likely to fail, so a failed read still says what to do.
+export const UNREADABLE = Object.freeze({ status: 'unavailable',
+  next_step: 'Estelle could not ask Codex whether its hooks will run. Run /hooks in Codex, and if an Estelle hook needs review, press t.' });
 
 /** Counts by Codex's own trust status. A hook that is not trusted does not run. */
 export function summarizeHooks(rows) {
-  if (!Array.isArray(rows) || rows.length > MAX_HOOK_ROWS) return { status: 'unavailable' };
+  if (!Array.isArray(rows) || rows.length > MAX_HOOK_ROWS) return UNREADABLE;
   const ours = rows.filter(row => row?.pluginId === PLUGIN_ID);
   if (!ours.length) return { status: 'not_installed' };
   const needs = ours.filter(row => row.enabled !== false && !['trusted', 'managed'].includes(row.trustStatus)).length;
@@ -38,13 +41,13 @@ export function codexHookTrust(cwd = process.cwd(), { spawnImpl = spawn, deadlin
     const send = message => child.stdin.write(`${JSON.stringify(message)}\n`);
     const receive = chunk => {
       bytes += chunk.length;
-      if (bytes > MAX_OUTPUT_BYTES) return finish({ status: 'unavailable' });
+      if (bytes > MAX_OUTPUT_BYTES) return finish(UNREADABLE);
       buffer += chunk.toString('utf8');
       for (let at = buffer.indexOf('\n'); at >= 0; at = buffer.indexOf('\n')) {
         const line = buffer.slice(0, at);
         buffer = buffer.slice(at + 1);
         let row;
-        try { row = JSON.parse(line); } catch { return finish({ status: 'unavailable' }); }
+        try { row = JSON.parse(line); } catch { return finish(UNREADABLE); }
         if (row.id === 1) {
           send({ method: 'initialized', params: {} });
           send({ id: 2, method: 'hooks/list', params: { cwds: [cwd] } });
@@ -52,14 +55,14 @@ export function codexHookTrust(cwd = process.cwd(), { spawnImpl = spawn, deadlin
       }
       return undefined;
     };
-    timer = setTimeout(() => finish({ status: 'unavailable' }), deadlineMs);
+    timer = setTimeout(() => finish(UNREADABLE), deadlineMs);
     try {
       child = spawnImpl('codex', ['app-server', '--stdio'], { cwd, env, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true });
-      child.on('error', () => finish({ status: 'unavailable' }));
-      child.on('exit', () => finish({ status: 'unavailable' }));
-      child.stdin.on('error', () => finish({ status: 'unavailable' }));
+      child.on('error', () => finish(UNREADABLE));
+      child.on('exit', () => finish(UNREADABLE));
+      child.stdin.on('error', () => finish(UNREADABLE));
       child.stdout.on('data', receive);
       send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'estelle-plugin-doctor', version: '1' } } });
-    } catch { finish({ status: 'unavailable' }); }
+    } catch { finish(UNREADABLE); }
   });
 }
