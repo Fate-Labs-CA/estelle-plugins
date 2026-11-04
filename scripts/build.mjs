@@ -73,6 +73,17 @@ emit('plugins/cursor/hooks/hooks.json', { version: 1, hooks: Object.fromEntries(
 emit('plugins/cursor/rules/estelle.mdc', '---\ndescription: Use Estelle tools for repository context and shared work\nalwaysApply: true\n---\n'
   + await readFile(join(root, 'instructions.md'), 'utf8'));
 
+// Codex has no plugin commands, so the two commands that move work reach it as skills with the same words.
+const CODEX_COMMAND_SKILLS = ['handoff', 'cloud'];
+for (const name of CODEX_COMMAND_SKILLS) {
+  const source = await readFile(join(root, 'commands', `${name}.md`), 'utf8');
+  const description = /^description: (.+)$/m.exec(source)[1];
+  const body = source.replace(/^---[\s\S]*?---\n/, '').replaceAll('$ARGUMENTS', '<the words the person typed after the skill name>')
+    .replace("In Claude Code the file is\n`${CLAUDE_PLUGIN_ROOT}/runtime/cli.mjs`; elsewhere it is", 'The file is')
+    .replace("In Claude Code the file is `${CLAUDE_PLUGIN_ROOT}/runtime/cli.mjs`; elsewhere it is", 'The file is');
+  emit(`plugins/codex/skills/estelle-${name}/SKILL.md`,
+    `---\nname: estelle-${name}\ndescription: "${description} Use only when the person asks for it by name."\n---\n\n${body}`);
+}
 const HOSTS = ['claude', 'codex', 'kimi', 'grok', 'cursor'];
 const ASSETS = ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE', 'NOTICE'];
 const assetsFor = host => [...ASSETS, ...(host === 'codex' ? [] : ['commands']), ...(host === 'claude' ? ['agents'] : [])];
@@ -107,7 +118,9 @@ for (const [file, content] of generated) {
 for (const host of HOSTS) for (const asset of assetsFor(host)) {
   const original = join(root, asset), target = join(root, 'plugins', host, asset);
   if (!check) { await cp(original, target, { recursive: true }); continue; }
-  if (JSON.stringify([...(await digest(original))].sort()) !== JSON.stringify([...(await digest(target))].sort())) {
+  const built = [...(await digest(target))].filter(([file]) => !(host === 'codex' && asset === 'skills'
+    && CODEX_COMMAND_SKILLS.some(name => file.startsWith(`estelle-${name}/`))));
+  if (JSON.stringify([...(await digest(original))].sort()) !== JSON.stringify(built.sort())) {
     throw new Error(`Bundle differs: ${host}/${asset}`);
   }
 }

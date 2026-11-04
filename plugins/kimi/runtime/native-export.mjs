@@ -10,6 +10,11 @@ import { redact, isSensitiveField } from './redact.mjs';
 const MAX_BYTES = 512 * 1024;
 const MAX_FILES = 40;
 const MAX_SCALAR_CHARS = 8192;
+// A long tool result is normal. A long string is scanned in overlapping windows and refused if a credential is found,
+// matching the server's native_session_restore, whose scanner is quadratic on an unbroken run.
+const SCAN_OVERLAP_CHARS = 1024;
+const PRIVATE_TYPES = new Set(['thinking', 'redacted_thinking', 'reasoning', 'agent_reasoning', 'agent_reasoning_raw_content']);
+const PRIVATE_KEYS = new Set(['thinking', 'reasoning', 'reasoning_content', 'encrypted_content']);
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 const RESERVED = new Set(['.git', '.env', '.claude', '.codex', '.kimi', '.kimi-code', '.estelle', '.estelle-plugins',
   'stress_accounts.json', 'estelle_accounts.json', 'estelle_experience.json']);
@@ -51,18 +56,36 @@ export function checkNativeRelativePath(path) {
 
 function nativeUsage(key, value) {
   const counter = name => /^(?:(?:input|output|total|reasoning|cached|cached_input|reasoning_output|cache_write_input|cache_creation_input|cache_read_input)_tokens|max_tokens|token_count)$/.test(name);
-  if (typeof value === 'number') return Number.isFinite(value) && value >= 0 && counter(key);
-  const envelope = /^(?:token_usage|total_token_usage|last_token_usage|input_tokens_details|output_tokens_details)$/.test(key);
+  // A count under a `token` name (Claude's ephemeral_5m_input_tokens, whatever comes next) is not a credential.
+  if (typeof value === 'number') return Number.isFinite(value) && value >= 0 && (counter(key) || /tokens?$/i.test(key));
+  const envelope = /(?:token_usage|tokens_details)$/.test(key);
   return envelope && value && typeof value === 'object' && !Array.isArray(value)
-    && Object.entries(value).every(([name, count]) => counter(name) && typeof count === 'number' && Number.isFinite(count) && count >= 0);
+    && Object.values(value).every(count => typeof count === 'number' && Number.isFinite(count) && count >= 0);
+}
+
+function withoutReasoning(value, depth = 0) {
+  if (depth > 16) throw new Error('native_artifact_shape');
+  if (Array.isArray(value)) return value.filter(item => !PRIVATE_TYPES.has(item?.type)).map(item => withoutReasoning(item, depth + 1));
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !PRIVATE_KEYS.has(key))
+    .map(([key, item]) => [key, withoutReasoning(item, depth + 1)]));
+}
+
+function scrubString(text) {
+  if (text.length <= MAX_SCALAR_CHARS) return redact(text);
+  for (let start = 0; start < text.length; start += MAX_SCALAR_CHARS - SCAN_OVERLAP_CHARS) {
+    const window = text.slice(start, start + MAX_SCALAR_CHARS);
+    if (redact(window) !== window) throw new Error('native_credential_field');
+  }
+  return text;
 }
 
 function scrubJsonl(text, harness, sessionId) {
-  const privateTypes = new Set(['thinking', 'redacted_thinking', 'reasoning', 'agent_reasoning', 'agent_reasoning_raw_content']);
-  const rows = text.split('\n').filter(Boolean).map(line => JSON.parse(line));
-  if (rows.some(row => privateTypes.has(row?.payload?.type))) throw new Error('native_private_reasoning_unsupported');
-  if (rows.length > 4000) throw new Error('native_artifact_bound');
-  if (!rows.length || rows.some(row => !row || typeof row !== 'object' || Array.isArray(row))) throw new Error('native_artifact_shape');
+  const parsed = text.split('\n').filter(Boolean).map(line => JSON.parse(line));
+  if (parsed.length > 4000) throw new Error('native_artifact_bound');
+  if (!parsed.length || parsed.some(row => !row || typeof row !== 'object' || Array.isArray(row))) throw new Error('native_artifact_shape');
+  // Private reasoning never leaves this machine, and neither host needs an old turn's to continue.
+  const rows = parsed.filter(row => !PRIVATE_TYPES.has(row?.payload?.type)).map(row => withoutReasoning(row));
   if (harness === 'claude-code' && rows.some(row => row.sessionId !== sessionId)) throw new Error('native_selection');
   if (harness === 'codex' && (rows[0].type !== 'session_meta' || rows[0].payload?.id !== sessionId)) throw new Error('native_selection');
   let fields = 0;
@@ -70,19 +93,11 @@ function scrubJsonl(text, harness, sessionId) {
   while (pending.length) {
     const { value, depth } = pending.pop();
     if (!value || typeof value !== 'object' || depth > 16) throw new Error('native_artifact_shape');
-    if (privateTypes.has(value.type)) throw new Error('native_private_reasoning_unsupported');
-    if (Array.isArray(value)) {
-      if (value.some(item => privateTypes.has(item?.type))) throw new Error('native_private_reasoning_unsupported');
-    }
     for (const key of Object.keys(value)) {
       if (++fields > 40_000) throw new Error('native_artifact_bound');
       const usage = nativeUsage(key, value[key]);
       if (!usage && (isSensitiveField(key) || /^authorization$/i.test(key))) throw new Error('native_credential_field');
-      if (['thinking', 'reasoning', 'reasoning_content', 'encrypted_content'].includes(key)) throw new Error('native_private_reasoning_unsupported');
-      if (typeof value[key] === 'string') {
-        if (Array.from(value[key]).length > MAX_SCALAR_CHARS) throw new Error('native_scalar_bound');
-        value[key] = redact(value[key]);
-      }
+      if (typeof value[key] === 'string') value[key] = scrubString(value[key]);
       else if (value[key] && typeof value[key] === 'object') pending.push({ value: value[key], depth: depth + 1 });
     }
   }

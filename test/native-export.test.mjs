@@ -100,12 +100,14 @@ test('opaque structured credentials are refused, including password, token and c
   }
 });
 
-test('encrypted native thinking is refused before any upload', async t => {
+test('private reasoning is removed before any upload and the visible message stays', async t => {
   const f = await fixture(t);
   await writeFile(f.transcriptPath, JSON.stringify({ type: 'assistant', sessionId: sid, message: {
     role: 'assistant', usage: { input_tokens: 3 }, content: [{ type: 'redacted_thinking', data: 'encrypted-private-marker' },
       { type: 'text', text: 'visible-message' }] } }) + '\n');
-  await assert.rejects(prepareContinuation(f), /private_reasoning_unsupported/);
+  const sent = JSON.stringify(await prepareContinuation(f));
+  assert.doesNotMatch(sent, /encrypted-private-marker/);
+  assert.match(sent, /visible-message/);
 });
 
 test('POSIX space-only staged and untracked names cannot bypass unsupported-state refusal', {
@@ -158,7 +160,7 @@ test('Codex selected rollout preserves visible conversation and typed usage meta
   await assert.rejects(prepareContinuation(options), /native_selection/);
   rows.push({ type: 'response_item', payload: { type: 'reasoning', encrypted_content: 'opaque' } });
   await writeFile(path, rows.map(row => JSON.stringify(row)).join('\n') + '\n');
-  await assert.rejects(prepareContinuation(options), /private_reasoning/);
+  assert.doesNotMatch(JSON.stringify(await prepareContinuation(options)), /opaque/);
 });
 
 test('executable-to-nonexecutable source change is explicitly refused', async t => {
