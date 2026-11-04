@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { MOVING, messageOf, noteCurrentSession, parseWords, runMove } from '../runtime/move.mjs';
 
 const SID = '11111111-2222-4333-8444-555555555555';
@@ -20,7 +21,8 @@ async function world(t, { host = 'claude-code', transcript = true } = {}) {
   const cwd = join(base, 'work');
   await mkdir(cwd);
   run(cwd, 'init', '-q', '-b', 'main');
-  run(cwd, 'remote', 'add', 'origin', origin);
+  // A URL, as a real origin is. A Windows path has backslashes, and `repository` rightly finds no owner/name in it.
+  run(cwd, 'remote', 'add', 'origin', pathToFileURL(origin).href);
   await writeFile(join(cwd, 'a.txt'), 'one\n');
   run(cwd, 'add', '.');
   run(cwd, 'commit', '-q', '-m', 'first');
