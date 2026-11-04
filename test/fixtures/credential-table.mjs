@@ -39,6 +39,8 @@ const AWS = join('AK', 'IA') + synthetic(2, 16, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ23456
 /** Each row must be refused. name, then the tool call. */
 export const TRUE_ROWS = [
   ['stripe live key beside any name', write(`stripe = "${STRIPE}"`)],
+  ['google key', write(`k = "${join('AI', 'za')}${R(70, 35)}"`)],
+  ['sendgrid key', write(`k = "${join('S', 'G.')}${R(71, 22)}.${R(72, 43)}"`)],
   ['stripe test key', write(`k = ${join('sk', '_test_')}${R(3, 28)}`)],
   ['stripe restricted key', write(`k = "${join('rk', '_live_')}${R(4, 28)}"`)],
   ['estelle key', write(`k = "${join('estelle', '_live_')}${R(5, 28)}"`)],

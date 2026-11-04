@@ -21,9 +21,10 @@ export const MOVE_LIMITS = Object.freeze({
 const PRIVATE_PATH = /(?:^|\/)(?:\.env(?:\.[^/]*)?|\.npmrc|\.netrc|\.pypirc|\.git-credentials|\.dockercfg|\.docker\/config\.json|\.aws\/credentials|\.ssh\/[^/]+|id_(?:rsa|dsa|ecdsa|ed25519)|master\.key|credentials\.yml\.enc|secrets?\.(?:ya?ml|json|toml|env)|credentials\.json|service[-_]account[^/]*\.json|[^/]+\.(?:pem|key|p12|pfx|jks|keystore|ppk|kdbx))$/i;
 // A lockfile is full of opaque digests under prefixes, and publishing it is normal.
 const LOCKFILE = /(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|[^/]+\.lock)$/;
-// credential.mjs reads labels and known vendors, and a vendor it has never heard of has neither. So a short lowercase
-// prefix on an opaque value counts by itself. A value with no prefix is not flagged: that is every hash in a repository.
-const prefixedOpaque = text => text.split(/[\s"'`,;:=()[\]{}<>]+/).some(word => /^[a-z]{2,10}[_-]/.test(word) && isOpaque(word));
+// credential.mjs reads labels and known vendors, and a vendor it has never heard of has neither. So a short prefix on an
+// opaque value counts by itself, in either case. A value with no prefix is not flagged: that is every hash in a repository.
+// The leading `+` or `-` is a diff's, because an unpushed commit is scanned as its diff.
+const prefixedOpaque = text => text.split(/[\s"'`,;:=()[\]{}<>]+/).some(word => /^[+-]?[A-Za-z]{2,10}[_-]/.test(word) && isOpaque(word));
 export const secretShaped = text => textHasCredential(text) || prefixedOpaque(text);
 const HARNESSES = { codex: 'codex', claude: 'claude-code', 'claude-code': 'claude-code', cursor: 'cursor', kimi: 'kimi-code',
   'kimi-code': 'kimi-code', grok: 'grok' };
@@ -114,12 +115,16 @@ async function unsafeToPush(root, paths, scan) {
 // The commits this push would carry that origin has not seen, because a value deleted in a later commit is still history.
 function unpushedHistory(root, scan) {
   let diff;
+  let names;
   try {
+    // By name, separately: a binary key has no `+++` line in a diff, so the diff alone never sees it.
+    names = execFileSync('git', ['-C', root, 'log', '--name-only', '--no-renames', '-z', '--format=', 'HEAD', '--not', '--remotes'],
+      { encoding: 'utf8', timeout: 20_000, maxBuffer: MOVE_LIMITS.unpushedDiffBytes, stdio: ['ignore', 'pipe', 'ignore'] })
+      .split('\0').map(name => name.trim()).filter(Boolean);
     diff = execFileSync('git', ['-C', root, 'log', '-p', '--no-color', '--no-ext-diff', 'HEAD', '--not', '--remotes', '--', '.',
       ':(exclude,glob)**/*.lock', ':(exclude,glob)**/package-lock.json', ':(exclude,glob)**/pnpm-lock.yaml'],
     { encoding: 'latin1', timeout: 20_000, maxBuffer: MOVE_LIMITS.unpushedDiffBytes, stdio: ['ignore', 'pipe', 'ignore'] });
   } catch { return ['your unpushed commits: too large to scan, so they could not be cleared']; }
-  const names = [...diff.matchAll(/^\+\+\+ b\/(.+)$/gm)].map(match => match[1]);
   const named = names.filter(name => PRIVATE_PATH.test(name)).map(name => `${name}: in an unpushed commit, and holds credentials by its nature`);
   return [...new Set(named), ...(scan(diff) ? ['your unpushed commits: something shaped like a credential is in their history'] : [])];
 }
@@ -259,7 +264,7 @@ export async function runMove({ mode, words, env = process.env, cwd = process.cw
     if (open === true) say(`Warning: ${repo.name} is public, so the snapshot branch below is readable by anyone.`);
     if (open === null) say(`Warning: could not tell whether ${repo.name} is public. The snapshot branch below may be readable by anyone.`);
   };
-  if (!request) return viaMcp({ mode, ask, repo, host, sessionId, scan, warn });
+  if (!request) return viaMcp({ mode, ask, repo, host, sessionId, nativeSession, scan, warn, say });
   const held = await readIntent(path, now());
   if (held) {
     // An earlier run never learned how this ended. Ask first; a record means it began, and nothing launches over it.
@@ -274,7 +279,7 @@ export async function runMove({ mode, words, env = process.env, cwd = process.cw
   const saved = await saveCheckpoint(current, repo, stateDir, request);
   const carried = mode === 'handoff' ? await conversation(host, nativeSession, current?.transcriptPath, home, env) : {};
   const body = { mode, repo: repo.name, git: state, from_host: host || undefined, confirm: true, origin: 'plugin', move_key: key,
-    ...(sessionId ? { session_id: sessionId } : {}),
+    ...(sessionId ? { session_id: sessionId } : {}), ...contextOf(mode, nativeSession, sessionId),
     ...(ask.harness ? { harness: ask.harness } : {}), ...(ask.prompt ? { prompt: ask.prompt } : {}),
     ...(ask.note ? { note: ask.note } : {}), ...(carried.native ? { native: carried.native } : {}),
     ...(carried.unavailable ? { native_unavailable: carried.unavailable } : {}) };
@@ -288,16 +293,26 @@ export async function runMove({ mode, words, env = process.env, cwd = process.cw
   return finish(answer, answer, { path, request, sleep, snapshot, checkpoint: saved });
 }
 
+// A host's hooks checkpoint under its own id, and a move names the timeline id, so the server is told both.
+const contextOf = (mode, nativeSession, sessionId) => (mode === 'handoff' && nativeSession && nativeSession !== sessionId
+  ? { context_session_id: nativeSession } : {});
+
+export const NO_CONVERSATION_LINE = 'This sign-in cannot carry this conversation to the cloud. The new session gets your code and your '
+  + 'note, and anything Estelle already saved for this session. Set ESTELLE_API_KEY and run this again to carry the conversation.';
+
 // 🔴 THE USUAL PATH: Claude Code signs in to Estelle with OAuth, and that sign-in belongs to the host, so this process
 // holds no key and cannot reach the server. It does the part only it can (the git state and the snapshot) and hands the
-// model one MCP call. A tool call cannot carry a conversation file, so this path restarts from context and the server says
-// so. The key is derived, not stored: this process never learns the answer, and the same tree and words are the same intent.
-async function viaMcp({ mode, ask, repo, host, sessionId, scan, warn }) {
+// model one MCP call. A tool call cannot carry a conversation file, and this process cannot save a checkpoint either, so
+// it says so here, before a machine starts, and the server's last message says what actually travelled.
+// The key is derived, not stored: this process never learns the answer, and the same tree and words are the same intent.
+async function viaMcp({ mode, ask, repo, host, sessionId, nativeSession, scan, warn, say }) {
   const { state, snapshot } = await gitState(repo.root, sessionId || repo.name, scan, warn);
+  if (mode === 'handoff') say(NO_CONVERSATION_LINE);
   const intent = `plugin-${hash([repo.name, sessionId, mode, ask.harness, ask.note ?? ask.prompt, state.commit].join('\x1f')).slice(0, 40)}`;
   const args = { mode, repo: repo.name, move_key: intent, confirm: true, commit: state.commit,
     ...(state.branch ? { branch: state.branch } : {}), ...(state.snapshot_branch ? { snapshot_branch: state.snapshot_branch } : {}),
-    ...(host ? { from_host: host } : {}), ...(sessionId ? { session_id: sessionId } : {}), ...(ask.harness ? { harness: ask.harness } : {}),
+    ...(host ? { from_host: host } : {}), ...(sessionId ? { session_id: sessionId } : {}), ...contextOf(mode, nativeSession, sessionId),
+    ...(ask.harness ? { harness: ask.harness } : {}),
     ...(ask.prompt ? { prompt: ask.prompt } : {}), ...(ask.note ? { note: ask.note } : {}) };
   return { answer: { moved: undefined }, snapshot, mcp: args, final: `ESTELLE_MCP_CALL\n${JSON.stringify(args)}` };
 }

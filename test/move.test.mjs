@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MOVING, noteCurrentSession, parseWords, runMove } from '../runtime/move.mjs';
+import { MOVING, NO_CONVERSATION_LINE, noteCurrentSession, parseWords, runMove } from '../runtime/move.mjs';
 
 const SID = '11111111-2222-4333-8444-555555555555';
 const run = (cwd, ...args) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env,
@@ -67,6 +67,64 @@ test('with no API key the plugin pushes what it must and hands the model one exa
   assert.doesNotMatch(final, /could not confirm/);
   assert.equal(w.calls.length, 0, 'nothing reached for a server this process cannot authenticate to');
 });
+
+test('with no key the person is told what will not travel, before any machine starts', async t => {
+  const w = await world(t);
+  const said = [];
+  const { mcp, final } = await w.move('handoff', '', { request: null, say: line => said.push(line) });
+  assert.ok(said.includes(NO_CONVERSATION_LINE), said.join('|'));
+  assert.equal(mcp.context_session_id, SID, 'the server can find a checkpoint saved under the host id');
+  assert.ok(final.startsWith('ESTELLE_MCP_CALL'), 'the line comes before the call, so the model still finds the call');
+  const cloud = [];
+  await w.move('cloud', 'fix it', { request: null, say: line => cloud.push(line) });
+  assert.ok(!cloud.includes(NO_CONVERSATION_LINE), 'a new session from a prompt was never going to carry one');
+});
+
+test('with a key the server is told the id this session checkpoints under', async t => {
+  const w = await world(t);
+  await w.move('handoff');
+  assert.equal(w.posted().context_session_id, SID);
+  assert.ok(w.calls.some(c => c.path === '/checkpoint' && c.body.session_id === SID), 'the id it names is the id it saved under');
+});
+
+test('a binary file named as a credential in an unpushed commit is refused by name, which its diff cannot show', async t => {
+  const w = await world(t);
+  await mkdir(join(w.cwd, 'certs'));
+  await writeFile(join(w.cwd, 'certs/signing.p12'), Buffer.from([0, 1, 2, 3, 0, 255, 254, 0]));
+  run(w.cwd, 'add', '.');
+  run(w.cwd, 'commit', '-q', '-m', 'oops');
+  assert.match(run(w.cwd, 'log', '-p', '-1', '--format='), /Binary files/, 'the premise: the diff has no +++ line for it');
+  await rm(join(w.cwd, 'certs'), { recursive: true });
+  run(w.cwd, 'add', '-A');
+  run(w.cwd, 'commit', '-q', '-m', 'removed it, still in history');
+  await assert.rejects(w.move('handoff'), error => /certs\/signing\.p12/.test(error.reason));
+  assert.equal(run(w.origin, 'for-each-ref', 'refs/heads/estelle'), '');
+  assert.equal(w.posted(), undefined);
+});
+
+// Built at runtime, because the point is real-shaped values and a literal one in a repository is what this refuses.
+const OPAQUE = 'a1B2c3D4'.repeat(4);
+const SHAPED = {
+  'a Google key': ['AI', 'za', 'aB3_'.repeat(8), 'xyz'].join(''),
+  'a SendGrid key': ['SG', '.', 'a1B2'.repeat(6), '.', 'c3D4'.repeat(10)].join(''),
+  'an unlabeled vendor prefix': ['crsr', '_', OPAQUE].join(''),
+  'an uppercase vendor prefix': ['CRSR', '_', OPAQUE].join(''),
+};
+for (const [name, value] of Object.entries(SHAPED)) {
+  test(`${name} in a changed file never reaches origin`, async t => {
+    const w = await world(t);
+    await writeFile(join(w.cwd, 'a.txt'), `${value}\n`);
+    await assert.rejects(w.move('handoff'), error => /a\.txt/.test(error.reason));
+    assert.equal(run(w.origin, 'for-each-ref', 'refs/heads/estelle'), '');
+  });
+  test(`${name} in an unpushed commit never reaches origin`, async t => {
+    const w = await world(t);
+    await writeFile(join(w.cwd, 'a.txt'), `${value}\n`);
+    run(w.cwd, 'commit', '-q', '-am', 'oops');
+    await assert.rejects(w.move('handoff', '', { request: null }), error => /in their history/.test(error.reason));
+    assert.equal(run(w.origin, 'for-each-ref', 'refs/heads/estelle'), '');
+  });
+}
 
 test('the MCP call is a body the tool schema accepts: flat fields only', async t => {
   const w = await world(t);

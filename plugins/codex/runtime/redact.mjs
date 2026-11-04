@@ -16,6 +16,8 @@ export const VENDOR_PATTERNS = Object.freeze([
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[redacted private key]'],
   [/(postgres(?:ql)?:\/\/[^:\s/]+:)[^@\s]+@/g, '$1[redacted]@'],
   [/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, '[redacted aws key]'],
+  [/\bAIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])/g, '[redacted google key]'],
+  [/\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/g, '[redacted sendgrid key]'],
 ]);
 const PATTERNS = [
   ...VENDOR_PATTERNS,
