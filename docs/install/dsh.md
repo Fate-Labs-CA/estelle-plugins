@@ -28,13 +28,14 @@ same instructions as other hosts, but moving a dsh session to Estelle Cloud has 
 
 ## What this package changes in dsh
 
-This package turns off all three of dsh's telemetry rows, on every route:
+This package turns off all four of dsh's telemetry rows, on every route:
 
 | Row | What it would send |
 |---|---|
 | `session-log-deepseek` | The session log in the body of each request on the DeepSeek route, including tool results and paths |
 | `session-telemetry-otel` | The session, to DeepSeek's collector, when you submit feedback |
 | `plugin-package-inventory-deepseek` | The names and versions of your active plugins, on each request on the DeepSeek route |
+| `desktop-product-telemetry` | Product usage events, in the web profile only |
 
 To check what dsh will actually mount, including any later layer of yours:
 

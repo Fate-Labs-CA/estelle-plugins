@@ -195,6 +195,13 @@ test('the telemetry check goes red when any telemetry row is on, absent, or the 
   for (const unreadable of ['', '   ', null, undefined, 7]) assert.deepEqual(telemetryViolations(unreadable), [...TELEMETRY_ROWS]);
 });
 
+test('the web-only telemetry row may be absent, and must be off when present', () => {
+  const row = "- id: desktop-product-telemetry\n  name: '@deepseek-ai/dsh-host-product-telemetry-otel'\n";
+  assert.equal(telemetryCheck(OFF_DUMP), TELEMETRY_OFF);
+  assert.deepEqual(telemetryViolations(OFF_DUMP + row), ['desktop-product-telemetry']);
+  assert.equal(telemetryCheck(`${OFF_DUMP}${row}  disabled: true\n`), TELEMETRY_OFF);
+});
+
 test('the telemetry command fails closed for a Silo reading the effective config', () => {
   const cli = join(root, 'runtime', 'cli.mjs');
   const off = spawnSync(process.execPath, [cli, 'dsh-telemetry'], { input: OFF_DUMP, encoding: 'utf8' });

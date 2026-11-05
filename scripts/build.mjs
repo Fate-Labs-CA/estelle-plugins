@@ -112,6 +112,10 @@ emit('plugins/dsh/cordis.patch.yml', `# Estelle for DeepSeek Harness: memory and
 - id: plugin-package-inventory-deepseek
   disabled: true
 
+# Product usage events. Only the web profile mounts this row; elsewhere dsh reports this target as unmatched and moves on.
+- id: desktop-product-telemetry
+  disabled: true
+
 - insert:
     - id: estelle
       name: dsh-plugin-estelle
