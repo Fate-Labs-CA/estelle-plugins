@@ -85,6 +85,16 @@ test('a failed auth context with nothing to warn about is a hook failure, not a 
  assert.equal(f.calls.length,0);
 });
 
+test('a stopped capture sign-in tells the person at session start, with the command, and calls nothing',async t=>{
+ const f=await fixture(t);
+ const output=await handleHook({host:'claude-code',payload:{...f.payload,hook_event_name:'SessionStart'},stateDir:f.stateDir,
+  request:f.request,requestContext:async()=>{throw Error('capture_pending');}});
+ assert.match(output.systemMessage,/not recording this session.*capture_pending.*setup claude-code --capture-login/);
+ assert.match(output.hookSpecificOutput.additionalContext,/estelle_resume[\s\S]*--capture-login/);
+ assert.equal(f.calls.length,0);
+ assert.equal(JSON.parse(await readFile(join(f.stateDir,'status','claude-code-capture.json'))).code,'capture_pending');
+});
+
 test('the write warning still fires on a capture-only session and nothing but the stream route is called',async t=>{
  const f=await fixture(t);
  const output=await handleHook({host:'claude-code',payload:unsafeWrite(f),stateDir:f.stateDir,request:f.request,captureOnly:true});

@@ -6,9 +6,9 @@ import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { CAPTURE_AUTH, CaptureCredentialOwner, captureRecord } from './auth.mjs';
 import { VERSION } from './version.mjs';
 
-const LOGIN_MS=600000, REQUEST_MS=8000, CALLBACK_BYTES=8192, CALLBACK_REQUESTS=8;
+const LOGIN_MS=CAPTURE_AUTH.loginMs, REQUEST_MS=8000, CALLBACK_BYTES=8192, CALLBACK_REQUESTS=8;
 const MAX_EVENTS=2000000;
-const hosts=new Set(['codex','claude','claude-code','cursor','kimi','grok']);
+const hosts=new Set(['codex','claude','claude-code','cursor','kimi','grok','dsh']);
 const equal=(a,b)=>typeof a==='string'&&typeof b==='string'&&Buffer.byteLength(a)===Buffer.byteLength(b)
  &&timingSafeEqual(Buffer.from(a),Buffer.from(b));
 const remaining=deadline=>{const value=Math.min(REQUEST_MS,deadline-Date.now());if(value<=0)throw Error('capture_deadline');return value;};
@@ -18,7 +18,7 @@ function transport(path,body,headers,deadline,{request=httpsRequest,signal}={}) 
  const cap=path==='/session/events'?MAX_EVENTS:CAPTURE_AUTH.bytes;
  if(Buffer.byteLength(body)>cap)throw Error('capture_bound');
  return new Promise((resolve,reject)=>{
-  let done=false;const finish=(error,value)=>{if(done)return;done=true;error?reject(error):resolve(value);};
+  let done=false,connected=false;const finish=(error,value)=>{if(done)return;done=true;error?reject(error):resolve(value);};
   const timeout=AbortSignal.timeout(remaining(deadline));
   const req=request(CAPTURE_AUTH.issuer+path,{method:'POST',agent:false,
    headers:{...headers,'Content-Length':Buffer.byteLength(body)},
@@ -37,7 +37,11 @@ function transport(path,body,headers,deadline,{request=httpsRequest,signal}={}) 
     }catch{finish(Error('capture_response_json'));}
    });
   });
-  req.on('error',()=>finish(Error('capture_transport_unknown')));req.end(body);
+  // agent:false means a new socket each time, and no request byte leaves before the TLS handshake finishes.
+  // So a failure before secureConnect is proof the server never saw this body: offline, DNS, a captive portal.
+  req.on('socket',socket=>socket.once('secureConnect',()=>{connected=true;}));
+  req.on('error',()=>finish(connected?Error('capture_transport_unknown'):Object.assign(Error('capture_not_sent'),{notSent:true})));
+  req.end(body);
  });
 }
 
@@ -52,19 +56,32 @@ function grant(value,partition,now) {
 const form=(path,value,deadline,ports)=>transport(path,new URLSearchParams(value).toString(),
  {'Content-Type':'application/x-www-form-urlencoded'},deadline,ports);
 
-async function withAccess(owner,partition,deadline,ports,send) {
+function usableRecord(record,partition) {
+ if(!record||record.partition!==partition)throw Error('capture_binding_changed');
+ if(record.state!=='active')throw Error('capture_pending');
+ return record.expires_at>Math.floor(Date.now()/1000)+60;
+}
+
+/** The lock guards one spend of a refresh token and nothing else: hosts fire hooks concurrently, and an upload
+ *  held under it would refuse them all for its whole duration. A definite "never sent" puts the grant back; a
+ *  lost acknowledgement does not, because resending a consumed refresh token revokes the family. */
+async function freshAccess(owner,partition,deadline,ports) {
+ const seen=await owner.read();
+ if(usableRecord(seen,partition))return seen.access_token;
  return owner.locked(async state=>{
-  let record=state.record;
-  if(!record||record.partition!==partition)throw Error('capture_binding_changed');
-  if(record.state!=='active')throw Error('capture_pending');
-  const now=Math.floor(Date.now()/1000);
-  if(record.expires_at<=now+60){
-   await state.save({...record,state:'refresh_pending'});
-   const value=await form('/oauth/token',{grant_type:'refresh_token',client_id:CAPTURE_AUTH.client,
+  const record=state.record;
+  if(usableRecord(record,partition))return record.access_token; // another hook refreshed while this one read
+  await state.save({...record,state:'refresh_pending'});
+  let value;
+  try{
+   value=await form('/oauth/token',{grant_type:'refresh_token',client_id:CAPTURE_AUTH.client,
     resource:CAPTURE_AUTH.resource,refresh_token:record.refresh_token},deadline,ports);
-   record=grant(value,partition,Math.floor(Date.now()/1000));await state.save(record);
+  }catch(error){
+   if(error.notSent||error.message==='capture_deadline')await state.save(record);
+   throw error;
   }
-  return send(record.access_token);
+  const next=grant(value,partition,Math.floor(Date.now()/1000));await state.save(next);
+  return next.access_token;
  });
 }
 
@@ -81,10 +98,11 @@ export async function captureHookContext({env=process.env,home,deadline=Date.now
  return {captureOnly:true,partition:record.partition,request:async(path,body)=>{
   if(path!=='/session/events')throw Error('capture_route');
   const encoded=JSON.stringify(body);if(Buffer.byteLength(encoded)>MAX_EVENTS)throw Error('capture_bound');
-  return withAccess(owner,record.partition,deadline,{request},access=>transport(path,encoded,
+  const access=await freshAccess(owner,record.partition,deadline,{request});
+  return transport(path,encoded,
    {Authorization:'Bearer '+access,'Content-Type':'application/json','X-Estelle-Capture-Only':'1',
     'X-Estelle-Client-Protocol':'1','X-Estelle-Hook-Contract':'1',
-    'X-Estelle-Client-Version':`estelle-plugins/${VERSION}`},deadline,{request}));
+    'X-Estelle-Client-Version':`estelle-plugins/${VERSION}`},deadline,{request});
  }};
 }
 
@@ -157,14 +175,16 @@ export async function runCaptureSetup({host,logout=false,home,deadline=Date.now(
   return await owner.locked(async state=>{
    if(logout){
     if(!state.record)return publicState('capture_not_configured');
-    if(state.record.state!=='active')return publicState('pending_capture_auth');
     const original=state.record;await state.save({...original,state:'logout_pending'});
     const result=await form('/oauth/revoke',{client_id:CAPTURE_AUTH.client,resource:CAPTURE_AUTH.resource,
      token_type_hint:'refresh_token',token:original.refresh_token},deadline,ports);
-    if(result?.revoked!==true)throw Error('capture_revoke_unknown');
+    // A person asking again after a lost reply is the retry. revoked:false is an answer too: the server no longer
+    // honours this token, so nothing on this machine can use it.
+    if(typeof result?.revoked!=='boolean')throw Error('capture_revoke_unknown');
     await state.remove();return publicState('capture_signed_out');
    }
-   if(state.record)return publicState(state.record.state==='active'?'capture_already_configured':'pending_capture_auth');
+   // An interrupted refresh or logout cannot be resumed, so explicit new consent replaces it. Nothing else may.
+   if(state.record?.state==='active')return publicState('capture_already_configured');
    const verifier=randomBytes(48).toString('base64url'),nonce=randomBytes(32).toString('base64url');
    const challenge=createHash('sha256').update(verifier).digest('base64url');
    const {code,redirect}=await receiveCaptureCode({state:nonce,challenge,deadline,open:ports.open,

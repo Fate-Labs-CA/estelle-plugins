@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { mkdir, opendir, unlink, rename } from 'node:fs/promises';
 import { normalize as claude, formatContext as claudeContext } from '../adapters/claude.mjs';
 import { normalize as codex, formatContext as codexContext } from '../adapters/codex.mjs';
@@ -152,12 +153,24 @@ export async function handleHook({ host, payload, stateDir, request, captureOnly
     return port.defaultOutput?.(payload.hook_event_name) ?? null;
   }
   if (authFailure) {
-    if (!found) throw authFailure;
+    if (!found && n.event !== 'SessionStart') throw authFailure;
     await recordStatus(stateDir, { host, event: n.event, mode: 'capture', status: 'failed', code: errorCode(authFailure) }).catch(() => {});
-    return withWarning(host, port.defaultOutput?.(payload.hook_event_name) ?? null, found.warning);
+    if (found) return withWarning(host, port.defaultOutput?.(payload.hook_event_name) ?? null, found.warning);
+    return captureStopped(host, port, payload, errorCode(authFailure));
   }
   const output = await answerEvent({ host, port, n, payload, stateDir, request, captureOnly });
   return found ? withWarning(host, output, found.warning) : output;
+}
+
+/** A broken capture sign-in otherwise looks exactly like a session being recorded. Say so once per session, with the fix. */
+function captureStopped(host, port, payload, code) {
+  const cli = fileURLToPath(new URL('./cli.mjs', import.meta.url));
+  const notice = `Estelle is not recording this session: its capture sign-in stopped working (${code}). `
+    + `To sign in again, run: node "${cli}" setup ${host} --capture-login`;
+  console.error(notice);
+  const output = port.formatContext(`${START_TEXT}\n\n${notice}`, payload.hook_event_name)
+    ?? port.defaultOutput?.(payload.hook_event_name) ?? null;
+  return host === 'claude-code' || host === 'codex' ? { ...output, systemMessage: notice } : output;
 }
 
 /** The warning added to whatever this event already answers. ⛔ It adds words and never a decision: no host is told to stop.

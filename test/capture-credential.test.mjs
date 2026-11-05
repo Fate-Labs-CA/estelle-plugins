@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { CaptureCredentialOwner, captureRecord } from '../runtime/auth.mjs';
+import { CAPTURE_AUTH, CaptureCredentialOwner, captureRecord } from '../runtime/auth.mjs';
 
 async function unsupportedWindows(t) {
  if(process.platform!=='win32')return false;
@@ -56,6 +56,19 @@ test('pending refresh is persisted before a callback and another claimant cannot
   assert.equal((await owner.read()).state,'refresh_pending');
  });
  assert.equal((await owner.read()).state,'refresh_pending');
+});
+
+test('a lock left by a killed process clears by age, and a live one never does',async t=>{
+ if(await unsupportedWindows(t))return;
+ const {owner,home}=await fixture(t);
+ await owner.locked(async state=>{await state.save(record());},{create:true});
+ const path=join(home,'.estelle-plugins/capture-auth/credential.lock');
+ await fs.writeFile(path,'',{mode:0o600});
+ const edge=new Date(Date.now()-CAPTURE_AUTH.loginMs);await fs.utimes(path,edge,edge);
+ await assert.rejects(owner.locked(async()=>assert.fail('took a live lock')),/capture_busy/);
+ const dead=new Date(Date.now()-CAPTURE_AUTH.loginMs-61000);await fs.utimes(path,dead,dead);
+ assert.equal(await owner.locked(async state=>state.record.state),'active');
+ await assert.rejects(fs.stat(path),{code:'ENOENT'});
 });
 
 test('symlink, public mode, changed file and short read all refuse without overwriting bytes',async t=>{

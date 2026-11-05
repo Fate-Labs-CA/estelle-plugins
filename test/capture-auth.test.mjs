@@ -28,7 +28,12 @@ function remote(replies) {
    calls.push({url,options,body});const value=replies.shift();
    queueMicrotask(()=>{
     if(value===undefined){req.emit('error',Error('unexpected_fixture_request'));return;}
-    if(value instanceof Error){req.emit('error',value);return;}
+    if(value instanceof Error){
+     // A real request that fails after the handshake: its body may have reached the server. Only a fixture
+     // marked neverConnected models a failure with no connection, which is the one proof of "not sent".
+     if(!value.neverConnected){const socket=new EventEmitter();req.emit('socket',socket);socket.emit('secureConnect');}
+     req.emit('error',value);return;
+    }
     const res=new EventEmitter();res.statusCode=value?.status||200;res.destroy=()=>{res.destroyed=true;};
     callback(res);res.emit('data',Buffer.from(value?.raw??JSON.stringify(value?.body??value)));
     if(!res.destroyed)res.emit('end');
@@ -136,8 +141,67 @@ test('late context cannot replay an old account partition; logout is explicit an
  const lost=remote([Error('synthetic lost revoke acknowledgement')]);
  assert.equal((await runCaptureSetup({host:'codex',home,logout:true},lost)).status,'pending_capture_auth');
  assert.equal((await owner.read()).state,'logout_pending');
- assert.equal((await runCaptureSetup({host:'codex',home,logout:true},lost)).status,'pending_capture_auth');
  assert.equal(lost.calls.length,1);
+ const retried=remote([{revoked:false}]);
+ assert.equal((await runCaptureSetup({host:'codex',home,logout:true},retried)).status,'capture_signed_out');
+ assert.equal(await owner.read(),null);assert.equal(retried.calls.length,1);
+});
+
+test('a refresh that never left the machine keeps the sign-in; the next hook refreshes and uploads',async t=>{
+ if(await unsupportedWindows())return;
+ const {owner}=await seeded(t,0),offline=remote([Object.assign(Error('offline'),{neverConnected:true})]);
+ const first=await captureHookContext({env:{},owner,...offline});
+ await assert.rejects(first.request('/session/events',{}),/capture_not_sent/);
+ assert.equal((await owner.read()).state,'active');assert.equal(offline.calls.length,1);
+ const back=remote([response(),{receipts:[]}]);
+ const second=await captureHookContext({env:{},owner,...back});await second.request('/session/events',{});
+ assert.deepEqual(back.calls.map(x=>new URL(x.url).pathname),['/oauth/token','/session/events']);
+ assert.equal((await owner.read()).state,'active');
+});
+
+test('a real refused connection counts as never sent, through the real https client',async t=>{
+ if(await unsupportedWindows())return;
+ const {owner}=await seeded(t,0),{request:real}=await import('node:https');
+ const closed=(url,options,cb)=>real('https://127.0.0.1:1'+new URL(url).pathname,options,cb);
+ const context=await captureHookContext({env:{},owner,request:closed});
+ await assert.rejects(context.request('/session/events',{}),/capture_not_sent/);
+ assert.equal((await owner.read()).state,'active');
+});
+
+test('a sign-in stuck by a lost reply is replaced only by explicit new consent, on a new partition',async t=>{
+ if(await unsupportedWindows())return;
+ const {home,owner}=await seeded(t,0),before=(await owner.read()).partition,lost=remote([Error('lost acknowledgement')]);
+ const old=await captureHookContext({env:{},owner,...lost});
+ await assert.rejects(old.request('/session/events',{}),/capture_transport_unknown/);
+ assert.equal((await owner.read()).state,'refresh_pending');
+ const denied=remote([]);
+ assert.equal((await runCaptureSetup({host:'codex',home},{...denied,open:async()=>{throw Error('capture_browser');}})).status,'pending_capture_auth');
+ assert.equal((await owner.read()).state,'refresh_pending');assert.equal(denied.calls.length,0);
+ const again=remote([response()]);
+ assert.equal((await runCaptureSetup({host:'codex',home},{...again,open:callback})).status,'capture_configured');
+ const record=await owner.read();assert.equal(record.state,'active');assert.notEqual(record.partition,before);
+});
+
+test('uploads do not take the lock, so one in flight refuses no other hook',async t=>{
+ if(await unsupportedWindows())return;
+ const {owner}=await seeded(t);let arrived,release;
+ const began=new Promise(resolve=>arrived=resolve),go=new Promise(resolve=>release=resolve);
+ const port=remote([{receipts:[]},{receipts:[]}]),request=port.request;let held=false;
+ port.request=(url,options,cb)=>{
+  const req=request(url,options,cb),end=req.end;
+  req.end=body=>{if(!held){held=true;arrived();go.then(()=>end(body));}else end(body);};return req;
+ };
+ const context=await captureHookContext({env:{},owner,...port});
+ const first=context.request('/session/events',{});await began;
+ await context.request('/session/events',{});release();await first;
+ assert.equal(port.calls.length,2);
+});
+
+test('dsh signs in for capture like every other host',async t=>{
+ if(await unsupportedWindows())return;
+ const {home,owner}=await fixture(t),port=remote([response()]);
+ assert.equal((await runCaptureSetup({host:'dsh',home},{...port,open:callback})).status,'capture_configured');
+ assert.equal((await owner.read()).state,'active');
 });
 
 test('portable callback protocol is one-shot, source-bound and closes its actual loopback listener',async()=>{
@@ -176,7 +240,7 @@ test('two real credential-owner callers cannot spend one refresh permission twic
  const second=await captureHookContext({env:{},owner,...port});
  const active=first.request('/session/events',{});let timer;
  try{await Promise.race([began,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('owned_barrier_timeout')),3000);})]);
-  await assert.rejects(second.request('/session/events',{}),/capture_busy/);}
+  await assert.rejects(second.request('/session/events',{}),/capture_pending/);}
  finally{clearTimeout(timer);release();}
  await active;assert.equal(port.calls.filter(x=>x.url.endsWith('/oauth/token')).length,1);
  assert.equal(port.calls.filter(x=>x.url.endsWith('/session/events')).length,1);

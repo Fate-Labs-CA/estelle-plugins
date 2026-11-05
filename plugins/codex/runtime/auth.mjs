@@ -31,7 +31,11 @@ export async function launchCredential(env = process.env, home = homedir()) {
 
 export const CAPTURE_AUTH = Object.freeze({ issuer:'https://api.fatelabs.ca',
  client:'https://api.fatelabs.ca/oauth/clients/plugin-capture',
- resource:'https://api.fatelabs.ca/session/events', scope:'estelle:capture offline_access', bytes:16000 });
+ resource:'https://api.fatelabs.ca/session/events', scope:'estelle:capture offline_access', bytes:16000,
+ loginMs:600000 });
+// The longest legitimate holder is a login, which its own deadline ends. A lock older than that belongs to a
+// process that was killed (hosts kill hooks at their timeout) and would otherwise refuse every sign-in forever.
+const LOCK_STALE_MS = CAPTURE_AUTH.loginMs + 60000;
 const token = value => usable(value) && value.length >= 16;
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const identity = info => [info.dev,info.ino,info.size,info.mtimeNs,info.ctimeNs].map(String).join(':');
@@ -117,11 +121,24 @@ export class CaptureCredentialOwner {
    return saved;
   }finally{if(file)await file.close();await this.#fs.unlink(path).catch(()=>{});}
  }
+ /** True when the path is free to claim. Two callers racing here is survivable: #save compares before it replaces. */
+ async #clearDeadLock(path) {
+  let info;
+  try{info=await this.#fs.lstat(path,{bigint:true});}
+  catch(error){if(error.code==='ENOENT')return true;throw error;}
+  privateFile(info);
+  if(Date.now()-Number(info.mtimeNs/1000000n)<=LOCK_STALE_MS)return false;
+  await this.#fs.unlink(path).catch(error=>{if(error.code!=='ENOENT')throw error;});
+  return true;
+ }
  async locked(action,{create=false}={}) {
   if(!await this.#ready(create))throw Error('capture_missing');
   const path=join(this.#directory,'credential.lock');let lock;
   try{lock=await this.#fs.open(path,'wx',0o600);}
-  catch{throw Error('capture_busy');}
+  catch(error){
+   if(error.code!=='EEXIST'||!await this.#clearDeadLock(path))throw Error('capture_busy');
+   try{lock=await this.#fs.open(path,'wx',0o600);}catch{throw Error('capture_busy');}
+  }
   try{
    const held=await lock.stat({bigint:true});privateFile(held);let snapshot=await this.#snapshot();
    return await action({get record(){return snapshot?.record??null;},
