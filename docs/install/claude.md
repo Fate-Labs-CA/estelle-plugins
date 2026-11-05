@@ -32,6 +32,8 @@ Hooks cannot use the sign-in from `/mcp`, because Claude Code does not expose th
 3. Quit and reopen the app. **Claude Desktop reads your login shell's exports only when it starts**, so a new session in the running app does not see a new key. In a terminal, open a new shell before starting `claude`.
 4. Run `node "<installed Estelle package>/runtime/cli.mjs" doctor`. It sends the key to the server and tells you if it is accepted. `key_check: rejected` means the server answered 401: replace the key.
 
+If you signed in with OAuth and would rather not create a key, use the separate [session-capture sign-in](../capture-auth.md): `setup claude --capture-login`. It grants session-event upload only. It needs a real browser sign-in and has not been exercised in a live host yet.
+
 If you use a machine with no browser, add your own MCP entry with an `Authorization` header instead of `/mcp` sign-in.
 
 ## Copy/paste setup prompt

@@ -3,7 +3,7 @@
 Package: `plugins/grok`. Requires Node.js 22 and `ESTELLE_API_KEY` in the host environment.
 
 ```sh
-grok plugin install uqeu/estelle-plugins@v0.0.15#plugins/grok
+grok plugin install uqeu/estelle-plugins@v0.0.16#plugins/grok
 grok plugin enable estelle
 ```
 

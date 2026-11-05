@@ -12,7 +12,7 @@ export const REQUEST_TIMEOUT_MS = 8_000;
 export const safeSession = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value);
 export const hash = value => createHash('sha256').update(value).digest('hex');
 
-export function stateDirectory(env = process.env) {
+export function stateDirectory(env = process.env, capturePartition) {
   // Never write into a host's immutable, approved plugin bundle.
   const base = resolve(env.ESTELLE_PLUGIN_DATA || join(homedir(), '.estelle-plugins'));
   const bundle = realpathSync(resolve(import.meta.dirname, '..'));
@@ -30,6 +30,10 @@ export function stateDirectory(env = process.env) {
   }
   // A different account credential must never replay another account's saved transcript batches.
   const key = env.ESTELLE_API_KEY;
+  if (!key && capturePartition !== undefined) {
+    if (!/^[a-f0-9]{32}$/.test(capturePartition)) throw new Error('capture_binding_changed');
+    return join(base, `capture-${capturePartition}`);
+  }
   return join(base, key ? hash(key).slice(0, 24) : 'unauthenticated');
 }
 
@@ -135,6 +139,9 @@ export function apiClient({ env = process.env, fetchImpl = fetch, timeoutMs = RE
 }
 
 const ERROR_CODES = new Set(['credential_missing', 'invalid_api_url', 'invalid_route',
+  'capture_missing', 'capture_pending', 'capture_busy', 'capture_private', 'capture_incomplete',
+  'capture_record', 'capture_origin', 'capture_binding_changed', 'capture_transport_unknown',
+  'capture_unsupported_platform',
   'request_size', 'response_size', 'response_json', 'state_size', 'input_size', 'input_json',
   'event_missing', 'session_missing', 'transcript_missing', 'unsupported_host', 'state_inside_bundle', 'context_claim_locked']);
 
