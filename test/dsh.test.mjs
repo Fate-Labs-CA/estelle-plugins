@@ -9,6 +9,11 @@ import { readTranscriptMessages } from '../runtime/checkpoint.mjs';
 import { handleHook } from '../runtime/hooks.mjs';
 import { timelineIdentity } from '../runtime/identity.mjs';
 import { mapDsh } from '../runtime/stream.mjs';
+import { spawnSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
+import { headlessArguments, READY, runSession, WORKING } from '../runtime/dsh-session.mjs';
+import { TELEMETRY_OFF, TELEMETRY_ROWS, telemetryCheck, telemetryViolations } from '../runtime/dsh-telemetry.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const payload = (event, extra = {}) => ({ hook_event_name: event, session_id: 'session-1', cwd: '/tmp/project', ...extra });
@@ -166,6 +171,115 @@ test('runs a write check only for tools that can write, and refuses on the hook\
   assert.equal(passed, 2);
 });
 
+// The shape of a real `dsh --profile headless --dump-config` (0.2.2-rc.1), telemetry rows only.
+const OFF_DUMP = [
+  '# == @deepseek-ai/dsh-base', '# patched by: dsh-plugin-estelle',
+  '- id: session-log-deepseek', "  name: '@deepseek-ai/dsh-session-log-deepseek'", '  disabled: true',
+  '# == @deepseek-ai/dsh-base', '- id: plugin-package-inventory-deepseek', "  name: '@deepseek-ai/dsh-plugin-package-inventory-deepseek'", '  disabled: true',
+  '- id: session-telemetry-otel', "  name: '@deepseek-ai/dsh-session-telemetry-otel'", '  config:', "    mode: !!js process.env.DSH_TELEMETRY_MODE || 'FEEDBACK_ONLY'",
+  '    exporter:', '      compression: gzip', '  disabled: true', '- id: subprocess', "  name: '@deepseek-ai/dsh-subprocess'", '',
+].join('\n');
+
+test('the telemetry check goes red when any telemetry row is on, absent, or the dump is unreadable', () => {
+  assert.equal(telemetryCheck(OFF_DUMP), TELEMETRY_OFF);
+  for (const id of TELEMETRY_ROWS) {
+    const on = OFF_DUMP.replace(new RegExp(`(- id: ${id}\\n(?:(?!- id:).*\\n)*?) {2}disabled: true\\n`), '$1');
+    assert.notEqual(on, OFF_DUMP, `${id}: the fixture must change for this to mean anything`);
+    assert.deepEqual(telemetryViolations(on), [id]);
+    assert.equal(telemetryCheck(on), `DSH-TELEMETRY-ON: ${id}`);
+    assert.deepEqual(telemetryViolations(OFF_DUMP.replace(`- id: ${id}\n`, '- id: renamed\n')), [id]);
+  }
+  // Another row's disabled line must not stand in for this row's.
+  const borrowed = OFF_DUMP.replace("  disabled: true\n- id: subprocess", "- id: subprocess\n  disabled: true");
+  assert.deepEqual(telemetryViolations(borrowed), ['session-telemetry-otel']);
+  for (const unreadable of ['', '   ', null, undefined, 7]) assert.deepEqual(telemetryViolations(unreadable), [...TELEMETRY_ROWS]);
+});
+
+test('the telemetry command fails closed for a Silo reading the effective config', () => {
+  const cli = join(root, 'runtime', 'cli.mjs');
+  const off = spawnSync(process.execPath, [cli, 'dsh-telemetry'], { input: OFF_DUMP, encoding: 'utf8' });
+  assert.equal(off.status, 0);
+  assert.equal(off.stdout.trim(), TELEMETRY_OFF);
+  const on = spawnSync(process.execPath, [cli, 'dsh-telemetry'], { input: 'nothing mounted', encoding: 'utf8' });
+  assert.equal(on.status, 1);
+  assert.match(on.stdout, /^DSH-TELEMETRY-ON: session-log-deepseek/);
+});
+
+test('a cloud pane runs one pasted prompt as one task, continues the session, and keeps telemetry off', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'estelle-dsh-pane-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const runs = [];
+  const spawnImpl = (command, args, options) => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stdin = new PassThrough();
+    const chunks = [];
+    child.stdin.on('data', chunk => chunks.push(chunk));
+    child.stdin.on('end', () => {
+      runs.push({ command, args, env: options.env, task: Buffer.concat(chunks).toString() });
+      child.stdout.end(['{"type":"session","sessionId":"session-9"}', '{"type":"tool_call","tool":"bash"}',
+        `{"type":"final","text":"answer ${runs.length}"}`, ''].join('\n'));
+      setImmediate(() => child.emit('close', 0));
+    });
+    return child;
+  };
+  const input = new PassThrough();
+  const out = new PassThrough();
+  const shown = [];
+  out.on('data', chunk => shown.push(chunk.toString()));
+  const finished = runSession({ input, out, cwd: directory, env: { ESTELLE_REPO: 'uqeu/estelle-example' }, spawnImpl });
+  const settled = () => new Promise(resolve => setTimeout(resolve, 1000));
+  input.write('first line\nsecond line\n');
+  await settled();
+  input.write('next task\n');
+  await settled();
+  input.end();
+  await finished;
+  assert.equal(runs.length, 2);
+  assert.equal(runs[0].task, 'first line\nsecond line');
+  assert.equal(runs[0].command, 'dsh');
+  assert(!runs[0].args.includes('--session-id'));
+  assert.equal(runs[1].args[runs[1].args.indexOf('--session-id') + 1], 'session-9');
+  assert.equal(runs[1].task, 'next task');
+  for (const run of runs) {
+    assert.equal(run.env.DSH_TELEMETRY_DISABLED, '1');
+    assert.equal(run.env.DSH_TELEMETRY_MODE, 'DISABLED');
+    assert.deepEqual(run.args.slice(0, 2), ['--profile', 'headless']);
+    assert.equal(run.args.at(-1), '-');
+  }
+  const screen = shown.join('');
+  assert(screen.includes(`${WORKING} · bash`));
+  // After the last answer the screen holds the answer and the ready marker, and no busy marker the typing layer would read.
+  const last = screen.slice(screen.lastIndexOf('\u001b[2J'));
+  assert(last.includes('answer 2'));
+  assert(last.includes(READY));
+  assert(!last.includes(WORKING));
+});
+
+test('a failed run says so in the pane and returns to ready', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'estelle-dsh-pane-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const spawnImpl = () => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stdin = new PassThrough();
+    child.stdin.on('finish', () => { child.stdout.end('not json\n'); setImmediate(() => child.emit('close', 1)); });
+    child.stdin.resume();
+    return child;
+  };
+  const input = new PassThrough();
+  const out = new PassThrough();
+  const shown = [];
+  out.on('data', chunk => shown.push(chunk.toString()));
+  const finished = runSession({ input, out, cwd: directory, env: {}, spawnImpl });
+  input.end('do it\n');
+  await finished;
+  const screen = shown.join('');
+  assert.match(screen, /dsh failed: dsh exited 1/);
+  assert(screen.trimEnd().endsWith(READY));
+  assert.deepEqual(headlessArguments({ sessionId: '', gitDirectory: '' }).includes('--add-dir'), false);
+});
+
 test('the bundle declares what dsh reads, and refuses to send a missing key or upload the session log', async () => {
   const manifest = JSON.parse(await readFile(join(root, 'plugins/dsh/package.json'), 'utf8'));
   assert.deepEqual(manifest.dsh, { bundle: { patch: './cordis.patch.yml' } });
@@ -174,7 +288,7 @@ test('the bundle declares what dsh reads, and refuses to send a missing key or u
   assert.equal(manifest.peerDependenciesMeta['@deepseek-ai/dsh-llm'].optional, true);
   await readFile(join(root, 'plugins/dsh', manifest.main));
   const patch = await readFile(join(root, 'plugins/dsh/cordis.patch.yml'), 'utf8');
-  assert.match(patch, /- id: session-log-deepseek\n {2}config:\n {4}enabled: false/);
+  assert.equal(telemetryCheck(patch), TELEMETRY_OFF);
   assert.match(patch, /name: dsh-plugin-estelle/);
   assert.match(patch, /disabled: !!js '!process\.env\.ESTELLE_API_KEY'/);
   assert.match(patch, /url: https:\/\/api\.fatelabs\.ca\/mcp/);

@@ -98,13 +98,19 @@ emit('plugins/dsh/package.json', { name: 'dsh-plugin-estelle', version, descript
   peerDependenciesMeta: Object.fromEntries(DSH_PEERS.map(name => [name, { optional: true }])),
   dsh: { bundle: { patch: './cordis.patch.yml' } } });
 emit('plugins/dsh/cordis.patch.yml', `# Estelle for DeepSeek Harness: memory and repository tools over MCP, session capture, skills and slash commands.
-# A patch replaces a row's whole config, so a later layer can undo any choice made here.
 
-# dsh uploads the session log with every request on its DeepSeek route, tool results included. Estelle's answers carry
-# your repository and memory, and they should reach no one you did not choose. Set enabled: true in a later layer to opt in.
+# No harness telemetry, on any route. Estelle's answers carry your repository and memory, and dsh would otherwise send them:
+# the session log travels in the body of every request on its DeepSeek route, tool results included (session-log-deepseek),
+# the session is exported to DeepSeek's collector on explicit feedback (session-telemetry-otel), and each request names your
+# active plugins (plugin-package-inventory-deepseek). A row that is off cannot be switched back on from dsh's settings page.
 - id: session-log-deepseek
-  config:
-    enabled: false
+  disabled: true
+
+- id: session-telemetry-otel
+  disabled: true
+
+- id: plugin-package-inventory-deepseek
+  disabled: true
 
 - insert:
     - id: estelle

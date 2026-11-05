@@ -88,6 +88,14 @@ if (command === 'doctor') {
     console.error(`Native continuation could not be completed (${nativeErrorCode(error)}). No safe-to-close acknowledgment was issued.`);
     process.exitCode = 1;
   }
+} else if (command === 'dsh-telemetry') {
+  // `dsh --profile <name> --dump-config | node runtime/cli.mjs dsh-telemetry`: the Silo's check on what dsh will mount.
+  const chunks = [];
+  for await (const chunk of process.stdin) chunks.push(chunk);
+  const { telemetryCheck, TELEMETRY_OFF } = await import('./dsh-telemetry.mjs');
+  const verdict = telemetryCheck(Buffer.concat(chunks).toString('utf8'));
+  console.log(verdict);
+  if (verdict !== TELEMETRY_OFF) process.exitCode = 1;
 } else if (command === 'setup') {
   try {
     const { runSetupArgs } = await import('./setup.mjs');

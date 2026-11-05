@@ -3,6 +3,7 @@
 // Hooks never stop a turn: a failed hook is logged and the agent continues, as on every other host.
 import { execFile } from 'node:child_process';
 import { appendFile, mkdir, readdir, readFile } from 'node:fs/promises';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { hash, stateDirectory } from '../runtime/io.mjs';
@@ -60,10 +61,10 @@ function transcriptWriter(ctx) {
 }
 
 function registerCommands(ctx, createUserMessage) {
-  ctx.inject(['commands'], async child => {
+  ctx.inject(['commands'], child => {
     const directory = join(ROOT, 'commands');
-    for (const entry of (await readdir(directory)).sort()) {
-      const source = await readFile(join(directory, entry), 'utf8');
+    for (const entry of readdirSync(directory).sort()) {
+      const source = readFileSync(join(directory, entry), 'utf8');
       const [, description, body] = /^---\ndescription: (.+)\n---\n([\s\S]+)$/.exec(source) ?? [];
       if (!description) throw new Error(`Command needs one description line: ${entry}`);
       child.commands.register({
@@ -101,8 +102,8 @@ function registerSkills(ctx) {
 }
 
 function registerInstructions(ctx) {
-  ctx.inject(['systemPrompt'], async child => {
-    const text = await readFile(join(ROOT, 'instructions.md'), 'utf8');
+  ctx.inject(['systemPrompt'], child => {
+    const text = readFileSync(join(ROOT, 'instructions.md'), 'utf8');
     child.systemPrompt.section({ name: 'estelle', order: child.systemPrompt.getSectionOrder('TOOL_GOAL'), text });
   });
 }
