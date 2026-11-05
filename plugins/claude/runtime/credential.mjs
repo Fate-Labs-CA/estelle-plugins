@@ -72,6 +72,7 @@ const BARE_VALUE = /[^\s,;)}\]"'`]{1,512}/y;
 // A type hint can sit between the name and the value, in Python and TypeScript annotations alike.
 const TYPE_THEN_ASSIGN = /[A-Za-z_][\w.]*(?:\[[^\]\n]{0,128}\])?(?:\s*\|\s*[A-Za-z_][\w.]*(?:\[[^\]\n]{0,64}\])?){0,4}\??\s*=(?![=~>])[ \t]*/y;
 const TYPE_NAME = /^[A-Z][\w.]*(?:\[.*)?$|^(?:str|string|bytes|int|bool|number|any|object|None|null|undefined)(?:\[.*)?\??$/;
+const REGEX_LITERAL = /^\/(?=[^/]*[|^$*+?\\])[^/\n]+\/[dgimsuvy]*$/;
 
 const matchAt = (pattern, text, index) => { pattern.lastIndex = index; return pattern.exec(text); };
 const wordsOf = label => label.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
@@ -232,10 +233,21 @@ function isLoneYamlWord(text, labelStart, value) {
   return true;
 }
 
+/** Source, not a value: at least two lowercase words joined by `_`, one of them all letters, none with more than two digits.
+ *  This stops catching a human password written bare in that shape, such as `hunter2_summer`. Quoted, or on an env-file line, it is still refused. */
+function isSnakeIdentifier(body) {
+  if (!/^[a-z_$][a-z0-9_$]*$/.test(body)) return false;
+  const segments = body.split('_').filter(Boolean);
+  if (segments.length < 2 || !segments.some(segment => /^[a-z]{3,}$/.test(segment))) return false;
+  return segments.every(segment => segment.replace(/\D/g, '').length <= MIN_OPAQUE_DIGITS);
+}
+
 function bareLiteralIsCredential(body, strength) {
   if (/^\d+$/.test(body)) return strength === 'strong' && body.length >= MIN_LITERAL;
   if (isOpaque(body)) return !isTemplate(body) && !isPlaceholder(body) && !ENV_NAME.test(body);
   if (strength !== 'strong' || body.length < MIN_LITERAL || /[()[\]{}."'`]/.test(body)) return false;
+  // A regex with an operator in it describes values. An opaque one between slashes was already refused above.
+  if (REGEX_LITERAL.test(body) || isSnakeIdentifier(body)) return false;
   return /\d/.test(body) && /[A-Za-z]/.test(body) && !isPlaceholder(body);
 }
 
