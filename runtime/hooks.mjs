@@ -21,6 +21,7 @@ async function adapter(host) {
   if (host === 'kimi') return import('../adapters/kimi.mjs');
   if (host === 'grok') return import('../adapters/grok.mjs');
   if (host === 'cursor') return import('../adapters/cursor.mjs');
+  if (host === 'dsh') return import('../adapters/dsh.mjs');
   throw new Error('unsupported_host');
 }
 
@@ -57,7 +58,7 @@ export async function drainOne(stateDir, request) {
     await writeJson(cursorPath, { last: name });
     const path = join(stateDir, 'deferred', name);
     const item = await readJson(path, 16_000);
-    if (!['claude-code', 'codex', 'kimi', 'grok', 'cursor'].includes(item.host)) throw new Error('unsupported_host');
+    if (!['claude-code', 'codex', 'kimi', 'grok', 'cursor', 'dsh'].includes(item.host)) throw new Error('unsupported_host');
     const repo = repository(item.payload.cwd);
     const payload = { ...item.payload, hook_event_name: 'Stop' };
     if (item.host === 'kimi') {

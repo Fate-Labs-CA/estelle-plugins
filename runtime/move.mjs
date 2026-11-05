@@ -27,7 +27,7 @@ const LOCKFILE = /(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|
 const prefixedOpaque = text => text.split(/[\s"'`,;:=()[\]{}<>]+/).some(word => /^[+-]?[A-Za-z]{2,10}[_-]/.test(word) && isOpaque(word));
 export const secretShaped = text => textHasCredential(text) || prefixedOpaque(text);
 const HARNESSES = { codex: 'codex', claude: 'claude-code', 'claude-code': 'claude-code', cursor: 'cursor', kimi: 'kimi-code',
-  'kimi-code': 'kimi-code', grok: 'grok' };
+  'kimi-code': 'kimi-code', grok: 'grok', dsh: 'deepseek-harness', 'deepseek-harness': 'deepseek-harness' };
 const NATIVE_HOSTS = new Set(['claude-code', 'codex']);
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 

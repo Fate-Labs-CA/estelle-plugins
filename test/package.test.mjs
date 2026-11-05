@@ -68,15 +68,15 @@ test('every host keeps its own manifest paths inside the installed package', asy
   assert.deepEqual(claude.mcpServers.Estelle, { type: 'http', url: 'https://api.fatelabs.ca/mcp' });
 });
 
-test('five host folders have separate native discovery and exclude development notes or cross-host manifests', async () => {
-  const hosts = ['claude', 'codex', 'cursor', 'grok', 'kimi'];
+test('every host folder has separate native discovery and exclude development notes or cross-host manifests', async () => {
+  const hosts = ['claude', 'codex', 'cursor', 'dsh', 'grok', 'kimi'];
   assert.deepEqual((await readdir(join(root, 'plugins'))).sort(), hosts);
   for (const [file, host] of [['.claude-plugin/marketplace.json', 'claude'],
     ['.agents/plugins/marketplace.json', 'codex'], ['.cursor-plugin/marketplace.json', 'cursor']]) {
     assert.equal((await json(file)).plugins[0].source, `./plugins/${host}`);
   }
   const manifestPaths = { claude: '.claude-plugin', codex: '.codex-plugin', cursor: '.cursor-plugin',
-    grok: 'plugin.json', kimi: 'kimi.plugin.json' };
+    dsh: 'cordis.patch.yml', grok: 'plugin.json', kimi: 'kimi.plugin.json' };
   for (const host of hosts) {
     const files = await readdir(join(root, 'plugins', host));
     for (const forbidden of ['docs', 'test', 'CONTEXT.md', 'DECISIONS.md', ...Object.entries(manifestPaths)

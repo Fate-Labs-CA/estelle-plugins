@@ -87,7 +87,53 @@ emit('plugins/cursor/hooks/hooks.json', { version: 1, hooks: Object.fromEntries(
 emit('plugins/cursor/rules/estelle.mdc', '---\ndescription: Use Estelle tools for repository context and shared work\nalwaysApply: true\n---\n'
   + await readFile(join(root, 'instructions.md'), 'utf8'));
 
-const HOSTS = ['claude', 'codex', 'kimi', 'grok', 'cursor'];
+// A dsh plugin is an npm-shaped bundle: this manifest and one Cordis patch layer. `dsh plugin --profile <name> add` installs it.
+const DSH_PEERS = ['@deepseek-ai/dsh-llm'];
+emit('plugins/dsh/package.json', { name: 'dsh-plugin-estelle', version, description, license: 'Apache-2.0', type: 'module',
+  keywords: ['dsh-plugin'], repository: { type: 'git', url: 'git+https://github.com/uqeu/estelle-plugins.git', directory: 'plugins/dsh' },
+  main: 'adapters/dsh-plugin.mjs', exports: { '.': './adapters/dsh-plugin.mjs', './package.json': './package.json' },
+  engines: { node: '>=24.9.0', dsh: '>=0.2.1-rc.5 <0.3.0' },
+  peerDependencies: Object.fromEntries(DSH_PEERS.map(name => [name, '*'])),
+  // dsh resolves these from its own installation. Optional keeps pnpm from installing a second copy into the profile.
+  peerDependenciesMeta: Object.fromEntries(DSH_PEERS.map(name => [name, { optional: true }])),
+  dsh: { bundle: { patch: './cordis.patch.yml' } } });
+emit('plugins/dsh/cordis.patch.yml', `# Estelle for DeepSeek Harness: memory and repository tools over MCP, session capture, skills and slash commands.
+
+# No harness telemetry, on any route. Estelle's answers carry your repository and memory, and dsh would otherwise send them:
+# the session log travels in the body of every request on its DeepSeek route, tool results included (session-log-deepseek),
+# the session is exported to DeepSeek's collector on explicit feedback (session-telemetry-otel), and each request names your
+# active plugins (plugin-package-inventory-deepseek). A row that is off cannot be switched back on from dsh's settings page.
+- id: session-log-deepseek
+  disabled: true
+
+- id: session-telemetry-otel
+  disabled: true
+
+- id: plugin-package-inventory-deepseek
+  disabled: true
+
+# Product usage events. Only the web profile mounts this row; elsewhere dsh reports this target as unmatched and moves on.
+- id: desktop-product-telemetry
+  disabled: true
+
+- insert:
+    - id: estelle
+      name: dsh-plugin-estelle
+
+    # Absent without a key: an unset variable would otherwise go out as the literal header "Bearer undefined".
+    - id: estelle-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      disabled: !!js '!process.env.ESTELLE_API_KEY'
+      config:
+        serverName: Estelle
+        transport: streamable-http
+        url: ${server.url}
+        headers:
+          Authorization: !!js '\`Bearer \${process.env.ESTELLE_API_KEY}\`'
+          X-Estelle-Repo: !!js "process.env.ESTELLE_REPO ?? ''"
+`);
+
+const HOSTS = ['claude', 'codex', 'kimi', 'grok', 'cursor', 'dsh'];
 const ASSETS = ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE', 'NOTICE'];
 const assetsFor = host => [...ASSETS, ...(host === 'codex' ? [] : ['commands']), ...(host === 'claude' ? ['agents'] : [])];
 async function inventory(directory, prefix = '') {

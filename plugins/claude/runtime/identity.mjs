@@ -1,6 +1,7 @@
 // Shared public timeline identity. This is a name, never a Rooms write credential.
 const HARNESSES = { claude: 'claude-code', 'claude-code': 'claude-code', codex: 'codex',
-  kimi: 'kimi-code', 'kimi-code': 'kimi-code', grok: 'grok', cursor: 'cursor' };
+  kimi: 'kimi-code', 'kimi-code': 'kimi-code', grok: 'grok', cursor: 'cursor',
+  dsh: 'deepseek-harness', 'deepseek-harness': 'deepseek-harness' };
 export function canonicalHost(host) {
   const value = HARNESSES[host];
   if (!value) throw new Error('unsupported_host');
