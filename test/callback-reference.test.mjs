@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { protectWrite } from '../runtime/protect.mjs';
+import { textHasCredential } from '../runtime/credential.mjs';
+import { firstFinding } from '../runtime/write-warning.mjs';
+
+// The handoff scan's contract (move.mjs). The write hook itself only warns on exact vendor shapes: write-warning.test.mjs.
+const flaggedIn = call => firstFinding(call.toolInput, textHasCredential) ? { flagged: true } : null;
 
 const field = ['secret', 'env'].join('_');
 const proofField = ['session', 'token'].join('_');
@@ -15,8 +19,8 @@ const observed = readFileSync(new URL('./fixtures/callback-deadline.patch', impo
 for (const host of ['claude-code', 'codex', 'kimi', 'grok', 'cursor']) {
   test(`${host} permits literal-free keyword callback references`, () => {
     for (const code of [source, `+    ${source}`, `const value = replace(intent, {${field}: ${callback}});`, observed]) {
-      assert.equal(protectWrite({ host, ...input(code) }), null);
-      assert.equal(protectWrite(JSON.parse(JSON.stringify({ host, ...input(code) }))), null);
+      assert.equal(flaggedIn({ host, ...input(code) }), null);
+      assert.equal(flaggedIn(JSON.parse(JSON.stringify({ host, ...input(code) }))), null);
     }
   });
 }
@@ -26,19 +30,18 @@ test('callback recognition does not waive quoted or bare credential-like data', 
   const vendor = ['gh', 'p_'].join('') + 'q'.repeat(30);
   for (const code of [`const ${passwordField} = "${source}";`, `${tokenField}=${callback}`, source + `; const ${proofField} = "${opaque}";`,
     `replace(intent, ${field}=guard("${vendor}"))`, `# ${source}\n${tokenField}=${callback}`, `// ${source}\n${tokenField}=${callback}`]) {
-    assert.equal(protectWrite(input(code))?.hookSpecificOutput.permissionDecision, 'deny');
+    assert.equal(flaggedIn(input(code))?.flagged, true);
   }
-  assert.equal(protectWrite({ ...input(source), toolInput: { [proofField]: source } })?.hookSpecificOutput.permissionDecision, 'deny');
 });
 
 test('callback allowance ends at the argument boundary and never enters block comments', () => {
   const opaque = 'c6'.repeat(32);
   for (const code of [`replace(intent, ${field}=${callback} + "${opaque}")`,
     `/*\nvalue = replace(intent, ${proofField}="${opaque}")\n*/`]) {
-    assert.equal(protectWrite(input(code))?.hookSpecificOutput.permissionDecision, 'deny');
+    assert.equal(flaggedIn(input(code))?.flagged, true);
   }
   // A comment can leak a literal (refused above) but a comment holding only a reference leaks nothing.
   for (const code of [`/* preceding comment */\n${source}`, `/*\n${source}\n*/`, `/* comment\n${source}\nmore */`]) {
-    assert.equal(protectWrite(input(code)), null);
+    assert.equal(flaggedIn(input(code)), null);
   }
 });

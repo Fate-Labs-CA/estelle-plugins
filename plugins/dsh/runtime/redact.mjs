@@ -4,7 +4,7 @@ const MAX_DEPTH = 24;
 const MAX_FIELDS = 1_000;
 const SENSITIVE_KEY = /(?:secret|token|password|api[_-]?key|private[_-]?key)/i;
 export const isSensitiveField = key => SENSITIVE_KEY.test(key);
-// Shapes that are a credential whatever surrounds them. Also the write guard's vendor list (credential.mjs).
+// Shapes that are a credential whatever surrounds them. Also the list the write hook warns on (credential.mjs).
 export const VENDOR_PATTERNS = Object.freeze([
   [/\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}/g, '[redacted stripe key]'],
   [/\bestelle_(?:live|test)_[A-Za-z0-9_-]{8,}/g, '[redacted estelle key]'],

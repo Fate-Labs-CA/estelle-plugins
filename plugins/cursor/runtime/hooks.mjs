@@ -8,7 +8,7 @@ import { checkpointSession } from './checkpoint.mjs';
 import { redact } from './redact.mjs';
 import { queueReindex } from './reindex.mjs';
 import { timelineIdentity } from './identity.mjs';
-import { mutatingTool, protectWrite } from './protect.mjs';
+import { mutatingTool, writeWarning } from './write-warning.mjs';
 import { beginContext, saveContext, takeContext } from './queued-context.mjs';
 
 const CHECKPOINT_EVENTS = new Set(['Stop', 'SubagentStop', 'PreCompact', 'Interrupt']);
@@ -137,14 +137,29 @@ export async function handleHook({ host, payload, stateDir, request }) {
     const { noteCurrentSession } = await import('./move.mjs');
     await noteCurrentSession(stateDir, { host, sessionId: n.sessionId, transcriptPath: n.transcriptPath, cwd: n.cwd }).catch(() => {});
   }
-  const protection = protectWrite(n);
-  if (protection?.unscanned) {
+  const found = writeWarning(n);
+  if (found?.unscanned) {
     await recordStatus(stateDir, { host, event: n.event, mode: 'protect', status: 'partial', code: 'input_bound' });
     return port.defaultOutput?.(payload.hook_event_name) ?? null;
   }
-  if (protection) return host === 'cursor' ? { permission: 'deny',
-    user_message: protection.hookSpecificOutput.permissionDecisionReason,
-    agent_message: protection.hookSpecificOutput.permissionDecisionReason } : protection;
+  const output = await answerEvent({ host, port, n, payload, stateDir, request });
+  return found ? withWarning(host, output, found.warning) : output;
+}
+
+/** The warning added to whatever this event already answers. ⛔ It adds words and never a decision: no host is told to stop.
+ *  Each host's own field, because each shows a different one. Stderr too, the only place Kimi has at this event. */
+function withWarning(host, output, warning) {
+  console.error(warning);
+  if (host === 'kimi') return output;
+  if (host === 'cursor') return { ...output, user_message: warning, agent_message: warning };
+  if (host === 'dsh') return { ...output, warning };
+  const earlier = output?.hookSpecificOutput?.additionalContext;
+  const additionalContext = earlier ? `${earlier}\n\n${warning}` : warning;
+  if (host === 'grok') return { ...output, hookSpecificOutput: { ...output?.hookSpecificOutput, additionalContext } };
+  return { ...output, systemMessage: warning, hookSpecificOutput: { ...output?.hookSpecificOutput, hookEventName: 'PreToolUse', additionalContext } };
+}
+
+async function answerEvent({ host, port, n, payload, stateDir, request }) {
   const defaultOutput = () => port.defaultOutput?.(payload.hook_event_name) ?? null;
   const queuedContext = host === 'grok' || host === 'cursor';
   const grokContextPath = join(stateDir, 'context', `${hash(`${host}:${n.sessionId}`)}.json`);

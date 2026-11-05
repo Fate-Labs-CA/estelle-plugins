@@ -160,18 +160,20 @@ test('scan-bound partial status is silent in host context while Cursor keeps its
   });
 });
 
-test('silent scan-bound handling does not change actual credential denial in Codex or Cursor', async t => {
+test('a key in a write warns and never stops the edit, in Codex or Cursor', async t => {
   const f = await codexCaptureFixture(t);
   const value = 'ghp_' + 'a'.repeat(30); // Same synthetic shape as test/protect.test.mjs.
   const input = { content: `key=${value}` };
   const codex = await handleHook({ host: 'codex', payload: { ...f.payload, hook_event_name: 'PreToolUse',
     tool_name: 'Write', tool_input: input }, stateDir: f.stateDir, request: async () => { throw new Error('must not request'); } });
-  assert.equal(codex.hookSpecificOutput.permissionDecision, 'deny');
+  assert.match(codex.systemMessage, /github token/);
+  assert.equal(codex.hookSpecificOutput.permissionDecision, undefined);
   assert.equal(JSON.stringify(codex).includes(value), false);
   const cursor = await handleHook({ host: 'cursor', payload: { hook_event_name: 'preToolUse',
     conversation_id: 'literal-cursor', cwd: f.root, tool_name: 'Write', tool_input: input },
     stateDir: f.stateDir, request: async () => { throw new Error('must not request'); } });
-  assert.equal(cursor.permission, 'deny');
+  assert.equal(cursor.permission, 'allow');
+  assert.match(cursor.user_message, /Rotate it if it's real/);
   assert.equal(JSON.stringify(cursor).includes(value), false);
 });
 

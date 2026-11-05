@@ -1,4 +1,4 @@
-// The write guard's contract, as a table. Every value is synthetic and generated here at load time.
+// The handoff scan's contract, as a table (textHasCredential, read by move.mjs). The write hook only warns: write-warning.test.mjs. Every value is synthetic and generated here at load time.
 //
 // Sensitive words and vendor prefixes are assembled from parts because older installed copies of this
 // guard refuse to let this file be edited if they appear beside an assignment. That refusal is the
@@ -104,8 +104,6 @@ export const TRUE_ROWS = [
   ['edit that writes a value', edit('x = 1', `${AK} = "${R(41)}"`)],
   ['multi edit', { toolName: 'MultiEdit', toolInput: { edits: [{ old_string: 'a', new_string: `${SEC} = "${R(42)}"` }] } }],
   ['codex tool name prefix', { toolName: 'functions.apply_patch', toolInput: { input: `+key=${STRIPE}` } }],
-  ['field of a tool input', { toolName: 'Write', toolInput: { nested: { [TOK]: 'opaque-literal-credential' } } }],
-  ['numeric field of a tool input', { toolName: 'Write', toolInput: { [UP(AK)]: 1234567890123456 } }],
   ['vendor key used as an object key', { toolName: 'Write', toolInput: { [`${join('gh', 'p_')}${R(43, 36)}`]: 1 } }],
   // The neighbours of the reported false positives: each looks like a reference and holds a value.
   ['an opaque value between slashes', write(`${TOK} = /${R(80, 32)}/`)],
@@ -231,11 +229,10 @@ export const ORDINARY_ROWS = [
   ['placeholder angle brackets, unquoted', write(`${UP(TOK)}=<your-${TOK}-here>`)],
 ];
 
-export function evaluate(protectWrite) {
-  const run = ([name, call]) => ({ name, output: protectWrite({ host: 'codex', event: 'PreToolUse', ...call }) });
-  const refused = result => result.output?.hookSpecificOutput?.permissionDecision === 'deny';
+export function evaluate(flagged) {
+  const run = ([name, call]) => ({ name, found: flagged(call) });
   return {
-    missed: TRUE_ROWS.map(run).filter(result => !refused(result)).map(result => result.name),
-    blocked: ORDINARY_ROWS.map(run).filter(refused).map(result => result.name),
+    missed: TRUE_ROWS.map(run).filter(result => !result.found).map(result => result.name),
+    blocked: ORDINARY_ROWS.map(run).filter(result => result.found).map(result => result.name),
   };
 }

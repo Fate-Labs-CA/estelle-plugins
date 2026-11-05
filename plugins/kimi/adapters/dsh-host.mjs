@@ -150,8 +150,12 @@ export function applyEstelle(ctx, { createUserMessage }) {
     if (!execution.agent || !WRITES.has(execution.name)) return next();
     const output = await track(runHook(ctx, { ...base(execution.agent, 'PreToolUse'), tool_name: execution.name,
       tool_input: execution.arguments, tool_use_id: execution.callId }));
-    const refused = output?.hookSpecificOutput?.permissionDecision === 'deny';
-    return refused ? { kind: 'deny', reason: output.hookSpecificOutput.permissionDecisionReason } : next();
+    // ⛔ A warning and never a refusal: the write goes ahead either way.
+    if (output?.warning) {
+      ctx.logger.warn(output.warning);
+      execution.agent.inject(contextMessage(output.warning));
+    }
+    return next();
   });
 
   ctx.on('tools/post-execute', async (execution, result, next) => {

@@ -8,7 +8,7 @@ const read = file => readFile(resolve(root, file), 'utf8');
 const hosts = ['claude', 'codex', 'cursor', 'grok', 'kimi'];
 
 test('authored instructions use actual review and source evidence without obsolete tool commentary', async () => {
-  for (const file of ['instructions.md', 'skills/estelle/SKILL.md', 'runtime/protect.mjs']) {
+  for (const file of ['instructions.md', 'skills/estelle/SKILL.md', 'runtime/write-warning.mjs']) {
     const text = await read(file);
     assert.doesNotMatch(text, /\bgate\b/i, file);
   }
@@ -22,7 +22,7 @@ test('authored instructions use actual review and source evidence without obsole
 
 test('all native host guidance copies match the authored positive instructions', async () => {
   for (const host of hosts) {
-    for (const file of ['instructions.md', 'skills/estelle/SKILL.md', 'runtime/protect.mjs']) {
+    for (const file of ['instructions.md', 'skills/estelle/SKILL.md', 'runtime/write-warning.mjs']) {
       assert.equal(await read(`plugins/${host}/${file}`), await read(file), `${host}/${file}`);
     }
   }
