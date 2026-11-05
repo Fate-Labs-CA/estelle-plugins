@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-estelle",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "description": "Estelle MCP, memory and session hooks for coding agents.",
   "license": "Apache-2.0",
   "type": "module",
