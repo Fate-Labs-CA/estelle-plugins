@@ -87,7 +87,43 @@ emit('plugins/cursor/hooks/hooks.json', { version: 1, hooks: Object.fromEntries(
 emit('plugins/cursor/rules/estelle.mdc', '---\ndescription: Use Estelle tools for repository context and shared work\nalwaysApply: true\n---\n'
   + await readFile(join(root, 'instructions.md'), 'utf8'));
 
-const HOSTS = ['claude', 'codex', 'kimi', 'grok', 'cursor'];
+// A dsh plugin is an npm-shaped bundle: this manifest and one Cordis patch layer. `dsh plugin --profile <name> add` installs it.
+const DSH_PEERS = ['@deepseek-ai/dsh-llm'];
+emit('plugins/dsh/package.json', { name: 'dsh-plugin-estelle', version, description, license: 'Apache-2.0', type: 'module',
+  keywords: ['dsh-plugin'], repository: { type: 'git', url: 'git+https://github.com/uqeu/estelle-plugins.git', directory: 'plugins/dsh' },
+  main: 'adapters/dsh-plugin.mjs', exports: { '.': './adapters/dsh-plugin.mjs', './package.json': './package.json' },
+  engines: { node: '>=24.9.0', dsh: '>=0.2.1-rc.5 <0.3.0' },
+  peerDependencies: Object.fromEntries(DSH_PEERS.map(name => [name, '*'])),
+  // dsh resolves these from its own installation. Optional keeps pnpm from installing a second copy into the profile.
+  peerDependenciesMeta: Object.fromEntries(DSH_PEERS.map(name => [name, { optional: true }])),
+  dsh: { bundle: { patch: './cordis.patch.yml' } } });
+emit('plugins/dsh/cordis.patch.yml', `# Estelle for DeepSeek Harness: memory and repository tools over MCP, session capture, skills and slash commands.
+# A patch replaces a row's whole config, so a later layer can undo any choice made here.
+
+# dsh uploads the session log with every request on its DeepSeek route, tool results included. Estelle's answers carry
+# your repository and memory, and they should reach no one you did not choose. Set enabled: true in a later layer to opt in.
+- id: session-log-deepseek
+  config:
+    enabled: false
+
+- insert:
+    - id: estelle
+      name: dsh-plugin-estelle
+
+    # Absent without a key: an unset variable would otherwise go out as the literal header "Bearer undefined".
+    - id: estelle-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      disabled: !!js '!process.env.ESTELLE_API_KEY'
+      config:
+        serverName: Estelle
+        transport: streamable-http
+        url: ${server.url}
+        headers:
+          Authorization: !!js '\`Bearer \${process.env.ESTELLE_API_KEY}\`'
+          X-Estelle-Repo: !!js "process.env.ESTELLE_REPO ?? ''"
+`);
+
+const HOSTS = ['claude', 'codex', 'kimi', 'grok', 'cursor', 'dsh'];
 const ASSETS = ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE', 'NOTICE'];
 const assetsFor = host => [...ASSETS, ...(host === 'codex' ? [] : ['commands']), ...(host === 'claude' ? ['agents'] : [])];
 async function inventory(directory, prefix = '') {

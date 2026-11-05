@@ -16,7 +16,7 @@ export const LIMITS = Object.freeze({
 const INJECTED = ['<system-reminder', '<command-', '<local-command', '<task-notification', '[SYSTEM NOTIFICATION', 'Caveat:'];
 const CODEX_INJECTED = [...INJECTED, '<environment_context', '<user_instructions', '# AGENTS.md instructions', '<skill', '<turn_aborted', '<user_shell_command'];
 const AGENTS = { claude: 'claude-code', 'claude-code': 'claude-code', codex: 'codex', kimi: 'kimi-code', 'kimi-code': 'kimi-code',
-  grok: 'grok', cursor: 'cursor' };
+  grok: 'grok', cursor: 'cursor', dsh: 'deepseek-harness', 'deepseek-harness': 'deepseek-harness' };
 const WAITING = 'waiting_for_review/input_required';
 const string = value => typeof value === 'string' ? value : '';
 const validTime = value => typeof value === 'string' && Number.isFinite(Date.parse(value));
@@ -402,6 +402,56 @@ export function mapGrok(record, offset, notes = {}) {
   return out;
 }
 
+const DSH_AGENT = 'deepseek-harness';
+const dshAt = time => Number.isSafeInteger(time) && time > 0 ? new Date(time).toISOString() : null;
+const dshInput = raw => { try { return JSON.parse(string(raw)); } catch { return { arguments: string(raw) }; } };
+
+function dshToolCall(data, id, at) {
+  const name = string(data.name) || 'tool';
+  const input = dshInput(data.arguments);
+  const path = string(input.file_path);
+  const call = string(data.callId) || null;
+  if (name === 'write') return event(id, 'edit', agent(DSH_AGENT), at, { path, diff: cap(string(input.content).split('\n').map(line => `+${line}`).join('\n')), call_id: call });
+  if (name === 'edit') {
+    const lines = (value, mark) => string(value).split('\n').map(line => `${mark}${line}`);
+    return event(id, 'edit', agent(DSH_AGENT), at, { path, diff: cap([...lines(input.old_string, '-'), ...lines(input.new_string, '+')].join('\n')), call_id: call });
+  }
+  const summary = name === 'bash' ? `Ran ${string(input.command).slice(0, 80)}` : name === 'read' ? `Read ${path}` : name;
+  return event(id, 'tool_call', { kind: /mcp__estelle__/i.test(name) ? 'estelle' : 'agent', id: DSH_AGENT }, at,
+    { call_id: call, tool: name, summary: cap(summary), input: sanitize({ ...input, ...(path ? { path } : {}) }) });
+}
+
+/**
+ * The JSONL adapters/dsh-plugin.mjs writes: dsh's own canonical events, read from a real session log (format v4).
+ * Every line has a type, a sequence number and a millisecond time. dsh sends its runtime context and skill catalog
+ * as user-role messages too, so source.kind is what tells the person from the host.
+ */
+export function mapDsh(record, offset, notes = {}) {
+  const at = dshAt(record?.time);
+  const data = record?.data;
+  if (!at || !data || typeof data !== 'object') return [];
+  const id = `d${offset}`;
+  if (record.type === 'user/message') {
+    if (data.source?.kind !== 'user') return [];
+    const blocks = Array.isArray(data.content) ? data.content : [];
+    return messageEvents(blocks, 'user', id, at, DSH_AGENT, notes);
+  }
+  if (record.type === 'assistant/message') {
+    const blocks = Array.isArray(data.message?.content) ? data.message.content : [];
+    return messageEvents(blocks, 'assistant', id, at, DSH_AGENT, notes);
+  }
+  if (record.type === 'tool/call') return [dshToolCall(data, id, at)];
+  if (record.type === 'tool/result') {
+    const message = data.message ?? {};
+    return [event(id, 'tool_result', agent(DSH_AGENT), at, { call_id: string(message.toolCallId) || null,
+      ok: message.isError === true ? false : null, output: cap(textOf(message.content)) })];
+  }
+  if (record.type === 'turn/end') {
+    return data.reason?.kind === 'completed' ? [lifecycle(`${id}:turn-end`, at, 'waiting_for_review', 'input_required')] : [];
+  }
+  return [];
+}
+
 async function readJson(path, fallback, max = LIMITS.stateBytes) {
   let handle;
   try {
@@ -534,7 +584,7 @@ function collectWindow(window, host, notes, remaining, child = false) {
   let invalid = 0;
   let lines = 0;
   const mapper = host === 'codex' ? mapCodex : host === 'kimi-code' ? mapKimi
-    : host === 'grok' ? mapGrok : host === 'cursor' ? mapCursor : mapClaude;
+    : host === 'grok' ? mapGrok : host === 'cursor' ? mapCursor : host === DSH_AGENT ? mapDsh : mapClaude;
   const buffer = window.buffer;
   for (let from = 0; from < buffer.length && lines < LIMITS.lines; lines++) {
     const end = buffer.indexOf(10, from) + 1;
@@ -660,6 +710,8 @@ export async function streamSession({ payload, host, repo, stateDir, request }) 
   return { sent, dropped, replayed, ...(associationIncomplete ? { association_partial: true } : {}), backlog: incomplete, incomplete: incomplete || harness === 'kimi-code', invalid_lines: invalid, skipped_lines: skipped, offset, session_id: timeline,
     ...(harness === 'kimi-code' ? { transcript_format: 'kimi-wire', current_format_verified: true,
       capture_scope: 'main-agent journal; stream includes recorded branch history' } : {}),
+    ...(harness === DSH_AGENT ? { transcript_format: 'dsh-session-events', current_format_verified: true,
+      capture_scope: 'root agent; subagent sessions are not captured' } : {}),
     ...(harness === 'grok' ? { transcript_format: 'grok-jsonl-inferred', current_format_verified: false,
       event_times: 'capture-time', capture_scope: 'hook transcriptPath JSONL; ACP update and chat-history lines recognized, other lines skipped' } : {}),
     ...(harness === 'cursor' ? { transcript_format: 'cursor-jsonl-inferred', current_format_verified: false,

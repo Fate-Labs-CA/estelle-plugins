@@ -1,0 +1,24 @@
+# Estelle for DeepSeek Harness: memory and repository tools over MCP, session capture, skills and slash commands.
+# A patch replaces a row's whole config, so a later layer can undo any choice made here.
+
+# dsh uploads the session log with every request on its DeepSeek route, tool results included. Estelle's answers carry
+# your repository and memory, and they should reach no one you did not choose. Set enabled: true in a later layer to opt in.
+- id: session-log-deepseek
+  config:
+    enabled: false
+
+- insert:
+    - id: estelle
+      name: dsh-plugin-estelle
+
+    # Absent without a key: an unset variable would otherwise go out as the literal header "Bearer undefined".
+    - id: estelle-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      disabled: !!js '!process.env.ESTELLE_API_KEY'
+      config:
+        serverName: Estelle
+        transport: streamable-http
+        url: https://api.fatelabs.ca/mcp
+        headers:
+          Authorization: !!js '`Bearer ${process.env.ESTELLE_API_KEY}`'
+          X-Estelle-Repo: !!js "process.env.ESTELLE_REPO ?? ''"

@@ -19,6 +19,7 @@ Version: `0.0.13`.
 | Codex | [Codex](docs/install/codex.md) |
 | Kimi Code | [Kimi](docs/install/kimi.md) |
 | Grok Build | [Grok](docs/install/grok.md) |
+| DeepSeek Harness (developer preview) | [dsh](docs/install/dsh.md) |
 | Cursor | [Cursor](docs/install/cursor.md) |
 
 ## Copy a setup prompt

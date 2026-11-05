@@ -5,7 +5,7 @@ import { access, readFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
-const HOSTS = ['claude', 'codex', 'cursor', 'grok', 'kimi'];
+const HOSTS = ['claude', 'codex', 'cursor', 'dsh', 'grok', 'kimi'];
 const COMMANDS = ['cloud', 'code', 'handoff', 'monitor', 'resume', 'review', 'rooms'];
 const MAX_DESCRIPTION = 100;
 const read = file => readFile(join(root, file), 'utf8');

@@ -10,7 +10,7 @@ export const CHECKPOINT_LIMITS = Object.freeze({
   records: 100_000, messages: 400, chars: 4_000, blocks: 1_000,
 });
 const HOSTS = { claude: 'claude-code', 'claude-code': 'claude-code', codex: 'codex', kimi: 'kimi-code', 'kimi-code': 'kimi-code',
-  grok: 'grok', cursor: 'cursor' };
+  grok: 'grok', cursor: 'cursor', dsh: 'deepseek-harness', 'deepseek-harness': 'deepseek-harness' };
 const INJECTED = ['<environment_context', '<user_instructions', '# AGENTS.md instructions', '<skill', '<system-reminder', '<task-notification', '<command-', '<local-command', '<turn_aborted'];
 const string = value => typeof value === 'string' ? value : '';
 const shortened = text => Array.from(redact(text)).slice(0, CHECKPOINT_LIMITS.chars).join('');
@@ -64,6 +64,12 @@ function messageOf(record, host, subagent) {
   if (host === 'cursor') {
     // Cursor lines: {"role":"user"|"assistant","message":{"content":[...]}}; role-less control lines carry no conversation.
     return ['user', 'assistant'].includes(record.role) ? { role: record.role, content: record.message?.content ?? record.content } : null;
+  }
+  if (host === 'deepseek-harness') {
+    // The JSONL adapters/dsh-plugin.mjs writes from session/event. Only the person's own messages are "user":
+    // dsh also sends its runtime context and skill catalog as user-role messages with another source.
+    if (record.type === 'user/message') return record.data?.source?.kind === 'user' ? { role: 'user', content: record.data.content } : null;
+    return record.type === 'assistant/message' ? { role: 'assistant', content: record.data?.message?.content } : null;
   }
   if (host === 'grok') {
     // Inferred dialect (not verified against a live session): ACP update lines become one message fragment
