@@ -138,9 +138,11 @@ export async function handleHook({ host, payload, stateDir, request, captureOnly
   // A capture-only sign-in swaps the state directory and the one route this hook may call. A credential storage
   // outage must never cost the write warning, which needs neither: the warning is still given, the capture is not.
   let authFailure;
+  let signedOut = false;
   try {
     const authContext = requestContext ? await requestContext() : null;
-    if (authContext) ({ stateDir, request, captureOnly } = authContext);
+    if (authContext?.signedOut) signedOut = true;
+    else if (authContext) ({ stateDir, request, captureOnly } = authContext);
   } catch (error) { authFailure = error; }
   // `/estelle handoff` reads this to learn which session and conversation file it is in. Names and a path, no content.
   if (n.cwd && ['SessionStart', 'UserPromptSubmit'].includes(n.event)) {
@@ -153,23 +155,37 @@ export async function handleHook({ host, payload, stateDir, request, captureOnly
     return port.defaultOutput?.(payload.hook_event_name) ?? null;
   }
   if (authFailure) {
-    if (!found && n.event !== 'SessionStart') throw authFailure;
     await recordStatus(stateDir, { host, event: n.event, mode: 'capture', status: 'failed', code: errorCode(authFailure) }).catch(() => {});
     if (found) return withWarning(host, port.defaultOutput?.(payload.hook_event_name) ?? null, found.warning);
-    return captureStopped(host, port, payload, errorCode(authFailure));
+    const told = await tellOnce({ host, port, n, stateDir, notice: stoppedNotice(host, errorCode(authFailure)) });
+    if (told) return told;
+    if (n.event === 'SessionStart') return port.formatContext(START_TEXT, n.event) ?? port.defaultOutput?.(payload.hook_event_name) ?? null;
+    throw authFailure;
   }
   const output = await answerEvent({ host, port, n, payload, stateDir, request, captureOnly });
-  return found ? withWarning(host, output, found.warning) : output;
+  if (found) return withWarning(host, output, found.warning);
+  return signedOut && n.event === 'SessionStart' ? { ...output, systemMessage: SIGN_IN_NOTICE } : output;
 }
 
-/** A broken capture sign-in otherwise looks exactly like a session being recorded. Say so once per session, with the fix. */
-function captureStopped(host, port, payload, code) {
-  const cli = fileURLToPath(new URL('./cli.mjs', import.meta.url));
-  const notice = `Estelle is not recording this session: its capture sign-in stopped working (${code}). `
-    + `To sign in again, run: node "${cli}" setup ${host} --capture-login`;
+const SIGN_IN_NOTICE = 'Estelle is not recording this session. Run /estelle:login once to sign in.';
+const TELLING_EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse']);
+
+function stoppedNotice(host, code) {
+  const fix = host === 'claude-code' ? 'run /estelle:login'
+    : `run: node "${fileURLToPath(new URL('./cli.mjs', import.meta.url))}" setup ${host} --login`;
+  return `Estelle is not recording this session: its sign-in stopped working (${code}). To sign in again, ${fix}`;
+}
+
+/** A broken sign-in otherwise looks exactly like a session being recorded. Once per session, at the first event this host
+ *  can carry words on, which is not the same event on every host. ``null`` when this event cannot, or it was already said. */
+async function tellOnce({ host, port, n, stateDir, notice }) {
+  if (!TELLING_EVENTS.has(n.event)) return null;
+  const marker = join(stateDir, 'capture-notice', `${hash(`${host}:${n.sessionId}`)}.json`);
+  if (await readJson(marker).then(() => true, () => false)) return null;
+  const output = port.formatContext(n.event === 'SessionStart' ? `${START_TEXT}\n\n${notice}` : notice, n.event);
+  if (!output) return null;
+  await writeJson(marker, { told: true }).catch(() => {});
   console.error(notice);
-  const output = port.formatContext(`${START_TEXT}\n\n${notice}`, payload.hook_event_name)
-    ?? port.defaultOutput?.(payload.hook_event_name) ?? null;
   return host === 'claude-code' || host === 'codex' ? { ...output, systemMessage: notice } : output;
 }
 

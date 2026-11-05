@@ -125,8 +125,8 @@ test('doctor with a capture grant and a foreign API URL names the capture proble
   await mkdir(directory, { recursive: true, mode: 0o700 });
   await chmod(join(home, '.estelle-plugins'), 0o700);
   await writeFile(join(directory, 'credential.json'), JSON.stringify({ schema: 1, issuer: 'https://api.fatelabs.ca',
-    client_id: 'https://api.fatelabs.ca/oauth/clients/plugin-capture', resource: 'https://api.fatelabs.ca/session/events',
-    scope: 'estelle:capture offline_access', access_token: 'synthetic-access-token', refresh_token: 'synthetic-refresh-token',
+    client_id: 'https://api.fatelabs.ca/oauth/clients/plugin', resource: 'https://api.fatelabs.ca/mcp',
+    scope: 'estelle:mcp estelle:capture offline_access', access_token: 'synthetic-access-token', refresh_token: 'synthetic-refresh-token',
     expires_at: 4102444800, partition: 'a'.repeat(32), state: 'active' }), { mode: 0o600 });
   const result = await doctor(t, { HOME: home }, (request, response) => response.end());
   assert.equal(result.json.capture_auth, 'capture_origin');

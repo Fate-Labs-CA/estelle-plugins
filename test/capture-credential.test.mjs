@@ -14,8 +14,8 @@ async function unsupportedWindows(t) {
 }
 
 const record = () => ({ schema:1, issuer:'https://api.fatelabs.ca',
- client_id:'https://api.fatelabs.ca/oauth/clients/plugin-capture',
- resource:'https://api.fatelabs.ca/session/events', scope:'estelle:capture offline_access',
+ client_id:'https://api.fatelabs.ca/oauth/clients/plugin',
+ resource:'https://api.fatelabs.ca/mcp', scope:'estelle:mcp estelle:capture offline_access',
  access_token:'synthetic-access-token', refresh_token:'synthetic-refresh-token',
  expires_at:2000, partition:'a'.repeat(32), state:'active' });
 async function fixture(t) {
@@ -38,7 +38,7 @@ test('one private credential roundtrips, uses separate random partition, and abs
 
 test('typed credential rejects wider resources/scopes, foreign fields and malformed values',()=>{
  assert.deepEqual(captureRecord(record()),record());
- for(const delta of [{schema:true},{scope:'estelle:mcp'},{resource:'https://api.fatelabs.ca/mcp'},
+ for(const delta of [{schema:true},{scope:'estelle:mcp'},{resource:'https://api.fatelabs.ca/session/events'},
   {client_id:'foreign'},{issuer:'https://foreign.invalid'},{state:'complete'},
   {expires_at:Infinity},{expires_at:2.5},{partition:'not-an-account'},
   {access_token:'newline\nvalue'},{refresh_token:''},{foreign:true}]){

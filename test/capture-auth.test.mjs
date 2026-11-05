@@ -6,7 +6,8 @@ import { get } from 'node:http';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { CAPTURE_AUTH, CaptureCredentialOwner } from '../runtime/auth.mjs';
-import { runCaptureSetup, captureHookContext, receiveCaptureCode } from '../runtime/capture-auth.mjs';
+import { runCaptureSetup, captureHookContext, mcpHeaders, receiveCaptureCode } from '../runtime/capture-auth.mjs';
+import { createHash } from 'node:crypto';
 
 const response=()=>({token_type:'Bearer',scope:CAPTURE_AUTH.scope,expires_in:3600,
  access_token:'synthetic-access-token',refresh_token:'synthetic-refresh-token'});
@@ -175,7 +176,7 @@ test('a sign-in stuck by a lost reply is replaced only by explicit new consent, 
  await assert.rejects(old.request('/session/events',{}),/capture_transport_unknown/);
  assert.equal((await owner.read()).state,'refresh_pending');
  const denied=remote([]);
- assert.equal((await runCaptureSetup({host:'codex',home},{...denied,open:async()=>{throw Error('capture_browser');}})).status,'pending_capture_auth');
+ assert.equal((await runCaptureSetup({host:'codex',home,deadline:Date.now()+150},{...denied,open:async()=>{throw Error('capture_browser');}})).status,'pending_capture_auth');
  assert.equal((await owner.read()).state,'refresh_pending');assert.equal(denied.calls.length,0);
  const again=remote([response()]);
  assert.equal((await runCaptureSetup({host:'codex',home},{...again,open:callback})).status,'capture_configured');
@@ -195,6 +196,105 @@ test('uploads do not take the lock, so one in flight refuses no other hook',asyn
  const first=context.request('/session/events',{});await began;
  await context.request('/session/events',{});release();await first;
  assert.equal(port.calls.length,2);
+});
+
+for(const [name,reply] of [['503',{status:503,body:{error:'temporarily_unavailable'}}],['429',{status:429,body:{error:'slow_down'}}],
+ ['a gateway error page',{status:502,raw:'<html>bad gateway</html>'}]]){
+ test(`a refresh answered by ${name} keeps the sign-in, and the next hook refreshes`,async t=>{
+  if(await unsupportedWindows())return;
+  const {owner}=await seeded(t,0),busy=remote([reply]);
+  const first=await captureHookContext({env:{},owner,...busy});
+  await assert.rejects(first.request('/session/events',{}),/capture_http/);
+  assert.equal((await owner.read()).state,'active');
+  const back=remote([response(),{receipts:[]}]);
+  await (await captureHookContext({env:{},owner,...back})).request('/session/events',{});
+  assert.equal(back.calls.length,2);
+ });
+}
+
+test('a refresh the server refuses as dead stays stopped: only new consent fixes that',async t=>{
+ if(await unsupportedWindows())return;
+ const {owner}=await seeded(t,0),dead=remote([{status:400,body:{error:'invalid_grant'}}]);
+ const context=await captureHookContext({env:{},owner,...dead});
+ await assert.rejects(context.request('/session/events',{}),/capture_http/);
+ assert.equal((await owner.read()).state,'refresh_pending');
+});
+
+test('a refresh with too little time left is not started, so no reply can be lost',async t=>{
+ if(await unsupportedWindows())return;
+ const {owner}=await seeded(t,0),port=remote([response()]);
+ const context=await captureHookContext({env:{},owner,deadline:Date.now()+2000,...port});
+ await assert.rejects(context.request('/session/events',{}),/capture_deadline/);
+ assert.equal((await owner.read()).state,'active');assert.equal(port.calls.length,0);
+});
+
+test('a refresh in flight is not a stopped sign-in, and one nobody holds is',async t=>{
+ if(await unsupportedWindows())return;
+ const {owner}=await seeded(t,0);
+ await owner.locked(async state=>{
+  await state.save({...state.record,state:'refresh_pending'});
+  assert.equal((await captureHookContext({env:{},owner})).captureOnly,true);
+ });
+ await assert.rejects(captureHookContext({env:{},owner}),/capture_pending/);
+});
+
+test('the MCP header comes from the one sign-in, and is absent whenever the host should use its own',async t=>{
+ if(await unsupportedWindows())return;
+ const {owner:none}=await fixture(t);
+ assert.deepEqual(await mcpHeaders({env:{},owner:none}),{},'never signed in here');
+ const {owner}=await seeded(t);
+ assert.deepEqual(await mcpHeaders({env:{},owner}),{Authorization:`Bearer ${(await owner.read()).access_token}`});
+ const {owner:expired}=await seeded(t,0),port=remote([response()]);
+ const header=await mcpHeaders({env:{},owner:expired,...port});
+ assert.equal(header.Authorization,`Bearer ${(await expired.read()).access_token}`);
+ assert.equal(new URL(port.calls[0].url).pathname,'/oauth/token');assert.equal(port.calls.length,1,'a refresh, and no upload');
+ const {owner:stuck}=await seeded(t,0),lost=remote([Error('lost')]);
+ assert.deepEqual(await mcpHeaders({env:{},owner:stuck,...lost}),{},'a failed refresh falls back and never throws');
+});
+
+test('a callback that is not exactly ours is refused',async t=>{
+ if(await unsupportedWindows())return;
+ for(const change of [u=>{u.searchParams.set('iss','https://other.example');},u=>{u.pathname='/other';},u=>{u.searchParams.delete('iss');}]){
+  let status;
+  await assert.rejects(receiveCaptureCode({state:'owned',challenge:'c',deadline:Date.now()+3000,open:async url=>{
+   const target=new URL(new URL(url).searchParams.get('redirect_uri'));
+   target.search=new URLSearchParams({code:'abc',state:'owned',iss:CAPTURE_AUTH.issuer});change(target);
+   status=await new Promise((resolve,reject)=>{const r=get(target,{agent:false},res=>{res.resume();res.on('end',()=>resolve(res.statusCode));});r.on('error',reject);});
+  }}),/capture_callback/);
+  assert.equal(status,400);
+ }
+});
+
+test('what the plugin asks for at sign-in is what the server requires',async t=>{
+ if(await unsupportedWindows())return;
+ const {home}=await fixture(t),login=remote([response()]);let url;
+ await runCaptureSetup({host:'claude',home},{...login,open:async u=>{url=new URL(u);assert.equal(await callback(u),200);}});
+ const asked=url.searchParams;
+ assert.equal(url.origin+url.pathname,'https://api.fatelabs.ca/oauth/authorize');
+ assert.equal(asked.get('client_id'),'https://api.fatelabs.ca/oauth/clients/plugin');
+ assert.equal(asked.get('resource'),'https://api.fatelabs.ca/mcp');
+ assert.equal(asked.get('scope'),'estelle:mcp estelle:capture offline_access');
+ assert.equal(asked.get('response_type'),'code');assert.equal(asked.get('code_challenge_method'),'S256');
+ assert.match(asked.get('redirect_uri'),/^http:\/\/127\.0\.0\.1:\d+\/estelle-plugin\/callback$/);
+ const sent=new URLSearchParams(login.calls[0].body);
+ assert.equal(sent.get('grant_type'),'authorization_code');
+ assert.equal(sent.get('redirect_uri'),asked.get('redirect_uri'));
+ assert.equal(sent.get('resource'),asked.get('resource'));
+ assert.equal(createHash('sha256').update(sent.get('code_verifier')).digest('base64url'),asked.get('code_challenge'));
+});
+
+test('a login that fails says why, in our own words',async t=>{
+ if(await unsupportedWindows())return;
+ const {home}=await fixture(t);
+ const result=await runCaptureSetup({host:'claude',home,deadline:Date.now()+100},{...remote([]),open:async()=>{}});
+ assert.equal(result.status,'pending_capture_auth');assert.equal(result.reason,'capture_deadline');
+});
+
+test('a browser that will not open does not end the sign-in: the address still works',async t=>{
+ if(await unsupportedWindows())return;
+ const {home,owner}=await fixture(t),port=remote([response()]);
+ const result=await runCaptureSetup({host:'claude',home},{...port,open:async url=>{setTimeout(()=>callback(url),10);throw Error('capture_browser');}});
+ assert.equal(result.status,'capture_configured');assert.equal((await owner.read()).state,'active');
 });
 
 test('dsh signs in for capture like every other host',async t=>{

@@ -89,10 +89,38 @@ test('a stopped capture sign-in tells the person at session start, with the comm
  const f=await fixture(t);
  const output=await handleHook({host:'claude-code',payload:{...f.payload,hook_event_name:'SessionStart'},stateDir:f.stateDir,
   request:f.request,requestContext:async()=>{throw Error('capture_pending');}});
- assert.match(output.systemMessage,/not recording this session.*capture_pending.*setup claude-code --capture-login/);
- assert.match(output.hookSpecificOutput.additionalContext,/estelle_resume[\s\S]*--capture-login/);
+ assert.match(output.systemMessage,/not recording this session.*capture_pending.*\/estelle:login/);
+ assert.match(output.hookSpecificOutput.additionalContext,/estelle_resume[\s\S]*\/estelle:login/);
  assert.equal(f.calls.length,0);
  assert.equal(JSON.parse(await readFile(join(f.stateDir,'status','claude-code-capture.json'))).code,'capture_pending');
+});
+
+for(const [host,payload,words] of [
+ ['claude-code',{hook_event_name:'SessionStart'},o=>o.systemMessage],
+ ['codex',{hook_event_name:'SessionStart',model:'gpt-5',permission_mode:'default',source:'startup'},o=>o.systemMessage],
+ ['dsh',{hook_event_name:'SessionStart'},o=>o.context],
+ ['cursor',{hook_event_name:'sessionStart',conversation_id:'owned-native-session'},o=>o.additional_context],
+ ['kimi',{hook_event_name:'UserPromptSubmit',prompt:'hi'},o=>o.message],
+ ['grok',{hookEventName:'pre_tool_use',sessionId:'owned-native-session',toolName:'Read',toolInput:{}},o=>o.hookSpecificOutput?.additionalContext],
+]){
+ test(`a stopped sign-in reaches ${host} once, in its own field`,async t=>{
+  const f=await fixture(t);
+  const send=()=>handleHook({host,payload:{...f.payload,...payload},stateDir:f.stateDir,request:f.request,
+   requestContext:async()=>{throw Error('capture_pending');}});
+  const first=await send();
+  assert.match(words(first)??'',/not recording this session.*capture_pending/);
+  const second=await send().catch(error=>error);
+  assert.ok(second instanceof Error||!JSON.stringify(second??'').includes('not recording'),'said once per session');
+  assert.equal(f.calls.length,0);
+ });
+}
+
+test('someone with no sign-in is told once per session start how to fix it, and only then',async t=>{
+ const f=await fixture(t);
+ const send=event=>handleHook({host:'claude-code',payload:{...f.payload,hook_event_name:event},stateDir:f.stateDir,
+  request:f.request,requestContext:async()=>({signedOut:true})});
+ assert.match((await send('SessionStart')).systemMessage,/\/estelle:login/);
+ assert.equal(JSON.stringify(await send('UserPromptSubmit')??'').includes('/estelle:login'),false);
 });
 
 test('the write warning still fires on a capture-only session and nothing but the stream route is called',async t=>{

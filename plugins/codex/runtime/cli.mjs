@@ -74,7 +74,9 @@ if (command === 'doctor') {
       requestContext: async () => {
         const { captureHookContext } = await import('./capture-auth.mjs');
         const capture = await captureHookContext();
-        return capture ? { ...capture, stateDir: stateDirectory(process.env, capture.partition) } : null;
+        if (capture) return { ...capture, stateDir: stateDirectory(process.env, capture.partition) };
+        // Only Claude Code has the one-step sign-in. Elsewhere the install doc already asks for a key.
+        return host === 'claude-code' && !process.env.ESTELLE_API_KEY && process.platform !== 'win32' ? { signedOut: true } : null;
       } });
     if (output) console.log(JSON.stringify(output));
   } catch (error) {
@@ -113,6 +115,11 @@ if (command === 'doctor') {
   const verdict = telemetryCheck(Buffer.concat(chunks).toString('utf8'));
   console.log(verdict);
   if (verdict !== TELEMETRY_OFF) process.exitCode = 1;
+} else if (command === 'mcp-headers') {
+  // Always a JSON object and exit 0: anything else would stop Claude Code falling back to its own OAuth.
+  let headers = {};
+  try { headers = await (await import('./capture-auth.mjs')).mcpHeaders(); } catch { headers = {}; }
+  console.log(JSON.stringify(headers));
 } else if (command === 'setup') {
   try {
     const { runSetupArgs } = await import('./setup.mjs');
@@ -125,6 +132,6 @@ if (command === 'doctor') {
     process.exitCode = 1;
   }
 } else {
-  console.error('Usage: node runtime/cli.mjs hook <claude-code|codex|kimi|grok|cursor|dsh> | doctor | setup <host> [--apply] [--expect SHA256] | setup <host> --capture-login | setup <host> --capture-logout');
+  console.error('Usage: node runtime/cli.mjs hook <claude-code|codex|kimi|grok|cursor|dsh> | doctor | setup <host> [--apply] [--expect SHA256] | setup <host> --login | setup <host> --logout');
   process.exitCode = 1;
 }

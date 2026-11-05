@@ -47,8 +47,10 @@ function nativeHooks(host, variable, events) {
 }
 emit('plugins/claude/.claude-plugin/plugin.json', { ...manifest, license: 'Apache-2.0', author: { name: 'Fate Labs' },
   repository: 'https://github.com/uqeu/estelle-plugins', hooks: './hooks/hooks.json', mcpServers: './.mcp.json' });
-// URL only: Claude Code signs in with OAuth. A pinned header disables that, and an unset variable goes out literally.
-emit('plugins/claude/.mcp.json', { mcpServers: { Estelle: { type: 'http', url: server.url } } });
+// The helper prints the plugin's own sign-in, or nothing, in which case Claude Code signs in with its own OAuth as before.
+// Never a pinned header: that disables OAuth, and an unset variable goes out literally.
+emit('plugins/claude/.mcp.json', { mcpServers: { Estelle: { type: 'http', url: server.url,
+  headersHelper: 'node "${CLAUDE_PLUGIN_ROOT}/runtime/cli.mjs" mcp-headers' } } });
 emit('plugins/claude/hooks/hooks.json', nativeHooks('claude-code', 'CLAUDE_PLUGIN_ROOT', common));
 emit('plugins/codex/.codex-plugin/plugin.json', { ...manifest, skills: ['./skills', './command-skills'],
   hooks: './hooks/hooks.json', mcpServers: './.mcp.json' });

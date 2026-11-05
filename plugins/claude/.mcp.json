@@ -2,7 +2,8 @@
   "mcpServers": {
     "Estelle": {
       "type": "http",
-      "url": "https://api.fatelabs.ca/mcp"
+      "url": "https://api.fatelabs.ca/mcp",
+      "headersHelper": "node \"${CLAUDE_PLUGIN_ROOT}/runtime/cli.mjs\" mcp-headers"
     }
   }
 }

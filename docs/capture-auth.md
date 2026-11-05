@@ -1,72 +1,48 @@
-# Sign in for local session capture
+# One sign-in for tools and session recording
 
-Connecting native MCP and authorizing local session capture are separate steps. MCP login does not
-expose its token to the hook process, and Estelle does not read the host's OAuth store to obtain it.
-This source adds an explicit browser-consent setup command; publication and a real host sign-in
-must be verified separately before reporting an installed workflow working.
+Install the plugin and sign in once. In Claude Code that is `/estelle:login`, which opens one browser page with one Allow. That one sign-in connects Estelle's tools and records your sessions. You do not create a key and you do not sign in twice.
 
-An installer agent can invoke the shipped entry from the actual installed package:
+## How it fits together
 
-```sh
-node "<installed Estelle package>/runtime/cli.mjs" setup codex --capture-login
+```mermaid
+flowchart TD
+  I["/plugin install estelle@estelle-plugins"] --> M["The plugin brings the MCP entry and the hooks"]
+  M --> L["/estelle:login: one browser page, one Allow"]
+  L --> C["One sign-in, saved privately on this machine"]
+  C --> H["headersHelper gives it to MCP"]
+  C --> U["Hooks upload sessions with it"]
 ```
 
-Use `claude`, `cursor`, `kimi`, `grok` or `dsh` for the other POSIX hosts. The shared credential/capture
-adapter is implemented for these hosts; that is not a claim that five native installations have
-been exercised. Windows reports `pending_unsupported_platform`, changes nothing and requires a
-separate safe ACL/native implementation. No command grants hook trust or restarts an active session.
+The plugin carries the MCP entry, so nobody installs the MCP server separately. Hooks are separate programs and cannot read a sign-in made through `/mcp`, because Claude Code does not expose that token to them. So the plugin makes its own sign-in and gives it to both.
 
-The command opens Estelle's existing sign-in and consent page. Approving it authorizes uploading
-recorded session events, including conversation text, tool results and captured file changes.
-It does not authorize reading account history, recall, checkpoints, indexing, settings, models,
-repairs or financial work. The grant is bound to the first-party capture client and exactly
-`https://api.fatelabs.ca/session/events`. No native MCP token is exported and no API key needs to
-be printed, copied or placed in an environment file.
+## What stays the same
 
-The hook stores one capture credential privately under `~/.estelle-plugins/capture-auth`, with
-owner-only POSIX permissions. Its transcript upload state uses a separate random local partition;
-a later sign-in cannot replay a previous account's queued batches. This partition is not a native
-session or Rooms identity. A canonical inherited API key continues to use its original behavior
-and bypasses this store entirely.
+- **If you signed in through `/mcp`:** your tools keep working. When the plugin has no sign-in of its own, it gives Claude Code no header and Claude Code uses its own OAuth. Each new session tells you sessions are not being recorded and to run `/estelle:login`.
+- **If `ESTELLE_API_KEY` is set:** hooks use the key as before, the plugin's sign-in is not opened, and MCP is unchanged.
 
-`capture_configured` proves that this command received and privately saved a capture grant.
-It does not prove a hook ran or a transcript upload was acknowledged. Use a normal fresh host
-session and inspect the plugin's content-free local status. `doctor` distinguishes a configured
-capture grant from full-key authentication and does not probe MCP or silently refresh credentials.
-Capture-only ingestion does not run automatic PR verification, model retitling or work metrics;
-those panels are not repaired by this sign-in flow.
+## What the grant allows
 
-Refresh records a pending state before one request. If the connection never finished its TLS
-handshake, nothing reached the server, so the sign-in stays good and the next hook tries again. A
-lost or malformed acknowledgement stops capture instead of resending a refresh token the server may
-have consumed, which would revoke the sign-in. A hook killed mid-refresh stops capture the same way.
+The page says what you are approving. This token works in two places: Estelle's MCP server, where it acts as your account, including starting work that spends, and session upload, which sends your messages, tool results and captured file changes. Hooks use it for upload only.
 
-Stopped capture says so: the next session start prints the reason and the command to run. Running
-`--capture-login` again replaces a stopped sign-in after new consent, on a new partition. It does not
-revoke the old grant, which expires on its own, because the server's revoke is per account and would
-also revoke the new one. A lock older than the longest login (11 minutes) belongs to a dead process
-and is cleared by whichever caller finds it; a live lock is never taken. Two callers clearing the
-same dead lock at once are caught when they save, not prevented. Atomic file replacement and
-directory flushes are tested locally; power-loss and every POSIX filesystem are not thereby certified.
+It is stored under `~/.estelle-plugins/capture-auth` with owner-only permissions, not in your keychain. Sign out with `/estelle:logout`. That revokes this plugin's grant for your account, so another machine signed in with the plugin has to sign in again. Your Claude and ChatGPT connections are not touched, and sessions already recorded stay in the account.
 
-To stop this grant explicitly:
+## When it stops
 
-```sh
-node "<installed Estelle package>/runtime/cli.mjs" setup codex --capture-logout
-```
+The token refreshes about hourly.
 
-Logout blocks local capture before the remote revoke request. Only a definite answer from the server
-produces `capture_signed_out`, including "this token is no longer valid"; an uncertain response
-remains `pending_capture_auth`, and running logout again is the retry. It neither deletes previously
-captured history nor signs out unrelated MCP clients. An explicit new consent can issue a new grant
-later. No automatic retry or native OAuth-store cleanup occurs.
+- **Offline, or the server is busy or down:** nothing is lost. The sign-in stays good and the next hook tries again.
+- **A lost reply, or a hook killed mid-refresh:** the plugin cannot tell whether the old token was spent, and sending it twice would end the sign-in on every machine. So recording stops.
+- **When recording has stopped:** the session says so once, at the first point that host can show text, with the fix. Tools fall back to Claude Code's own OAuth if you have it. `/estelle:login` replaces the stopped sign-in after you approve again.
 
-The existing server tables have no per-device family identifier. Scoped logout and refresh-replay
-revocation cover this account's fixed capture client/resource, so another capture installation for
-the same account can also need to sign in again. This is not per-device-only logout.
+A lock left by a dead process clears after 11 minutes, longer than any real sign-in can hold it.
 
-Legacy migration remains a separate command. A capture-only credential cannot prove replacement
-MCP authentication, so it cannot authorize removal of a legacy MCP registration. Existing setup
-continues to require its independently authenticated MCP initialization before that mutation.
-Versions 0.0.7/0.0.8 active cache paths still require the documented normal reload; this command does
-not repair an already loaded old command or bypass native trust.
+## Limits
+
+- **Only Claude Code gets the one-step flow.** Other hosts have no documented way for a plugin to supply the MCP header, so they still use `ESTELLE_API_KEY` for tools. The same login records sessions there.
+- **Windows** is not supported yet, and the command says so.
+- **A machine with no browser:** the command prints the address, but the sign-in returns to this machine's loopback address, so a browser elsewhere cannot finish it. Use a key.
+- **After signing in, tools may not connect until you reconnect.** Run `/mcp` and reconnect Estelle, or restart.
+- **An old sign-in that was replaced is not revoked.** It expires by itself within 30 days. Revoke is per account and would also end the new one.
+- **Queued uploads from a replaced sign-in** stay on disk and are not sent. A session that fires again re-uploads from its start, under whichever account is signed in by then.
+- **A session that ended while recording was stopped** and never resumes is not recorded.
+- **Replacing a sign-in needs the file to be readable.** If `~/.estelle-plugins` was given wider permissions by hand, login refuses until they are fixed, and it says `capture_private`.

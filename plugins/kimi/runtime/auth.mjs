@@ -30,8 +30,8 @@ export async function launchCredential(env = process.env, home = homedir()) {
 }
 
 export const CAPTURE_AUTH = Object.freeze({ issuer:'https://api.fatelabs.ca',
- client:'https://api.fatelabs.ca/oauth/clients/plugin-capture',
- resource:'https://api.fatelabs.ca/session/events', scope:'estelle:capture offline_access', bytes:16000,
+ client:'https://api.fatelabs.ca/oauth/clients/plugin',
+ resource:'https://api.fatelabs.ca/mcp', scope:'estelle:mcp estelle:capture offline_access', bytes:16000,
  loginMs:600000 });
 // The longest legitimate holder is a login, which its own deadline ends. A lock older than that belongs to a
 // process that was killed (hosts kill hooks at their timeout) and would otherwise refuse every sign-in forever.
@@ -121,7 +121,13 @@ export class CaptureCredentialOwner {
    return saved;
   }finally{if(file)await file.close();await this.#fs.unlink(path).catch(()=>{});}
  }
- /** True when the path is free to claim. Two callers racing here is survivable: #save compares before it replaces. */
+ /** A live holder has the lock now. A dead one's lock is not busy: only its age tells them apart. */
+ async busy() {
+  try{return Date.now()-Number((await this.#fs.lstat(join(this.#directory,'credential.lock'),{bigint:true})).mtimeNs/1000000n)<=LOCK_STALE_MS;}
+  catch{return false;}
+ }
+ /** True when the path is free to claim. Two callers racing here is unlikely and not prevented: identical bytes pass the
+  *  compare in #save, so both could spend the refresh, and the server's replay check then ends in a new sign-in. */
  async #clearDeadLock(path) {
   let info;
   try{info=await this.#fs.lstat(path,{bigint:true});}
