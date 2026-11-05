@@ -212,6 +212,19 @@ for(const [name,reply] of [['503',{status:503,body:{error:'temporarily_unavailab
  });
 }
 
+test('a refresh reply with no scope is accepted, and a login with none, or a refresh with a wrong one, is not',async t=>{
+ if(await unsupportedWindows())return;
+ const {scope:_scope,...noScope}=response();
+ const {owner}=await seeded(t,0),port=remote([noScope,{receipts:[]}]);
+ await (await captureHookContext({env:{},owner,...port})).request('/session/events',{});
+ assert.equal((await owner.read()).state,'active');assert.equal(port.calls.length,2);
+ const {owner:wrong}=await seeded(t,0),widened=remote([{...response(),scope:'estelle:mcp'}]);
+ await assert.rejects((await captureHookContext({env:{},owner:wrong,...widened})).request('/session/events',{}),/capture_grant/);
+ const {home,owner:fresh}=await fixture(t),login=remote([noScope]);
+ assert.equal((await runCaptureSetup({host:'claude',home},{...login,open:callback})).status,'pending_capture_auth');
+ assert.equal(await fresh.read(),null);
+});
+
 test('a refresh the server refuses as dead stays stopped: only new consent fixes that',async t=>{
  if(await unsupportedWindows())return;
  const {owner}=await seeded(t,0),dead=remote([{status:400,body:{error:'invalid_grant'}}]);

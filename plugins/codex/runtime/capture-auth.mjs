@@ -51,8 +51,10 @@ function transport(path,body,headers,deadline,{request=httpsRequest,signal}={}) 
  });
 }
 
-function grant(value,partition,now) {
- if(value?.token_type!=='Bearer'||value.scope!==CAPTURE_AUTH.scope
+// On a refresh `scope` may be absent: the server rotated the pair and could not re-read the grant. Answering an error there
+// would send this client back with a spent token, so it hands over the pair instead. A login always states it.
+function grant(value,partition,now,refreshed=false) {
+ if(value?.token_type!=='Bearer'||(value.scope!==CAPTURE_AUTH.scope&&!(refreshed&&value.scope===undefined))
   || !Number.isSafeInteger(value.expires_in)||value.expires_in<1||value.expires_in>3600)throw Error('capture_grant');
  return captureRecord({schema:1,issuer:CAPTURE_AUTH.issuer,client_id:CAPTURE_AUTH.client,
   resource:CAPTURE_AUTH.resource,scope:CAPTURE_AUTH.scope,partition,state:'active',
@@ -88,7 +90,7 @@ async function freshAccess(owner,partition,deadline,ports) {
    if(error.notSent||error.notSpent||error.message==='capture_deadline')await state.save(record);
    throw error;
   }
-  const next=grant(value,partition,Math.floor(Date.now()/1000));await state.save(next);
+  const next=grant(value,partition,Math.floor(Date.now()/1000),true);await state.save(next);
   return next.access_token;
  });
 }
