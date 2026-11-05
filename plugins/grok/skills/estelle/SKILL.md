@@ -53,7 +53,7 @@ Do not rerun migration on SessionStart, every tool, ordinary coding or routine M
 
 On Codex, every plugin update turns Estelle's hooks off until the person approves them again. Codex prints
 `Hook failed: plugin contents changed; hook approval required` for each hook it skips, and while it does,
-nothing is captured and file writes are not checked for credentials. Tell the person once: run `/hooks` and
+nothing is captured and nothing warns about a key in a file write. Tell the person once: run `/hooks` and
 press `t`, or choose **Trust all and continue** when Codex starts. Approving is theirs to do, never yours.
 
 ## Start and inspect

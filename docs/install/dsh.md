@@ -19,7 +19,7 @@ you run, and restart a running profile afterwards.
 |---|---|
 | Repository tools and memory | MCP tools named `mcp__Estelle__<tool>`. Absent when `ESTELLE_API_KEY` is unset |
 | Session capture and recall | Our listeners on dsh's agent, tool and session events. Root agent only; subagents are not captured |
-| Credential check on file writes | `write`, `edit`, `str_replace_editor` and `apply_patch`. A shell command is not checked |
+| Warning when a file write holds a real key shape | `write`, `edit`, `str_replace_editor` and `apply_patch`. It never stops the write. A shell command is not checked |
 | Commands | `/estelle-resume`, `/estelle-code`, `/estelle-review`, `/estelle-monitor`, `/estelle-rooms`, `/estelle-cloud`, `/estelle-handoff`. dsh only runs plugin commands in its Web UI: headless takes none and its SDK routes only built-ins |
 | Skills | The shared Estelle skills, ranked below your own |
 

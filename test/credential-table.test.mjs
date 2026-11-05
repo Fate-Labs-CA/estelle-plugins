@@ -5,33 +5,24 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { protectWrite } from '../runtime/protect.mjs';
+import { textHasCredential } from '../runtime/credential.mjs';
+import { firstFinding, writeWarning } from '../runtime/write-warning.mjs';
 import { VENDOR_PATTERNS } from '../runtime/redact.mjs';
 import { ORDINARY_ROWS, TRUE_ROWS, evaluate, synthetic } from './fixtures/credential-table.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const word = ['to', 'ken'].join('');
-const write = content => ({ host: 'codex', event: 'PreToolUse', toolName: 'Write', toolInput: { content } });
-const refused = output => output?.hookSpecificOutput?.permissionDecision === 'deny';
+const flagged = call => firstFinding(call.toolInput, textHasCredential);
+const write = content => ({ toolName: 'Write', toolInput: { content } });
 
-test('every true credential is refused and every ordinary form passes', () => {
+test('every true credential is flagged and every ordinary form passes', () => {
   assert(TRUE_ROWS.length >= 40 && ORDINARY_ROWS.length >= 40, 'the table shrank');
-  const { missed, blocked } = evaluate(protectWrite);
+  const { missed, blocked } = evaluate(flagged);
   assert.deepEqual(missed, [], 'credentials that got through');
   assert.deepEqual(blocked, [], 'ordinary code that was refused');
 });
 
-test('a refusal never repeats the value it found', () => {
-  for (const [, call] of TRUE_ROWS) {
-    const output = JSON.stringify(protectWrite({ host: 'codex', event: 'PreToolUse', ...call }));
-    assert(!output.includes(JSON.stringify(call.toolInput)));
-    for (const value of Object.values(call.toolInput)) {
-      if (typeof value === 'string' && value.length > 16) assert(!output.includes(value));
-    }
-  }
-});
-
-test('the vendor list is complete: each shape redaction knows is one the guard refuses', () => {
+test('the vendor list is complete: each shape redaction knows is one the scan flags', () => {
   assert.equal(VENDOR_PATTERNS.length, 12, 'a vendor shape was added or removed; add its row to the table');
   const covered = TRUE_ROWS.map(([, call]) => JSON.stringify(call.toolInput));
   for (const [pattern, label] of VENDOR_PATTERNS) {
@@ -39,7 +30,7 @@ test('the vendor list is complete: each shape redaction knows is one the guard r
   }
 });
 
-test('generated secrets of realistic shapes are refused at every strength, with no seed-dependent misses', () => {
+test('generated secrets of realistic shapes are flagged at every strength, with no seed-dependent misses', () => {
   const ROUNDS = 300;
   const shapes = [length => synthetic(length, length), length => synthetic(length + 1000, length, '0123456789abcdef')];
   for (let i = 0; i < ROUNDS; i++) {
@@ -47,7 +38,7 @@ test('generated secrets of realistic shapes are refused at every strength, with 
     for (const make of shapes) {
       const value = make(length + i);
       for (const label of [`session_${word}`, `next_${word}`, `${word}_id`, `auth_${word}s`]) {
-        assert(refused(protectWrite(write(`${label} = "${value}"`))), `${label} let a ${length}-char value through`);
+        assert(flagged(write(`${label} = "${value}"`)), `${label} let a ${length}-char value through`);
       }
     }
   }
@@ -58,7 +49,8 @@ test('adversarial input stays inside the hook budget', () => {
   const MAX_INPUT = 2_000_000;
   for (const text of [`${word}=x `.repeat(MAX_INPUT / 8), 'a'.repeat(MAX_INPUT), `${word} = "`.repeat(MAX_INPUT / 9), `${word.toUpperCase()}=x `.repeat(MAX_INPUT / 8)]) {
     const started = Date.now();
-    protectWrite(write(text));
+    flagged(write(text));
+    writeWarning({ event: 'PreToolUse', ...write(text) });
     assert(Date.now() - started < HOOK_TIMEOUT_MS / 2, `took ${Date.now() - started}ms`);
   }
 });
@@ -66,7 +58,7 @@ test('adversarial input stays inside the hook budget', () => {
 // Each edit weakens one clause of the contract. A mutant that survives means that clause has no test,
 // and the anchor assertion keeps this list from going quiet when the source is reworded.
 const WEAKENINGS = [
-  ['runtime/credential.mjs', 'for (const [pattern] of VENDOR_PATTERNS) {', 'for (const [pattern] of []) {', 'vendor shapes ignored'],
+  ['runtime/credential.mjs', 'for (const [pattern, label] of VENDOR_PATTERNS) {', 'for (const [pattern, label] of []) {', 'vendor shapes ignored'],
   ['runtime/credential.mjs', "if (at < 0) return 'none';", "return 'none';", 'names never count'],
   ['runtime/credential.mjs', "if (strength === 'weak') return isOpaque(body);", "if (strength !== 'none') return isOpaque(body);", 'human passwords need to look random'],
   ['runtime/credential.mjs', 'if (isRepeatedMask(body)) return true;', 'return true;', 'everything is a placeholder'],
@@ -84,16 +76,15 @@ const WEAKENINGS = [
   ['runtime/credential.mjs', 'return COUNT_LIKE_NEIGHBOURS.has(before) ? \'weak\' : \'strong\';', "return 'weak';", 'every singular name is weak'],
   ['runtime/credential.mjs', "return authPrefix ? 'strong' : 'weak';", "return 'none';", 'plural names never count'],
   ['runtime/credential.mjs', "if (isOpaque(body)) return !isTemplate(body)", "if (false) return !isTemplate(body)", 'bare opaque values pass'],
-  ['runtime/credential.mjs', 'return literalIsCredential(String(value), labelStrength(key));', 'return false;', 'tool input fields unchecked'],
   ['runtime/credential.mjs', "if (REGEX_LITERAL.test(body) || isSnakeIdentifier(body)) return false;", "if (REGEX_LITERAL.test(body) || true) return false;", 'any bare value reads as an identifier'],
   ['runtime/credential.mjs', "if (segments.length < 2 || !segments.some(segment => /^[a-z]{3,}$/.test(segment))) return false;", '', 'an identifier needs no real word'],
   ['runtime/credential.mjs', "return segments.every(segment => segment.replace(/\\D/g, '').length <= MIN_OPAQUE_DIGITS);", 'return true;', 'a digit-heavy segment reads as a word'],
   ['runtime/credential.mjs', "const REGEX_LITERAL = /^\\/(?=[^/]*[|^$*+?\\\\])[^/\\n]+\\/[dgimsuvy]*$/;", 'const REGEX_LITERAL = /^\\//;', 'anything after a slash reads as a regex'],
   ['runtime/credential.mjs', "if (REGEX_LITERAL.test(body) || isSnakeIdentifier(body)) return false;", "if (body.startsWith('/') || isSnakeIdentifier(body)) return false;", 'a slash alone reads as a regex'],
-  ['runtime/protect.mjs', 'if (textHasCredential(written)) return true;', '', 'string values unchecked'],
-  ['runtime/protect.mjs', 'if (textHasCredential(key)) return true;', '', 'object keys unchecked'],
-  ['runtime/protect.mjs', "/^(?:\\+|\\*\\*\\* (?:Add|Update|Move|Delete))/", '/^$/', 'added patch lines dropped'],
-  ['runtime/protect.mjs', "new Set(['old_string', 'old_str', 'oldText', 'old_text'])", "new Set(['old_string', 'new_string', 'edits', 'content', 'command'])", 'written fields skipped'],
+  ['runtime/write-warning.mjs', 'if (found) return found;\n    } else', '} else', 'string values unchecked'],
+  ['runtime/write-warning.mjs', 'if (found) return found;\n        pending', 'pending', 'object keys unchecked'],
+  ['runtime/write-warning.mjs', "/^(?:\\+|\\*\\*\\* (?:Add|Update|Move|Delete))/", '/^$/', 'added patch lines dropped'],
+  ['runtime/write-warning.mjs', "new Set(['old_string', 'old_str', 'oldText', 'old_text'])", "new Set(['old_string', 'new_string', 'edits', 'content', 'command'])", 'written fields skipped'],
 ];
 
 // These restore the old defect. A mutant here means ordinary code would be refused again.
@@ -123,8 +114,8 @@ const OVERREACH = [
   ['runtime/credential.mjs', "|| body.length < MIN_LITERAL || /[()[\\]{}.\"'`]/.test(body)) return false;", '|| body.length < MIN_LITERAL) return false;', 'a call or member access read as a value'],
   ['runtime/credential.mjs', "if (segments.length < 2 ||", 'if (segments.length < 99 ||', 'no identifier ever recognised'],
   ['runtime/credential.mjs', "if (!/^[a-z_$][a-z0-9_$]*$/.test(body)) return false;", 'return false;', 'the identifier check is skipped'],
-  ['runtime/protect.mjs', 'const written = PATCH_START.test(item.value) ? addedPatchLines(item.value) : item.value;', 'const written = item.value;', 'removed patch lines scanned'],
-  ['runtime/protect.mjs', '.filter(([key]) => !REMOVED_FIELDS.has(key))', '', 'old_string scanned'],
+  ['runtime/write-warning.mjs', 'PATCH_START.test(item.value) ? addedPatchLines(item.value) : item.value', 'item.value', 'removed patch lines scanned'],
+  ['runtime/write-warning.mjs', '.filter(([key]) => !REMOVED_FIELDS.has(key))', '', 'old_string scanned'],
 ];
 
 async function mutated(t, file, before, after) {
@@ -136,9 +127,10 @@ async function mutated(t, file, before, after) {
   assert(source.includes(before), `the mutation anchor is gone from ${file}: ${before}`);
   await writeFile(join(directory, file), source.replace(before, after));
   const script = join(directory, 'check.mjs');
-  await writeFile(script, `import { protectWrite } from ${JSON.stringify(pathToFileURL(join(directory, 'runtime', 'protect.mjs')).href)};
+  await writeFile(script, `import { firstFinding } from ${JSON.stringify(pathToFileURL(join(directory, 'runtime', 'write-warning.mjs')).href)};
+    import { textHasCredential } from ${JSON.stringify(pathToFileURL(join(directory, 'runtime', 'credential.mjs')).href)};
     import { evaluate } from ${JSON.stringify(pathToFileURL(join(directory, 'table.mjs')).href)};
-    console.log(JSON.stringify(evaluate(protectWrite)));`);
+    console.log(JSON.stringify(evaluate(call => firstFinding(call.toolInput, textHasCredential))));`);
   const run = spawnSync(process.execPath, [script], { encoding: 'utf8', timeout: 30_000, maxBuffer: 1_000_000 });
   assert.equal(run.status, 0, run.stderr);
   return JSON.parse(run.stdout);
@@ -163,31 +155,3 @@ test('the unmutated copy passes the same check, so a mutant failure is the mutat
   assert.deepEqual(result, { missed: [], blocked: [] });
 });
 
-for (const [host, event, extra] of [
-  ['claude-code', 'PreToolUse', { hook_event_name: 'PreToolUse', tool_name: 'Write', session_id: 'owned-test' }],
-  ['codex', 'PreToolUse', { hook_event_name: 'PreToolUse', tool_name: 'apply_patch', session_id: 'owned-test', transcript_path: null, model: 'fixture', turn_id: 'turn', permission_mode: 'default', tool_use_id: 'call' }],
-  ['kimi', 'PreToolUse', { hook_event_name: 'PreToolUse', tool_name: 'Write', session_id: 'owned-test' }],
-  ['grok', 'PreToolUse', { hookEventName: 'PreToolUse', toolName: 'write_file', sessionId: 'owned-test' }],
-  ['cursor', 'preToolUse', { hook_event_name: 'preToolUse', tool_name: 'Write', conversation_id: 'owned-test' }],
-]) {
-  test(`${host}: the real runner refuses a key and lets a max-tokens lookup through`, async t => {
-    const home = await mkdtemp(join(tmpdir(), 'estelle-guard-runner-'));
-    t.after(() => rm(home, { recursive: true, force: true }));
-    const run = content => {
-      const key = host === 'grok' ? 'toolInput' : 'tool_input';
-      const payload = { ...extra, cwd: home, [key]: { content } };
-      const result = spawnSync(process.execPath, [join(root, 'runtime', 'cli.mjs'), 'hook', host], {
-        input: JSON.stringify(payload), encoding: 'utf8', timeout: 5_000, maxBuffer: 100_000,
-        env: { PATH: process.env.PATH, HOME: home, ESTELLE_PLUGIN_DATA: join(home, 'state') }, cwd: home,
-      });
-      assert.equal(result.status, 0, result.stderr);
-      return result.stdout.trim();
-    };
-    const denied = host === 'cursor' ? JSON.parse(run(`k = "${TRUE_ROWS[0][1].toolInput.content.split('"')[1]}"`)).permission
-      : JSON.parse(run(`k = "${TRUE_ROWS[0][1].toolInput.content.split('"')[1]}"`)).hookSpecificOutput.permissionDecision;
-    assert.equal(denied, 'deny');
-    const ordinary = run(ORDINARY_ROWS[1][1].toolInput.content);
-    if (event === 'preToolUse') assert.deepEqual(JSON.parse(ordinary), { permission: 'allow' });
-    else assert.equal(ordinary.includes('"deny"'), false, ordinary);
-  });
-}

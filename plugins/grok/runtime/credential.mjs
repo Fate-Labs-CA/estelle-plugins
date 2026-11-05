@@ -1,8 +1,9 @@
-// What a file write may not contain. One owner, separate from privacy redaction on purpose.
+// What counts as a credential in text. One owner, separate from privacy redaction on purpose.
 //
-// redact.mjs hides too much by design: over-hiding a log line costs nothing. A write refusal stops
-// someone's work, so it needs evidence of a VALUE. A NAME that merely sounds secret is not evidence,
-// and ML code is full of them. This file answers one question: is a credential literal being written?
+// redact.mjs hides too much by design: over-hiding a log line costs nothing. What reads this acts on someone's
+// work, so it needs evidence of a VALUE. A NAME that merely sounds secret is not evidence, and ML code is full of them.
+// Two readers, of different strength: `textHasCredential` decides what a handoff leaves behind instead of pushing
+// (move.mjs), and `vendorKindIn` is all the write hook looks at, because it only warns (write-warning.mjs).
 import { VENDOR_PATTERNS } from './redact.mjs';
 
 const MIN_LITERAL = 8;
@@ -299,11 +300,14 @@ function vendorMatchIsReal(match) {
   return !/^x{6,}$/i.test(whole.slice(Math.max(whole.lastIndexOf('_'), whole.lastIndexOf('-')) + 1));
 }
 
-function vendorCredential(text) {
-  for (const [pattern] of VENDOR_PATTERNS) {
-    for (const match of text.matchAll(pattern)) if (vendorMatchIsReal(match)) return true;
+/** The kind of the first real vendor shape in this text, or ''. */
+function vendorKind(text) {
+  for (const [pattern, label] of VENDOR_PATTERNS) {
+    for (const match of text.matchAll(pattern)) {
+      if (vendorMatchIsReal(match)) return /\[redacted ([^\]]+)\]/.exec(label)?.[1] ?? 'database password';
+    }
   }
-  return false;
+  return '';
 }
 
 function bearerCredential(text) {
@@ -323,16 +327,13 @@ function withoutEmptyPem(text) {
   });
 }
 
-/** One value written to a named field of a tool's input, outside any source text. */
-export function fieldIsCredential(key, value) {
-  if (value === null || value === undefined || typeof value === 'object' || typeof value === 'boolean') return false;
-  return literalIsCredential(String(value), labelStrength(key));
-}
+/** The kind of the first exact vendor key shape in this text, or ''. A name, a URL password or a bearer value is not one. */
+export const vendorKindIn = source => vendorKind(withoutEmptyPem(source.replaceAll('\0', '')));
 
 /** Input size is capped at MAX_JSON_BYTES by the hook runner, so each scan below is bounded by it. */
 export function textHasCredential(source) {
   const text = withoutEmptyPem(source.replaceAll('\0', ''));
-  if (vendorCredential(text) || urlCredential(text) || bearerCredential(text) || NAMED_HEX.test(text)) return true;
+  if (vendorKind(text) || urlCredential(text) || bearerCredential(text) || NAMED_HEX.test(text)) return true;
   for (const match of text.matchAll(LABEL)) {
     if (assignmentIsCredential(text, match[0], match.index, match.index + match[0].length)) return true;
   }

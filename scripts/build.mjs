@@ -3,7 +3,7 @@ import { statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { HOOK_EVENTS as CURSOR_EVENTS } from '../adapters/cursor.mjs';
-import { FILE_WRITE_MATCHER } from '../runtime/protect.mjs';
+import { FILE_WRITE_MATCHER } from '../runtime/write-warning.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const check = process.argv.includes('--check');

@@ -89,16 +89,16 @@ test('a checkpoint keeps only the person and the agent', async t => {
   assert.deepEqual(messages.map(message => [message.role, message.content]), [['user', 'fix the bug'], ['assistant', 'done']]);
 });
 
-test('the shared hook runner answers dsh events: recall becomes context, a key in a write is refused', async t => {
+test('the shared hook runner answers dsh events: recall becomes context, a key in a write warns', async t => {
   const stateDir = await mkdtemp(join(tmpdir(), 'estelle-dsh-state-'));
   t.after(() => rm(stateDir, { recursive: true, force: true }));
   const request = async path => path === '/search' ? { recall: 'earlier decision', degraded: false } : {};
   const start = await handleHook({ host: 'dsh', payload: payload('SessionStart'), stateDir, request });
   assert.match(start.context, /estelle_resume/);
-  const denied = await handleHook({ host: 'dsh', stateDir, request, payload: payload('PreToolUse',
+  const warned = await handleHook({ host: 'dsh', stateDir, request, payload: payload('PreToolUse',
     { tool_name: 'write', tool_input: JSON.stringify({ file_path: 'a', content: `const value = "${GHP}"` }) }) });
-  assert.equal(denied.hookSpecificOutput.permissionDecision, 'deny');
-  assert(!JSON.stringify(denied).includes(GHP));
+  assert.match(warned.warning, /github token/);
+  assert(!JSON.stringify(warned).includes(GHP));
   const allowed = await handleHook({ host: 'dsh', stateDir, request, payload: payload('PreToolUse',
     { tool_name: 'write', tool_input: JSON.stringify({ file_path: 'a', content: 'const value = 1' }) }) });
   assert.equal(allowed, null);
@@ -158,17 +158,22 @@ test('runs a write check only for tools that can write, and refuses on the hook\
   const h = harness();
   applyEstelle(h.ctx, { createUserMessage: h.create });
   const pre = h.listeners.get('tools/pre-execute');
-  const agent = { session: { header: { id: 'session-1', cwd: tmpdir() } } };
+  const injected = [];
+  const agent = { session: { header: { id: 'session-1', cwd: tmpdir() } }, inject: message => injected.push(message) };
   let passed = 0;
   const next = async () => { passed++; return { kind: 'allow' }; };
   assert.deepEqual(await pre({ agent, name: 'bash', arguments: `echo ${GHP}`, callId: 'c' }, next), { kind: 'allow' });
   assert.equal(passed, 1);
-  const denied = await pre({ agent, name: 'write', arguments: JSON.stringify({ file_path: 'a', content: `const value = "${GHP}"` }), callId: 'c' }, next);
-  assert.equal(denied.kind, 'deny');
-  assert.equal(passed, 1);
+  const warned = await pre({ agent, name: 'write', arguments: JSON.stringify({ file_path: 'a', content: `const value = "${GHP}"` }), callId: 'c' }, next);
+  assert.deepEqual(warned, { kind: 'allow' }, 'a key in a write warns and the write goes ahead');
+  assert.equal(passed, 2);
+  assert(h.warnings.some(text => /github token/.test(text) && !text.includes(GHP)));
+  assert.equal(injected.length, 1);
+  assert(!JSON.stringify(injected).includes(GHP));
   const clean = await pre({ agent, name: 'edit', arguments: JSON.stringify({ file_path: 'a', new_string: 'b' }), callId: 'c' }, next);
   assert.deepEqual(clean, { kind: 'allow' });
-  assert.equal(passed, 2);
+  assert.equal(passed, 3);
+  assert.equal(injected.length, 1, 'ordinary code says nothing');
 });
 
 // The shape of a real `dsh --profile headless --dump-config` (0.2.2-rc.1), telemetry rows only.

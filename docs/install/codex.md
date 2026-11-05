@@ -20,8 +20,8 @@ changes. So every Estelle update needs one approval:
 - **In the desktop app:** select **Review hooks** in the composer, or open **Settings > Hooks**.
 
 Until you do, Codex shows `Hook failed: plugin contents changed; hook approval required` for each hook it
-skips. Those hooks do not run at all, so Estelle captures nothing and does not check file writes for
-credentials. The write itself still goes through. Approving in a running session restores both straight away,
+skips. Those hooks do not run at all, so Estelle captures nothing and does not warn about keys in file
+writes. Writes go through either way. Approving in a running session restores both straight away,
 and capture picks up that session from its start. A session that ended before you approved is not captured.
 
 To check, run `node "<installed Estelle package>/runtime/cli.mjs" doctor` and read `codex_hooks`. Estelle never

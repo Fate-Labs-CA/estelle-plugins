@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { join, resolve, relative, isAbsolute } from 'node:path';
 import { tmpdir } from 'node:os';
 import { VERSION } from '../runtime/version.mjs';
-import { mutatingTool } from '../runtime/protect.mjs';
+import { mutatingTool } from '../runtime/write-warning.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const json = async file => JSON.parse(await readFile(join(root, file), 'utf8'));

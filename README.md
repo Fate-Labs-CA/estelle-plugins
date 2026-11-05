@@ -9,9 +9,9 @@ account in the actual host process, where hooks and MCP use the same key. GUI ap
 may not inherit your terminal environment, so quit and reopen them after setting a key. The plugin does
 not install the host or Node, or create an account. No backend clone or Estelle CLI is needed.
 
-Version: `0.0.14`.
+Version: `0.0.15`.
 
-[Release notes](docs/releases/v0.0.14.md)
+[Release notes](docs/releases/v0.0.15.md)
 
 | Host | Install instructions and copy/paste setup prompt |
 |---|---|
@@ -77,7 +77,7 @@ Install or update Estelle for Cursor from https://github.com/uqeu/estelle-plugin
 
 </details>
 
-Includes MCP connections, coding skills, recall hooks and local credential-pattern protection.
+Includes MCP connections, coding skills, recall hooks and a warning when an edit writes what looks like a real key. The warning never stops the edit.
 Successful empty recall adds no context. Hook execution alone does not establish MCP authentication.
 All five hosts support bounded conversation capture. The Grok and Cursor transcript dialects are
 inferred from the hook payload contract, not yet verified against a live host session, so their

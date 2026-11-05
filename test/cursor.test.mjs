@@ -170,16 +170,14 @@ test('Cursor SessionEnd defers a durable reference and the next drain checkpoint
   assert.ok(calls.some(call => call.path === '/session/events' && call.body.session_id === 'cursor-conv-123'));
 });
 
-test('Cursor protection uses native denial, and optional failures still allow prompt/tool execution', async t => {
+test('Cursor shows the write warning and allows, and optional failures still allow prompt/tool execution', async t => {
   const scopedFixture = await functionalFixture(t);
   const stateDir = await mkdtemp(join(tmpdir(), 'estelle-cursor-failure-'));
   t.after(() => rm(stateDir, { recursive: true, force: true }));
   const run = payload => handleHook({ host: 'cursor', payload, stateDir, request: async () => { throw new Error('offline'); } });
   const edit = { ...scopedFixture('preToolUse'), tool_name: 'Write', tool_input: { content: 'ESTELLE_API_KEY=synthetic-secret-value' } };
-  const denied = await run(edit);
-  assert.equal(denied.permission, 'deny');
-  assert.equal(denied.hookSpecificOutput, undefined);
-  assert.equal(typeof denied.agent_message, 'string');
+  // A named value is not an exact key shape, so nothing is said and nothing is stopped. hooks.test.mjs has Cursor's warning.
+  assert.deepEqual(await run(edit), { permission: 'allow' });
   assert.deepEqual(await run({ ...scopedFixture('beforeSubmitPrompt'), prompt: 'continue' }), { continue: true });
   assert.deepEqual(await run({ ...edit, tool_input: { content: 'ordinary text' } }), { permission: 'allow' });
   assert.deepEqual(await run(scopedFixture('subagentStart')), { permission: 'allow' });
