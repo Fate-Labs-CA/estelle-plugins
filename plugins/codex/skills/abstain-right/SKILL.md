@@ -1,6 +1,9 @@
 ---
 name: abstain-right
 description: "Say \"I don't know\" instead of guessing, and ask for what's missing. Use when the task involves: abstain, refuse to guess, guess, fabricate, fabricated answer, no citation."
+user-invocable: false
+metadata:
+  short-description: "Say \"I don't know\" instead of guessing, and ask for what's missing."
 ---
 
 # abstain-right

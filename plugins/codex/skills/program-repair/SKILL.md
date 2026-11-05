@@ -1,6 +1,9 @@
 ---
 name: program-repair
 description: "Localise, write several patches, and keep the one that holds. Use when the task involves: automated program repair, fault localization, majority vote patch, repair, localize, patch generation."
+user-invocable: false
+metadata:
+  short-description: "Localise, write several patches, and keep the one that holds."
 ---
 
 # program-repair

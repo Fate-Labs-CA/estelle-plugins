@@ -3,6 +3,7 @@ import { statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { HOOK_EVENTS as CURSOR_EVENTS } from '../adapters/cursor.mjs';
+import { FILE_WRITE_MATCHER } from '../runtime/protect.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const check = process.argv.includes('--check');
@@ -34,8 +35,12 @@ emit('.agents/plugins/marketplace.json', marketplace('codex'));
 emit('.grok-plugin/marketplace.json', { name: 'estelle-plugins', plugins: [{ name: 'estelle', source: './plugins/grok' }] });
 emit('.cursor-plugin/marketplace.json', marketplace('cursor'));
 
+// Codex prints one line per handler run, including every run it refuses after a plugin update, so a
+// handler that does nothing for a given tool is a line of noise at the worst moment. The write guard
+// only ever acts on file writes; other hosts' PreToolUse also carries queued context and stays unfiltered.
+const matcherFor = (host, event) => (host === 'codex' && event === 'PreToolUse' ? { matcher: FILE_WRITE_MATCHER } : {});
 function nativeHooks(host, variable, events) {
-  return { hooks: Object.fromEntries(events.map(event => [event, [{ hooks: [{ type: 'command',
+  return { hooks: Object.fromEntries(events.map(event => [event, [{ ...matcherFor(host, event), hooks: [{ type: 'command',
     command: command(host, variable), timeout: ['SessionEnd', 'Interrupt'].includes(event) ? 3 : 20,
     ...(host === 'codex' ? { statusMessage: `Estelle: ${event}` } : {}) }],
   }]])) };
@@ -45,11 +50,20 @@ emit('plugins/claude/.claude-plugin/plugin.json', { ...manifest, license: 'Apach
 // URL only: Claude Code signs in with OAuth. A pinned header disables that, and an unset variable goes out literally.
 emit('plugins/claude/.mcp.json', { mcpServers: { Estelle: { type: 'http', url: server.url } } });
 emit('plugins/claude/hooks/hooks.json', nativeHooks('claude-code', 'CLAUDE_PLUGIN_ROOT', common));
-emit('plugins/codex/.codex-plugin/plugin.json', { ...manifest, skills: './skills',
+emit('plugins/codex/.codex-plugin/plugin.json', { ...manifest, skills: ['./skills', './command-skills'],
   hooks: './hooks/hooks.json', mcpServers: './.mcp.json' });
+// Codex has no command format of its own. It turns commands into skills at install, but silently skips any
+// command using $ARGUMENTS, which is all of ours. So the Codex package gets those skills generated here.
+for (const entry of (await readdir(join(root, 'commands'))).sort()) {
+  const name = entry.replace(/\.md$/, '');
+  const source = await readFile(join(root, 'commands', entry), 'utf8');
+  const [, description, body] = /^---\ndescription: (.+)\n---\n([\s\S]+)$/.exec(source) ?? [];
+  if (!description) throw new Error(`Command needs one description line: ${entry}`);
+  emit(`plugins/codex/command-skills/${name}/SKILL.md`, `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\n---\n\n`
+    + body.replaceAll('$ARGUMENTS', 'what the person asked for'));
+}
 emit('plugins/codex/.mcp.json', { mcpServers: { Estelle: server } });
-emit('plugins/codex/hooks/hooks.json', nativeHooks('codex', 'PLUGIN_ROOT', [...common, 'Interrupt',
-  'PreModelRequest', 'PostModelRequest']));
+emit('plugins/codex/hooks/hooks.json', nativeHooks('codex', 'PLUGIN_ROOT', [...common, 'Interrupt']));
 const kimiManifest = { ...manifest, skills: ['./skills'], commands: ['./commands'],
   sessionStart: { skill: 'estelle' },
   mcpServers: { Estelle: { transport: 'http', url: server.url, bearerTokenEnvVar: 'ESTELLE_API_KEY' } },

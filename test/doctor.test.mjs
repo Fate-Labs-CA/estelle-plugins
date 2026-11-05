@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { checkKey } from '../runtime/key-check.mjs';
@@ -31,13 +31,13 @@ test('a reply past the read cap could not be checked, rather than being parsed i
   assert.equal(await checkKey('fixture-key', { fetchImpl }), 'unreachable');
 });
 
-async function doctor(t, env, handler) {
+async function doctor(t, env, handler, cli = CLI) {
   const server = createServer(handler);
   await new Promise(done => server.listen(0, '127.0.0.1', done));
   t.after(() => server.close());
   const data = await mkdtemp(join(tmpdir(), 'estelle-doctor-'));
   t.after(() => rm(data, { recursive: true, force: true }));
-  return new Promise(done => execFile(process.execPath, [CLI, 'doctor'], { env: { PATH: process.env.PATH,
+  return new Promise(done => execFile(process.execPath, [cli, 'doctor'], { env: { PATH: process.env.PATH,
     ESTELLE_PLUGIN_DATA: data, ESTELLE_API_URL: `http://127.0.0.1:${server.address().port}`, ...env } },
   (error, stdout) => done({ code: error?.code ?? 0, output: stdout, json: JSON.parse(stdout) })));
 }
@@ -66,6 +66,48 @@ test('doctor with no key sends nothing and says capture is off', async t => {
   assert.equal(result.code, 1);
   assert.equal(result.json.key_check, 'not_checked_no_key');
   assert.match(result.json.key_message, /capture is off/);
+});
+
+const CREDENTIAL = { [['ESTELLE', 'API', 'KEY'].join('_')]: 'fixture' };
+const CODEX_CLI = resolve(import.meta.dirname, '..', 'plugins', 'codex', 'runtime', 'cli.mjs');
+
+/** A directory holding a `codex` that answers initialize and hooks/list with one hook in this trust state. */
+async function fakeCodex(t, trustStatus) {
+  const directory = await mkdtemp(join(tmpdir(), 'estelle-fake-codex-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const hook = { pluginId: 'estelle@estelle-plugins', trustStatus, enabled: true };
+  await writeFile(join(directory, 'codex'), `#!${process.execPath}
+require('node:readline').createInterface({ input: process.stdin }).on('line', line => {
+  const { id } = JSON.parse(line);
+  if (id === 1) console.log(JSON.stringify({ id, result: {} }));
+  if (id === 2) console.log(JSON.stringify({ id, result: { data: [{ hooks: [${JSON.stringify(hook)}] }] } }));
+});`, { mode: 0o755 });
+  return directory;
+}
+
+test('the Codex package fails doctor unless Codex says its hooks will run', { skip: process.platform === 'win32' }, async t => {
+  const trusted = await doctor(t, { ...CREDENTIAL, PATH: await fakeCodex(t, 'trusted') }, answer(200, OK), CODEX_CLI);
+  assert.equal(trusted.json.codex_hooks.status, 'trusted');
+  assert.equal(trusted.code, 0);
+  const modified = await doctor(t, { ...CREDENTIAL, PATH: await fakeCodex(t, 'modified') }, answer(200, OK), CODEX_CLI);
+  assert.equal(modified.json.codex_hooks.status, 'review_required');
+  assert.match(modified.json.codex_hooks.next_step, /Run \/hooks in Codex and press t/);
+  assert.equal(modified.code, 1);
+});
+
+test('an unmeasured Codex is not a pass: with no codex to ask, doctor says so and fails', async t => {
+  const empty = await mkdtemp(join(tmpdir(), 'estelle-no-codex-'));
+  t.after(() => rm(empty, { recursive: true, force: true }));
+  const result = await doctor(t, { ...CREDENTIAL, PATH: empty }, answer(200, OK), CODEX_CLI);
+  assert.equal(result.json.key_check, 'accepted');
+  assert.equal(result.json.codex_hooks.status, 'unavailable');
+  assert.equal(result.code, 1);
+});
+
+test('other packages never start Codex and carry no Codex field', async t => {
+  const result = await doctor(t, CREDENTIAL, answer(200, OK));
+  assert.equal(Object.hasOwn(result.json, 'codex_hooks'), false);
+  assert.equal(result.code, 0);
 });
 
 test('doctor that could not reach the server does not call the key good or bad', async t => {

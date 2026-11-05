@@ -198,22 +198,14 @@ test('unwritable state during concurrent capture and slow recall cannot create a
   assert.equal(JSON.parse(result.stdout).hookSpecificOutput.additionalContext, 'real fixture context');
 });
 
-test('Codex model boundaries record only bounded host metadata and inject no prompt or control output', async t => {
+test('A model-request event from an older Codex registration does nothing: no network, no output, no state', async t => {
   const f = await fixture(t);
   const spy = requestSpy();
   const payload = { hook_event_name: 'PreModelRequest', session_id: 'model-fixture', cwd: f.root,
     transcript_path: null, model: 'fixture-model', turn_id: 'fixture-turn' };
   assert.equal(await handleHook({ host: 'codex', stateDir: f.stateDir, request: spy.request, payload }), null);
-  assert.equal(await handleHook({ host: 'codex', stateDir: f.stateDir, request: spy.request,
-    payload: { ...payload, hook_event_name: 'PostModelRequest', status: 'completed', error: null,
-      token_usage: { input_tokens: 123, output_tokens: 45, hidden_field: 'must not persist' } } }), null);
   assert.equal(spy.calls.length, 0);
-  const files = await readdir(join(f.stateDir, 'model'));
-  assert.equal(files.length, 1);
-  const record = JSON.parse(await readFile(join(f.stateDir, 'model', files[0]), 'utf8'));
-  assert.deepEqual(record.usage, { input_tokens: 123, output_tokens: 45 });
-  assert.equal(record.event, 'PostModelRequest');
-  assert(!JSON.stringify(record).includes('hidden_field'));
+  await assert.rejects(readdir(join(f.stateDir, 'model')), { code: 'ENOENT' });
 });
 
 test('assembled prompt hook redacts pasted credentials before recall while preserving ordinary query and native context JSON', async t => {

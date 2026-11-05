@@ -20,11 +20,13 @@ for (const host of ['claude-code', 'codex', 'kimi', 'grok', 'cursor']) {
 test('ContextVar recognition does not waive credential literals or passive data', () => {
   const opaque = 'b9'.repeat(32);
   const vendor = ['gh', 'p_'].join('') + 'q'.repeat(30);
-  for (const content of [`const ${passwordField} = "${code}";`, `# ${code}`, `// ${code}`,
+  for (const content of [`const ${passwordField} = "${code}";`, `# ${proofField} = "${opaque}"`,
     `${name} = _TARGET_DEBIT.set("${opaque}")`, `${name} = _TARGET_DEBIT.set(${vendor})`,
     `${code} + "${opaque}"`, `const ${code} + "${opaque}";`, `${code}\n${proofField} = "${opaque}"`,
-    `${name} = _TARGET_DEBIT.set(identity + "${opaque}")`, `/*\n${code}\n*/`]) {
+    `${name} = _TARGET_DEBIT.set(identity + "${opaque}")`]) {
     assert.equal(protectWrite(input(content))?.hookSpecificOutput.permissionDecision, 'deny');
   }
+  // The same reference inside a comment holds no value, so it is not a credential either.
+  for (const content of [`# ${code}`, `// ${code}`, `/*\n${code}\n*/`]) assert.equal(protectWrite(input(content)), null);
   assert.equal(protectWrite({ ...input(code), toolInput: { [proofField]: code } })?.hookSpecificOutput.permissionDecision, 'deny');
 });

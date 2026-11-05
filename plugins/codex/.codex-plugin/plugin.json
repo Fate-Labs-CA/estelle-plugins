@@ -1,8 +1,11 @@
 {
   "name": "estelle",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "description": "Estelle MCP, memory and session hooks for coding agents.",
-  "skills": "./skills",
+  "skills": [
+    "./skills",
+    "./command-skills"
+  ],
   "hooks": "./hooks/hooks.json",
   "mcpServers": "./.mcp.json"
 }

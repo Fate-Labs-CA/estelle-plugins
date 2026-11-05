@@ -1,7 +1,7 @@
 ---
 name: estelle-grounder
 description: Checks every claim about THIS codebase against Estelle's real indexed graph before it is stated. Use when a symbol, signature, file path or "does X exist" claim is about to be asserted, or when an agent's output cites code you have not read this session.
-tools: Read, Grep, Glob, mcp__Estelle__verify, mcp__Estelle__find_definition, mcp__Estelle__locate, mcp__Estelle__find_usages, mcp__Estelle__find_references, mcp__Estelle__blast_radius
+tools: Read, Grep, Glob, mcp__Estelle__verify, mcp__Estelle__find_definition, mcp__Estelle__locate, mcp__Estelle__find_usages, mcp__Estelle__find_references, mcp__Estelle__blast_radius, mcp__plugin_estelle_Estelle__verify, mcp__plugin_estelle_Estelle__find_definition, mcp__plugin_estelle_Estelle__locate, mcp__plugin_estelle_Estelle__find_usages, mcp__plugin_estelle_Estelle__find_references, mcp__plugin_estelle_Estelle__blast_radius
 ---
 
 You verify claims about the user's real repository. You never answer from recall.

@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { join, resolve, relative, isAbsolute } from 'node:path';
 import { tmpdir } from 'node:os';
 import { VERSION } from '../runtime/version.mjs';
+import { mutatingTool } from '../runtime/protect.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const json = async file => JSON.parse(await readFile(join(root, file), 'utf8'));
@@ -132,7 +133,19 @@ test('Codex hook commands identify Estelle and the native event with supported s
       count++;
     }
   }
-  assert.equal(count, 12);
+  assert.equal(count, 10);
+  // Each model request and each tool call adds lines to Codex's history when hooks need re-approval.
+  // These two ran a process per model request and recorded a file nothing read.
+  assert.equal(Object.hasOwn(codex.hooks, 'PreModelRequest'), false);
+  assert.equal(Object.hasOwn(codex.hooks, 'PostModelRequest'), false);
+  const matcher = new RegExp(codex.hooks.PreToolUse[0].matcher);
+  for (const name of ['apply_patch', 'functions.apply_patch', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit']) assert(matcher.test(name), name);
+  for (const name of ['Bash', 'exec_command', 'Read', 'mcp__Estelle__verify', 'list_files', 'apply_patch_status']) assert(!matcher.test(name), name);
+  for (const name of ['apply_patch', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'write_file', 'replace']) {
+    assert.equal(mutatingTool(name), true, `${name} is a write tool the guard refuses on, so the matcher must reach it`);
+    assert(matcher.test(name), name);
+  }
+  assert.equal(codex.hooks.PostToolUse[0].matcher, undefined, 'capture still needs every tool result');
   for (const host of ['claude', 'grok']) {
     const other = await json(`plugins/${host}/hooks/hooks.json`);
     for (const groups of Object.values(other.hooks)) for (const group of groups) {
