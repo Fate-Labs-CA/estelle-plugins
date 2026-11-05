@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const HOSTS = ['claude', 'codex', 'cursor', 'grok', 'kimi'];
-const COMMANDS = ['cloud', 'code', 'monitor', 'resume', 'review', 'rooms'];
+const COMMANDS = ['cloud', 'code', 'handoff', 'monitor', 'resume', 'review', 'rooms'];
 const MAX_DESCRIPTION = 100;
 const read = file => readFile(join(root, file), 'utf8');
 const tools = JSON.parse(await read('test/fixtures/mcp-tools.json'));
@@ -21,7 +21,7 @@ const frontMatter = text => {
 // `locate`, `scan`, `review`, `orchestra`) read as English outside code font, so they are checked only there.
 const TOOL_SHAPE = /\b(?:estelle_[a-z_]+|monitor_[a-z_]+|kb_[a-z_]+|research_[a-z_]+|find_[a-z_]+|list_[a-z_]+|get_session|memory_chat|session_message|dependency_path|blast_radius|import_cycles)\b/g;
 const CODE_WORD = /`([a-z]+)`/g;
-const CODE_WORDS_THAT_ARE_NOT_TOOLS = new Set(['list', 'get', 'tail', 'args', 'query', 'page', 'applied', 'unchanged', 'unknown', 'partial', 't', 'confirmed', 'refuted']);
+const CODE_WORDS_THAT_ARE_NOT_TOOLS = new Set(['handoff', 'cloud', 'list', 'get', 'tail', 'args', 'query', 'page', 'applied', 'unchanged', 'unknown', 'partial', 't', 'confirmed', 'refuted']);
 function unknownTools(text) {
   const named = [...text.matchAll(TOOL_SHAPE)].map(match => match[0]);
   const codeWords = [...text.matchAll(CODE_WORD)].map(match => match[1]).filter(word => !CODE_WORDS_THAT_ARE_NOT_TOOLS.has(word));
@@ -35,9 +35,9 @@ async function surfaceFiles() {
   return [...skills, ...commands, ...agents, 'instructions.md'];
 }
 
-test('the fixture is the 39 tools production reports, so a stale list cannot pass quietly', () => {
-  assert.equal(tools.base.length, 39);
-  assert.equal(new Set(tools.base).size, 39);
+test('the fixture is the 40 tools the server reports, so a stale list cannot pass quietly', () => {
+  assert.equal(tools.base.length, 40);
+  assert.equal(new Set(tools.base).size, 40);
   for (const name of tools.gated) assert(!tools.base.includes(name), name);
 });
 

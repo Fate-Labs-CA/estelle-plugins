@@ -74,6 +74,11 @@ if (command === 'doctor') {
       console.error('Estelle could not save hook diagnostics. Check the plugin data directory permissions.');
     }
   }
+} else if (command === 'move') {
+  const chunks = [];
+  for await (const chunk of process.stdin) chunks.push(chunk);
+  const { moveCommand } = await import('./move.mjs');
+  await moveCommand(host, Buffer.concat(chunks).toString('utf8'));
 } else if (command === 'continue-cloud') {
   try {
     const { runNativeContinue } = await import('./native-export.mjs');

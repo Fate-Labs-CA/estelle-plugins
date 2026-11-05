@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { prepareContinuation, continueCloud } from '../runtime/native-export.mjs';
+import { prepareContinuation, continueCloud, runNativeContinue } from '../runtime/native-export.mjs';
 
 const sid = '11111111-2222-4333-8444-555555555555';
 
@@ -35,6 +35,14 @@ test('explicit selected session and supported dirty file are posted without unre
   assert.equal(sent.body.native.files[0].text, 'print(2)\n');
   assert.match(sent.body.native.transcript, /native-only-marker/);
   assert.equal(out.safe_to_close_laptop, false);
+});
+
+test('continue-cloud carries nothing from a public repository, or one nobody could read', async t => {
+  const f = await fixture(t);
+  for (const answer of [true, null]) {
+    const args = ['--consent', '--replace', '--harness', 'codex', '--session', f.sessionId, '--transcript', f.transcriptPath, '--repo', f.cwd, '--silo', 'own'];
+    await assert.rejects(runNativeContinue(args, { isPublic: async () => answer }), /native_public_repository/);
+  }
 });
 
 test('missing consent refuses before file reads or requests', async () => {
@@ -100,12 +108,14 @@ test('opaque structured credentials are refused, including password, token and c
   }
 });
 
-test('encrypted native thinking is refused before any upload', async t => {
+test('private reasoning is removed before any upload and the visible message stays', async t => {
   const f = await fixture(t);
   await writeFile(f.transcriptPath, JSON.stringify({ type: 'assistant', sessionId: sid, message: {
     role: 'assistant', usage: { input_tokens: 3 }, content: [{ type: 'redacted_thinking', data: 'encrypted-private-marker' },
       { type: 'text', text: 'visible-message' }] } }) + '\n');
-  await assert.rejects(prepareContinuation(f), /private_reasoning_unsupported/);
+  const sent = JSON.stringify(await prepareContinuation(f));
+  assert.doesNotMatch(sent, /encrypted-private-marker/);
+  assert.match(sent, /visible-message/);
 });
 
 test('POSIX space-only staged and untracked names cannot bypass unsupported-state refusal', {
@@ -158,7 +168,7 @@ test('Codex selected rollout preserves visible conversation and typed usage meta
   await assert.rejects(prepareContinuation(options), /native_selection/);
   rows.push({ type: 'response_item', payload: { type: 'reasoning', encrypted_content: 'opaque' } });
   await writeFile(path, rows.map(row => JSON.stringify(row)).join('\n') + '\n');
-  await assert.rejects(prepareContinuation(options), /private_reasoning/);
+  assert.doesNotMatch(JSON.stringify(await prepareContinuation(options)), /opaque/);
 });
 
 test('executable-to-nonexecutable source change is explicitly refused', async t => {

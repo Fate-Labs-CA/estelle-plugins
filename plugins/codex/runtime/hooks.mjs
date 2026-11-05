@@ -131,6 +131,11 @@ export async function handleHook({ host, payload, stateDir, request }) {
   const n = port.normalize(payload);
   if (!n.event) throw new Error('event_missing');
   if (!safeSession(n.sessionId)) throw new Error('session_missing');
+  // `/estelle handoff` reads this to learn which session and conversation file it is in. Names and a path, no content.
+  if (n.cwd && ['SessionStart', 'UserPromptSubmit'].includes(n.event)) {
+    const { noteCurrentSession } = await import('./move.mjs');
+    await noteCurrentSession(stateDir, { host, sessionId: n.sessionId, transcriptPath: n.transcriptPath, cwd: n.cwd }).catch(() => {});
+  }
   const protection = protectWrite(n);
   if (protection?.unscanned) {
     await recordStatus(stateDir, { host, event: n.event, mode: 'protect', status: 'partial', code: 'input_bound' });

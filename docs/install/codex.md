@@ -31,8 +31,8 @@ Run the [shipped setup command](../migration/from-cli.md#deterministic-setup) af
 
 ## Commands
 
-Codex has no plugin commands, so Estelle's come as skills: `estelle:code`, `estelle:cloud`, `estelle:monitor`,
-`estelle:resume`, `estelle:review` and `estelle:rooms`. Type `$` in Codex to pick one.
+Codex has no plugin commands, so there is no `/estelle:handoff` here. Estelle's commands come as skills: `estelle:handoff`,
+`estelle:cloud`, `estelle:code`, `estelle:monitor`, `estelle:resume`, `estelle:review` and `estelle:rooms`. Type `$` in Codex and pick one.
 
 ## Copy/paste setup prompt
 

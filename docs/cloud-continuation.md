@@ -2,6 +2,8 @@
 
 This requires the server's `restore_native` action. It does not provision a Silo or replace provider sign-in.
 
+It refuses on a public repository, or one whose visibility cannot be read, because a box pushes what it finds.
+
 For an existing, idle Silo on the same repository commit:
 
 ```sh

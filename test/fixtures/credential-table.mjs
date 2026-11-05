@@ -39,6 +39,8 @@ const AWS = join('AK', 'IA') + synthetic(2, 16, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ23456
 /** Each row must be refused. name, then the tool call. */
 export const TRUE_ROWS = [
   ['stripe live key beside any name', write(`stripe = "${STRIPE}"`)],
+  ['google key', write(`k = "${join('AI', 'za')}${R(70, 35)}"`)],
+  ['sendgrid key', write(`k = "${join('S', 'G.')}${R(71, 22)}.${R(72, 43)}"`)],
   ['stripe test key', write(`k = ${join('sk', '_test_')}${R(3, 28)}`)],
   ['stripe restricted key', write(`k = "${join('rk', '_live_')}${R(4, 28)}"`)],
   ['estelle key', write(`k = "${join('estelle', '_live_')}${R(5, 28)}"`)],
@@ -105,6 +107,22 @@ export const TRUE_ROWS = [
   ['field of a tool input', { toolName: 'Write', toolInput: { nested: { [TOK]: 'opaque-literal-credential' } } }],
   ['numeric field of a tool input', { toolName: 'Write', toolInput: { [UP(AK)]: 1234567890123456 } }],
   ['vendor key used as an object key', { toolName: 'Write', toolInput: { [`${join('gh', 'p_')}${R(43, 36)}`]: 1 } }],
+  // The neighbours of the reported false positives: each looks like a reference and holds a value.
+  ['an opaque value between slashes', write(`${TOK} = /${R(80, 32)}/`)],
+  ['formatted header with a literal value', write(`headers = {"Authorization": f"${BEARER_WORD} ${R(81, 40)}"}`)],
+  ['keyword holding a literal', write(`build(github_${TOK}="${R(82)}")`)],
+  ['keyword holding a bare opaque value', write(`build(github_${TOK}=${R(83)})`)],
+  ['a helper handed a literal', write(`scoped_${TOK} = mint("${H(84)}")`)],
+  ['a default after a helper', write(`${SEC}s = load() or "${H(85)}"`)],
+  ['a vendor key under an unsuspicious name', write(`minted = "${join('gh', 'p_')}${R(86, 36)}"`)],
+  ['a mixed bare value with no call', write(`${TOK}=${join('ab', 'c1')}${R(87, 6)}`)],
+  ['a bare value with underscores and no real word', write(`${TOK} = k29x_m48q_z7p1`)],
+  ['a bare value with a generated segment', write(`${TOK} = app_${synthetic(88, 16, 'abcdefghij0123456789')}`)],
+  ['a bare value with a digit-heavy segment', write(`${TOK} = app_${synthetic(89, 5, 'abcdefghij')}${synthetic(90, 3, '0123456789')}`)],
+  ['a bare word with digits and no underscore', write(`${PW} = hunter2summer`)],
+  ['a password between slashes with no operator', write(`${PW} = /hunter2summer/`)],
+  ['a snake value on an env file line', write(`DB_${UP(PW)}=hunter2_summer`)],
+  ['a snake value in quotes', write(`${PW} = "hunter2_summer"`)],
 ];
 
 /** Each row must pass. These are the forms that stopped real work, plus their close neighbours. */
@@ -192,6 +210,25 @@ export const ORDINARY_ROWS = [
   ['bare pem marker', write(`const marker = "${PEM_BEGIN}";`)],
   ['plain code', write('export const value = 42;')],
   ['a comparison', write(`if ${TOK} == other_value:`)],
+  // Reported 2026-11-04 by the founder's own work on the 0.0.12 guard: a name with no value behind it.
+  ['regex literal under a secret name', write(`const HOLDS_A_${UP(SEC)} = /key|pass|pwd|auth|cookie|${SEC}|${TOK}/;`)],
+  ['regex literal holding a digit', write(`const ${UP(TOK)}_SHAPE = /^v1|v2_[a-z]+$/i;`)],
+  ['regex literal with a class and quantifier', write(`${SEC}_like = /[A-Za-z0-9]{32,}/`)],
+  ['regex literal with only an alternation and digits', write(`${TOK} = /v1|v2_key/;`)],
+  ['formatted header', write(`headers = {"Authorization": f"${BEARER_WORD} {${TOK}}"}`)],
+  ['template header', write(`const h = \`${BEARER_WORD} \${${TOK}}\`;`)],
+  ['a call with no credential word', write('minted = mint()')],
+  ['keyword from a call', write(`surface = build(github_${TOK}=github_${TOK}_source(run), other=1)`)],
+  ['keyword from a same-named variable', write(`client = Client(github_${TOK}=github_${TOK})`)],
+  ['assignment from a helper', write(`scoped_${TOK} = mint_installation_${TOK}(creds, install)`)],
+  ['plural keyword from a helper', write(`surface(${SEC}s=_silo_${SEC}s_for(account_key, email), runs=None)`)],
+  ['assignment from an account lookup', write(`${TOK} = _pr_${TOK}(account_key, repo)`)],
+  ['parenthesised fallbacks', write(`${TOK} = (_github_user_${TOK}(account_key)\n         or (_ci_installation_${TOK}(repo) if _ci_authorize_repo(account_key, repo) else "") or github_${TOK})`)],
+  ['member access, snake case', write(`api_${'key'} = settings.provider.key`)],
+  ['an identifier with digits', write(`${TOK} = oauth2_client_v2`)],
+  ['an identifier with a long word', write(`${TOK} = internationalization_cache_v2`)],
+  ['an awaited call', write(`${TOK} = await fetch_v2_handle(user)`)],
+  ['placeholder angle brackets, unquoted', write(`${UP(TOK)}=<your-${TOK}-here>`)],
 ];
 
 export function evaluate(protectWrite) {
