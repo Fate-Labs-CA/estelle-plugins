@@ -127,8 +127,10 @@ function checkMcp(mcp) {
   if (JSON.stringify(Object.keys(base).sort()) !== JSON.stringify(['type', 'url'])) problems.push('base projection');
   if (base.type !== 'streamable-http') problems.push('transport');
   if (base.url !== MCP_URL) problems.push('url');
-  const auth = extensions?.['com.openai']?.auth;
+  const openai = extensions?.['com.openai'];
+  const auth = openai?.auth;
   if (JSON.stringify(Object.keys(extensions ?? {})) !== '["com.openai"]') problems.push('extensions');
+  if (JSON.stringify(Object.keys(openai ?? {})) !== '["auth"]') problems.push('OpenAI extension projection');
   if (!auth || Object.keys(auth).some(key => !AUTH_FIELDS.has(key))) problems.push('auth fields');
   if (JSON.stringify(auth) !== JSON.stringify(AUTH)) problems.push('auth');
   return problems;
@@ -219,6 +221,7 @@ function manifestMutations(plugin, mcp) {
     [checkReview(mutate(plugin, p => { p.extensions['com.openai'].publication.countries = []; })), 'countries is an owner decision'],
     [checkMcp(mutate(mcp, m => { server(m).url = 'https://api.fatelabs.ca/mcp/'; })), 'url'],
     [checkMcp(mutate(mcp, m => { server(m).headers = { 'X-Planted': 'value' }; })), 'base projection'],
+    [checkMcp(mutate(mcp, m => { server(m).extensions['com.openai'].interface = {}; })), 'OpenAI extension projection'],
     [checkMcp(mutate(mcp, m => { server(m).extensions['com.openai'].auth = { type: 'none' }; })), 'auth'],
     [checkMcp(mutate(mcp, m => { delete auth(m).client; })), 'auth'],
     [checkMcp(mutate(mcp, m => { auth(m).plantedField = 'x'; })), 'auth fields'],
