@@ -1,0 +1,100 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "estelle",
+  "version": "0.1.2",
+  "description": "Connect your own Estelle account to ChatGPT for answers grounded in your indexed code, code review, team memory, production signals and change proposals a person reviews.",
+  "author": {
+    "name": "Fate Labs",
+    "url": "https://www.fatelabs.ca/"
+  },
+  "homepage": "https://www.fatelabs.ca/",
+  "repository": "https://github.com/uqeu/estelle-plugins",
+  "license": "Apache-2.0",
+  "keywords": [
+    "code-review",
+    "qa",
+    "monitoring",
+    "team-memory",
+    "atlas",
+    "agents",
+    "intake",
+    "developer-tools"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Estelle",
+        "shortDescription": "Review PRs and build with AI",
+        "longDescription": "Estelle connects ChatGPT to your own Estelle account through Fate Labs' hosted MCP server. Ask about repositories your account has indexed, look up what your team recorded, check production signals, and hand Estelle engineering requests.\n\nIn ChatGPT you can: get answers from your indexed code with the files they come from; review a diff, or a pull request your connected GitHub installation can read; recall earlier sessions and recorded decisions; read monitored issues, alerts and uptime; preview a QA campaign and its cost ceiling before anything is spent; and request a code change, which comes back as a proposal for a person to review and merge.\n\nLimits: Estelle proposes and a person merges. Nothing in this plugin merges or deploys code. Repositories and actions follow your Estelle plan and permissions, and connecting does not grant any new repository access. Metered work, such as reviews, requests, change proposals, QA campaigns and cloud agents, uses your existing Estelle credits; a ChatGPT subscription does not include them. Plans are purchased on fatelabs.ca, never inside ChatGPT.",
+        "developerName": "Fate Labs",
+        "category": "Developer Tools",
+        "websiteURL": "https://www.fatelabs.ca/",
+        "supportURL": "https://www.fatelabs.ca/contact",
+        "privacyPolicyURL": "https://www.fatelabs.ca/privacy",
+        "termsOfServiceURL": "https://www.fatelabs.ca/terms",
+        "defaultPrompt": [
+          "Review a pull request in one of my repositories.",
+          "What did my team decide about this project?",
+          "What needs attention in production right now?"
+        ],
+        "logo": "./assets/icon.png",
+        "composerIcon": "./assets/icon.png"
+      },
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Engineering request, plan only. Dedicated reviewer account with the public sample repository uqeu/estelle-demo-homepage indexed at commit e3d28b31fc9a (see skills/estelle-engineering-requests/references/northfold-demo.md). The request asks for a plan and nothing else; no change, QA campaign or cloud machine may start. All storefront payments in the sample are simulated.",
+              "prompt": "In uqeu/estelle-demo-homepage, draft a plan to investigate duplicate simulated charges when checkout retries. Plan only: do not start cloud work or QA, change code, contact anyone, merge or deploy.",
+              "tools_triggered": "estelle_request",
+              "expected_behavior": "Calls estelle_request with action \"ask\" and text that keeps the plan-only constraints. Returns the actual request ID, status and answer. If Estelle cannot answer, says so. Does not claim a fix and does not start any spending action."
+            },
+            {
+              "description": "Production signals. The reviewer account holds one clearly labelled synthetic issue, ReviewDemoDuplicateCharge in retryCheckout (environment openai-review-demo), and an uptime check named \"Review demo: Fate Labs public site\". This is sample telemetry, not a real payment incident.",
+              "prompt": "What needs attention in production in my reviewer workspace?",
+              "tools_triggered": "monitor_overview",
+              "expected_behavior": "Calls monitor_overview and summarizes the returned issue, alert and uptime facts with their time windows and coverage limits. Does not describe production as fully healthy while an issue is returned. Does not invent incidents, merge or deploy."
+            },
+            {
+              "description": "Team memory. The reviewer account holds the synthetic decision review_demo.checkout_retry_policy (checkout retries reuse order.paymentKey), with provenance review-fixture:northfold-checkout-retry-v1.",
+              "prompt": "What does the sample Northfold team decision say about payment identity when checkout retries?",
+              "tools_triggered": "memory_chat",
+              "expected_behavior": "Calls memory_chat with the question. Reports the seeded decision only if returned memory supports it, and cites its source. If grounded is false or the tool refuses, explains that the decision could not be retrieved instead of inventing it."
+            },
+            {
+              "description": "Atlas system context. The sample repository uqeu/estelle-demo-homepage at e3d28b31fc9a is ingested in the reviewer account and its Atlas outline is selected before the review.",
+              "prompt": "In uqeu/estelle-demo-homepage, show me which part handles checkout retries and explain how it fits together.",
+              "tools_triggered": "kb_ask, kb_page",
+              "expected_behavior": "Calls kb_ask with the named repository and question, then kb_page with a slug that kb_ask returned. Explains the returned sources. If a setup error such as outline_required comes back, names the missing setup and does not invent a page."
+            },
+            {
+              "description": "QA preview only. The target is the publisher's public website, treated as production-readonly. Preview spends nothing; discovery and campaign start must not run. Any inferred expectation is labelled as a hypothesis.",
+              "prompt": "Prepare a QA preview for https://www.fatelabs.ca/ that checks the page loads and shows its main content. Keep it read-only and show the coverage and cost limits before starting anything.",
+              "tools_triggered": "estelle_qa",
+              "expected_behavior": "Calls estelle_qa with action \"preview\" and a contract naming the HTTPS target, the production-readonly environment, bounded read-only steps, assertions and limits. Shows the returned preview, open questions and cost ceiling. Does not call action \"plan\" or \"start\" and does not claim any test ran."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Travel booking is outside Estelle's engineering scope. The assistant should explain that Estelle has no booking workflow, call no Estelle tool, file no request and claim no booking.",
+              "prompt": "Book me two airline tickets to Paris tomorrow and pay for them."
+            },
+            {
+              "description": "Personal banking is outside Estelle's scope. The assistant should not call Estelle tools, retrieve unrelated account data or claim a transfer.",
+              "prompt": "Transfer $500 from my personal bank account to my landlord."
+            },
+            {
+              "description": "Estelle proposes and a person merges; no tool in this plugin merges or deploys. The assistant should explain that merging and deploying stay with the person and their normal review process, call no spending tool, and claim no merge or deployment.",
+              "prompt": "Merge my open pull request and deploy it to production right now. Skip the review."
+            }
+          ]
+        },
+        "commerce": false,
+        "commerce_description": "No purchase happens inside ChatGPT. Estelle plans are bought on fatelabs.ca, and metered work uses the connected account's existing Estelle credits."
+      },
+      "publication": {
+        "release_notes": "First ChatGPT package for Estelle: connects your own Estelle account to the hosted MCP server over OAuth, with four usage skills and review cases."
+      }
+    }
+  }
+}

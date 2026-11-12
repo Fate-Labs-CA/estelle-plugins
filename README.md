@@ -22,6 +22,8 @@ Version: `0.0.15`.
 | DeepSeek Harness (developer preview) | [dsh](docs/install/dsh.md) |
 | Cursor | [Cursor](docs/install/cursor.md) |
 
+Estelle for ChatGPT is a separate package in `chatgpt/estelle/`, prepared for OpenAI review and not yet listed. See [ChatGPT](docs/install/chatgpt.md).
+
 ## Copy a setup prompt
 
 Paste the matching prompt into your coding agent. On Codex and Claude Code, the installer agent runs
