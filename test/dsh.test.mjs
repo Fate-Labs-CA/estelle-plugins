@@ -125,7 +125,7 @@ test('registers every command as a prompt the model receives, with the asked tex
   applyEstelle(h.ctx, { createUserMessage: h.create });
   await h.ready();
   assert.deepEqual(h.commands.map(row => row.name).sort(),
-    ['cloud', 'code', 'handoff', 'monitor', 'resume', 'review', 'rooms'].map(name => `estelle-${name}`));
+    ['cloud', 'code', 'handoff', 'login', 'logout', 'monitor', 'resume', 'review', 'rooms'].map(name => `estelle-${name}`));
   const sent = [];
   const outcome = h.commands.find(row => row.name === 'estelle-resume').handler({ agent: { followup: m => sent.push(m) }, rawInput: ' the billing lane ' });
   assert.deepEqual(outcome, { kind: 'success' });

@@ -3,15 +3,15 @@
 Estelle for Claude Code, Codex, Kimi Code, Grok Build and Cursor. Each host has its own package
 under `plugins/`. They connect to `https://api.fatelabs.ca/mcp`.
 
-Install your coding host first, with external Node.js 22+. Claude Code signs in to MCP with OAuth and
-needs a key only for session capture. The other hosts need a valid `ESTELLE_API_KEY` from your Estelle
+Install your coding host first, with external Node.js 22+. Claude Code needs no key: run `/estelle:login` once
+to connect the tools and record sessions. The other hosts need a valid `ESTELLE_API_KEY` from your Estelle
 account in the actual host process, where hooks and MCP use the same key. GUI apps on macOS and Windows
 may not inherit your terminal environment, so quit and reopen them after setting a key. The plugin does
 not install the host or Node, or create an account. No backend clone or Estelle CLI is needed.
 
-Version: `0.0.15`.
+Version: `0.0.16`.
 
-[Release notes](docs/releases/v0.0.15.md)
+[Release notes](docs/releases/v0.0.16.md)
 
 | Host | Install instructions and copy/paste setup prompt |
 |---|---|

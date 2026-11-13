@@ -17,6 +17,9 @@ For a nonmutating preview, omit `--apply`. The preview returns a public `plan_sh
 pass `--expect <that SHA256>` with `--apply` to refuse a changed plan. Do not paste configuration,
 credentials or command output from native MCP JSON listings into chat.
 
+If the native MCP login is connected but no canonical hook key is inherited, run `/estelle:login` for the
+[one sign-in](../capture-auth.md). The migration below still requires its own MCP check.
+
 Claude Code has [its own path](#claude-code). For Codex, the automated migration supports **POSIX only**. It:
 
 1. Requires the canonical `ESTELLE_API_KEY` in the setup process environment. It does not read

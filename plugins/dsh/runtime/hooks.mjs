@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { mkdir, opendir, unlink, rename } from 'node:fs/promises';
 import { normalize as claude, formatContext as claudeContext } from '../adapters/claude.mjs';
 import { normalize as codex, formatContext as codexContext } from '../adapters/codex.mjs';
@@ -35,7 +36,7 @@ export async function deferSession(normalized, stateDir) {
   });
 }
 
-export async function drainOne(stateDir, request) {
+export async function drainOne(stateDir, request, { captureOnly = false } = {}) {
   let directory;
   try { directory = await opendir(join(stateDir, 'deferred')); }
   catch (error) { if (error.code === 'ENOENT') return; throw error; }
@@ -72,15 +73,17 @@ export async function drainOne(stateDir, request) {
       continue;
     }
     const [result, stream] = await Promise.all([
-      checkpointSession({ payload, host: item.host, repo: repo?.name, stateDir, request }),
+      captureOnly ? null : checkpointSession({ payload, host: item.host, repo: repo?.name, stateDir, request }),
       streamSession({ payload, host: item.host, repo: repo?.name, stateDir, request }),
     ]);
-    if (result.saved && !stream.pending && !stream.backlog) {
+    if ((captureOnly || result.saved) && !stream.pending && !stream.backlog) {
       if (stream.incomplete || stream.unsupported) {
         await mkdir(join(stateDir, 'partial'), { recursive: true, mode: 0o700 });
         await rename(path, join(stateDir, 'partial', name));
       } else await unlink(path);
     }
+    if (captureOnly) return { incomplete: stream.incomplete, unsupported: stream.unsupported,
+      pending: stream.pending || stream.backlog, association_partial: stream.association_partial };
     return stream.association_partial ? { association_partial: true } : undefined;
   }
 }
@@ -127,11 +130,20 @@ const START_TEXT = 'If Estelle MCP tools are available, call estelle_resume befo
   + 'Check capture coverage before claiming a complete handoff.';
 
 /** One host event, one process. Network failures are recorded separately from successful empty results. */
-export async function handleHook({ host, payload, stateDir, request }) {
+export async function handleHook({ host, payload, stateDir, request, captureOnly = false, requestContext }) {
   const port = await adapter(host);
   const n = port.normalize(payload);
   if (!n.event) throw new Error('event_missing');
   if (!safeSession(n.sessionId)) throw new Error('session_missing');
+  // A capture-only sign-in swaps the state directory and the one route this hook may call. A credential storage
+  // outage must never cost the write warning, which needs neither: the warning is still given, the capture is not.
+  let authFailure;
+  let signedOut = false;
+  try {
+    const authContext = requestContext ? await requestContext() : null;
+    if (authContext?.signedOut) signedOut = true;
+    else if (authContext) ({ stateDir, request, captureOnly } = authContext);
+  } catch (error) { authFailure = error; }
   // `/estelle handoff` reads this to learn which session and conversation file it is in. Names and a path, no content.
   if (n.cwd && ['SessionStart', 'UserPromptSubmit'].includes(n.event)) {
     const { noteCurrentSession } = await import('./move.mjs');
@@ -142,8 +154,39 @@ export async function handleHook({ host, payload, stateDir, request }) {
     await recordStatus(stateDir, { host, event: n.event, mode: 'protect', status: 'partial', code: 'input_bound' });
     return port.defaultOutput?.(payload.hook_event_name) ?? null;
   }
-  const output = await answerEvent({ host, port, n, payload, stateDir, request });
-  return found ? withWarning(host, output, found.warning) : output;
+  if (authFailure) {
+    await recordStatus(stateDir, { host, event: n.event, mode: 'capture', status: 'failed', code: errorCode(authFailure) }).catch(() => {});
+    if (found) return withWarning(host, port.defaultOutput?.(payload.hook_event_name) ?? null, found.warning);
+    const told = await tellOnce({ host, port, n, stateDir, notice: stoppedNotice(host, errorCode(authFailure)) });
+    if (told) return told;
+    if (n.event === 'SessionStart') return port.formatContext(START_TEXT, n.event) ?? port.defaultOutput?.(payload.hook_event_name) ?? null;
+    throw authFailure;
+  }
+  const output = await answerEvent({ host, port, n, payload, stateDir, request, captureOnly });
+  if (found) return withWarning(host, output, found.warning);
+  return signedOut && n.event === 'SessionStart' ? { ...output, systemMessage: SIGN_IN_NOTICE } : output;
+}
+
+const SIGN_IN_NOTICE = 'Estelle is not recording this session. Run /estelle:login once to sign in.';
+const TELLING_EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse']);
+
+function stoppedNotice(host, code) {
+  const fix = host === 'claude-code' ? 'run /estelle:login'
+    : `run: node "${fileURLToPath(new URL('./cli.mjs', import.meta.url))}" setup ${host} --login`;
+  return `Estelle is not recording this session: its sign-in stopped working (${code}). To sign in again, ${fix}`;
+}
+
+/** A broken sign-in otherwise looks exactly like a session being recorded. Once per session, at the first event this host
+ *  can carry words on, which is not the same event on every host. ``null`` when this event cannot, or it was already said. */
+async function tellOnce({ host, port, n, stateDir, notice }) {
+  if (!TELLING_EVENTS.has(n.event)) return null;
+  const marker = join(stateDir, 'capture-notice', `${hash(`${host}:${n.sessionId}`)}.json`);
+  if (await readJson(marker).then(() => true, () => false)) return null;
+  const output = port.formatContext(n.event === 'SessionStart' ? `${START_TEXT}\n\n${notice}` : notice, n.event);
+  if (!output) return null;
+  await writeJson(marker, { told: true }).catch(() => {});
+  console.error(notice);
+  return host === 'claude-code' || host === 'codex' ? { ...output, systemMessage: notice } : output;
 }
 
 /** The warning added to whatever this event already answers. ⛔ It adds words and never a decision: no host is told to stop.
@@ -159,9 +202,9 @@ function withWarning(host, output, warning) {
   return { ...output, systemMessage: warning, hookSpecificOutput: { ...output?.hookSpecificOutput, hookEventName: 'PreToolUse', additionalContext } };
 }
 
-async function answerEvent({ host, port, n, payload, stateDir, request }) {
+async function answerEvent({ host, port, n, payload, stateDir, request, captureOnly }) {
   const defaultOutput = () => port.defaultOutput?.(payload.hook_event_name) ?? null;
-  const queuedContext = host === 'grok' || host === 'cursor';
+  const queuedContext = !captureOnly && (host === 'grok' || host === 'cursor');
   const grokContextPath = join(stateDir, 'context', `${hash(`${host}:${n.sessionId}`)}.json`);
   let contextRequest;
   if (queuedContext && n.event === 'UserPromptSubmit') {
@@ -178,19 +221,19 @@ async function answerEvent({ host, port, n, payload, stateDir, request }) {
   const actions = [];
   const edited = n.event === 'PostToolUse' && mutatingTool(n.toolName)
     && n.raw?.tool_response?.is_error !== true && n.raw?.tool_response?.success !== false;
-  if (repo && (edited || ['Stop', 'SessionStart'].includes(n.event))) {
+  if (!captureOnly && repo && (edited || ['Stop', 'SessionStart'].includes(n.event))) {
     actions.push(runAction('reindex', n, stateDir, () => queueReindex({ normalized: n, repo, stateDir, request })));
   }
-  if (n.event === 'SessionStart') actions.push(runAction('deferred', n, stateDir, () => drainOne(stateDir, request)));
+  if (n.event === 'SessionStart') actions.push(runAction('deferred', n, stateDir, () => drainOne(stateDir, request, { captureOnly })));
   // Session capture belongs to the authenticated account even before a workspace has Git metadata.
   if (STREAM_EVENTS.has(n.event)) actions.push(runAction('stream', n, stateDir,
     () => streamSession({ payload: streamPayload, host, repo: repo?.name, stateDir, request })));
-  if (CHECKPOINT_EVENTS.has(n.event)) actions.push(runAction('checkpoint', n, stateDir,
+  if (!captureOnly && CHECKPOINT_EVENTS.has(n.event)) actions.push(runAction('checkpoint', n, stateDir,
     () => checkpointSession({ payload: streamPayload, host, repo: repo?.name, stateDir, request })));
   // Attach handlers before awaiting recall: other operations can finish while it is in flight.
   const completedActions = Promise.allSettled(actions);
   let context;
-  if (n.event === 'UserPromptSubmit') {
+  if (!captureOnly && n.event === 'UserPromptSubmit') {
     context = await runAction('context', n, stateDir, () => recall(n, repo, request));
   }
   await completedActions;
@@ -204,7 +247,7 @@ async function answerEvent({ host, port, n, payload, stateDir, request }) {
   }
   const contextBoundary = host === 'grok' && n.event === 'PreToolUse'
     || host === 'cursor' && ['PostToolUse', 'PostToolUseFailure'].includes(n.event);
-  if (contextBoundary) {
+  if (!captureOnly && contextBoundary) {
     const queued = await takeContext(grokContextPath, n.turnId);
     if (queued) {
       await recordStatus(stateDir, { host, event: n.event, mode: 'context',
