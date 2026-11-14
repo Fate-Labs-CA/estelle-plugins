@@ -1,5 +1,6 @@
 ---
 description: Continue this session in a cloud Silo and get a link to watch it.
+model: haiku
 ---
 Only act on this when the person typed the command themselves: it starts a billed machine.
 The person asked to move this session to the cloud. Their words, which may be empty: $ARGUMENTS

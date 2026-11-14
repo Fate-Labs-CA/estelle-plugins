@@ -62,6 +62,17 @@ for (const entry of (await readdir(join(root, 'commands'))).sort()) {
   emit(`plugins/codex/command-skills/${name}/SKILL.md`, `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\n---\n\n`
     + body.replaceAll('$ARGUMENTS', 'what the person asked for'));
 }
+// Claude Code's own command copies. Two of them run one shell command and relay its last line, so they run on the
+// small model: the session's main model re-read the whole context for every turn of that. The shared files carry
+// only `description`, which every host and Codex's conversion above read.
+const CLAUDE_COMMAND_MODEL = Object.freeze({ cloud: 'haiku', handoff: 'haiku' });
+for (const entry of (await readdir(join(root, 'commands'))).sort()) {
+  const name = entry.replace(/\.md$/, '');
+  const source = await readFile(join(root, 'commands', entry), 'utf8');
+  const model = CLAUDE_COMMAND_MODEL[name];
+  if (model && !/^---\ndescription: .+\n---\n/.test(source)) throw new Error(`Command needs one description line: ${entry}`);
+  emit(`plugins/claude/commands/${entry}`, model ? source.replace(/\n---\n/, `\nmodel: ${model}\n---\n`) : source);
+}
 emit('plugins/codex/.mcp.json', { mcpServers: { Estelle: server } });
 emit('plugins/codex/hooks/hooks.json', nativeHooks('codex', 'PLUGIN_ROOT', [...common, 'Interrupt']));
 const kimiManifest = { ...manifest, skills: ['./skills'], commands: ['./commands'],
@@ -135,7 +146,8 @@ emit('plugins/dsh/cordis.patch.yml', `# Estelle for DeepSeek Harness: memory and
 
 const HOSTS = ['claude', 'codex', 'kimi', 'grok', 'cursor', 'dsh'];
 const ASSETS = ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE', 'NOTICE'];
-const assetsFor = host => [...ASSETS, ...(host === 'codex' ? [] : ['commands']), ...(host === 'claude' ? ['agents'] : [])];
+// Codex gets generated skills and Claude gets generated copies (both above); the other hosts copy commands as they are.
+const assetsFor = host => [...ASSETS, ...(['codex', 'claude'].includes(host) ? [] : ['commands']), ...(host === 'claude' ? ['agents'] : [])];
 async function inventory(directory, prefix = '') {
   const output = new Map();
   for (const entry of await readdir(directory, { withFileTypes: true })) {

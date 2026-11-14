@@ -79,7 +79,9 @@ test('each command is one plain line, on every host', async () => {
     assert.match(description, /^[A-Z][^:]*\.$/, `${name}: one sentence, no label`);
     assert.doesNotMatch(description, /Use when|Use for|you can|\bAI\b/, name);
     for (const host of HOSTS.filter(host => host !== 'codex')) {
-      assert.equal(await read(`plugins/${host}/commands/${name}.md`), await read(`commands/${name}.md`), `${host}/${name}`);
+      // Claude's copies of cloud and handoff add one line, the small model (package.test.mjs pins that line and nothing else).
+      const copy = (await read(`plugins/${host}/commands/${name}.md`)).replace(host === 'claude' ? '\nmodel: haiku\n' : '\0', '\n');
+      assert.equal(copy, await read(`commands/${name}.md`), `${host}/${name}`);
     }
     const codex = await read(`plugins/codex/command-skills/${name}/SKILL.md`);
     assert.match(frontMatter(codex), new RegExp(`^name: ${name}$`, 'm'));

@@ -1,5 +1,6 @@
 ---
 description: Start a new cloud session from a prompt and get a link to watch it.
+model: haiku
 ---
 Only act on this when the person typed the command themselves: it starts a billed machine.
 The person asked to start a new cloud session. Their words: $ARGUMENTS
