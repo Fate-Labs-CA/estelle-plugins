@@ -153,3 +153,17 @@ test('Codex hook commands identify Estelle and the native event with supported s
     }
   }
 });
+
+test('Claude runs cloud and handoff on the small model, and no other host or command changes', async () => {
+  const read = path => readFile(join(root, path), 'utf8');
+  for (const name of ['cloud', 'handoff']) {
+    const claude = await read(`plugins/claude/commands/${name}.md`), shared = await read(`commands/${name}.md`);
+    assert.match(claude, /^---\ndescription: .+\nmodel: haiku\n---\n/);
+    assert.equal(claude.replace('\nmodel: haiku\n', '\n'), shared, `${name}: only the model line differs`);
+    for (const host of ['kimi', 'grok', 'cursor', 'dsh']) assert.equal(await read(`plugins/${host}/commands/${name}.md`), shared, host);
+    assert.doesNotMatch(await read(`plugins/codex/command-skills/${name}/SKILL.md`), /^model:/m);
+  }
+  for (const name of ['code', 'monitor', 'resume', 'review', 'rooms']) {
+    assert.equal(await read(`plugins/claude/commands/${name}.md`), await read(`commands/${name}.md`), name);
+  }
+});
