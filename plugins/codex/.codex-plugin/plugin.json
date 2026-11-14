@@ -1,6 +1,6 @@
 {
   "name": "estelle",
-  "version": "0.0.15",
+  "version": "0.0.16",
   "description": "Estelle MCP, memory and session hooks for coding agents.",
   "skills": [
     "./skills",
