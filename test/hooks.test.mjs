@@ -77,7 +77,9 @@ test('Codex without a local Git repository streams its exact session without inv
   const started = batch.body.events.find(event => event.payload.reason === 'started');
   assert.ok(started);
   assert.equal(JSON.parse(JSON.stringify(started)).payload.repo, undefined, 'no Estelle/default/invented repository');
-  assert.equal(spy.calls.some(call => call.route !== '/session/events'), false);
+  // The only other call is the account-scoped tool-boundary mail pull: no repository is named or invented.
+  assert.equal(spy.calls.some(call => !['/session/events', '/session/mail'].includes(call.route)), false);
+  assert.equal(spy.calls.filter(call => call.route === '/session/mail').every(call => !('repo' in call.body)), true);
   const status = JSON.parse(await readFile(join(f.stateDir, 'status', 'codex-stream.json'), 'utf8'));
   assert.equal(status.status, 'ok');
   const sent = spy.calls.length;
@@ -505,4 +507,69 @@ test('Codex observed PR verification partial is quiet nonblocking local status',
   assert.equal(status.code, 'association_unverified');
   assert.equal(JSON.stringify(status).includes('NO_PRIVATE_DIAGNOSTIC'), false);
   assert.equal(JSON.stringify(status).includes('pull/7'), false);
+});
+
+const mailboxSpy = (answers = {}) => {
+  const calls = [];
+  return { calls, request: async (route, body) => {
+    calls.push({ route, body });
+    if (route !== '/session/mail') return route === '/search' ? { recall: '' } : {};
+    const answer = answers[body.action];
+    if (answer instanceof Error) throw answer;
+    return answer ?? {};
+  } };
+};
+
+test('SessionStart prints this session’s own identity and its waiting mail, and a refusal still starts cleanly', async t => {
+  const f = await fixture(t);
+  const id = timelineIdentity('claude-code', 'claude-fixture');
+  const line = `[ESTELLE] This session's id on Estelle is ${id}. Its session_token is ${'a'.repeat(32)}: pass it`;
+  const spy = mailboxSpy({ identity: { context: line }, deliver: { context: '[ESTELLE SESSION MAIL] waiting note' } });
+  const result = await handleHook({ host: 'claude-code', payload: claudePayload(f, 'SessionStart', { source: 'compact' }),
+    stateDir: f.stateDir, request: spy.request });
+  const context = result.hookSpecificOutput.additionalContext;
+  assert.match(context, /estelle_resume/);
+  assert.ok(context.includes(line), 'the identity line reaches the model at every SessionStart (compact included)');
+  assert.match(context, /waiting note/);
+  const mail = spy.calls.filter(c => c.route === '/session/mail');
+  assert.deepEqual(mail.map(c => c.body), [{ action: 'identity', session_id: id },
+    { action: 'deliver', session_id: id, boundary: 'start' }]);
+
+  const refused = mailboxSpy({ identity: Object.assign(new Error('action must be one of'), { status: 400 }) });
+  const old = await handleHook({ host: 'claude-code', payload: claudePayload(f, 'SessionStart'),
+    stateDir: f.stateDir, request: refused.request });
+  assert.match(old.hookSpecificOutput.additionalContext, /estelle_resume/);
+  assert.doesNotMatch(old.hookSpecificOutput.additionalContext, /session_token/);
+  const status = JSON.parse(await readFile(join(f.stateDir, 'status', 'claude-code-identity.json'), 'utf8'));
+  assert.equal(status.status, 'failed', 'an older server is recorded, never hidden');
+});
+
+test('a running session receives mail at its next tool call, at most once per interval, never in a subagent', async t => {
+  const f = await fixture(t);
+  const id = timelineIdentity('claude-code', 'claude-fixture');
+  const empty = mailboxSpy({ deliver: { context: '' } });
+  const quiet = await handleHook({ host: 'claude-code', payload: claudePayload(f, 'PostToolUse', { tool_name: 'Read',
+    tool_input: {}, tool_response: {} }), stateDir: f.stateDir, request: empty.request });
+  assert.equal(quiet?.hookSpecificOutput?.additionalContext, undefined, 'control: nothing waiting, nothing printed');
+  assert.deepEqual(empty.calls.filter(c => c.route === '/session/mail').map(c => c.body),
+    [{ action: 'deliver', session_id: id, boundary: 'tool' }]);
+
+  const throttled = mailboxSpy({ deliver: { context: 'should not be pulled yet' } });
+  await handleHook({ host: 'claude-code', payload: claudePayload(f, 'PostToolUse', { tool_name: 'Read', tool_input: {},
+    tool_response: {} }), stateDir: f.stateDir, request: throttled.request });
+  assert.equal(throttled.calls.filter(c => c.route === '/session/mail').length, 0, 'one pull per interval');
+
+  await rm(join(f.stateDir, 'mailbox'), { recursive: true, force: true });
+  const full = mailboxSpy({ deliver: { context: '[ESTELLE SESSION MAIL] from claude-code-x (VERIFIED: ...)' } });
+  const got = await handleHook({ host: 'claude-code', payload: claudePayload(f, 'PostToolUse', { tool_name: 'Read',
+    tool_input: {}, tool_response: {} }), stateDir: f.stateDir, request: full.request });
+  assert.equal(got.hookSpecificOutput.hookEventName, 'PostToolUse');
+  assert.match(got.hookSpecificOutput.additionalContext, /ESTELLE SESSION MAIL/);
+
+  await rm(join(f.stateDir, 'mailbox'), { recursive: true, force: true });
+  const sub = mailboxSpy({ deliver: { context: 'for the main conversation' } });
+  const inSubagent = await handleHook({ host: 'claude-code', payload: claudePayload(f, 'PostToolUse', { tool_name: 'Read',
+    tool_input: {}, tool_response: {}, agent_id: 'sub-1' }), stateDir: f.stateDir, request: sub.request });
+  assert.equal(sub.calls.filter(c => c.route === '/session/mail').length, 0, 'a subagent never takes the session’s mail');
+  assert.equal(inSubagent?.hookSpecificOutput?.additionalContext, undefined);
 });
