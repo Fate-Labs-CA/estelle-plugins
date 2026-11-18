@@ -10,6 +10,7 @@ import { queueReindex } from './reindex.mjs';
 import { timelineIdentity } from './identity.mjs';
 import { mutatingTool, writeWarning } from './write-warning.mjs';
 import { beginContext, saveContext, takeContext } from './queued-context.mjs';
+import { MAILBOX_HOSTS, pullAtBoundary, sessionIdentity } from './mailbox.mjs';
 
 const CHECKPOINT_EVENTS = new Set(['Stop', 'SubagentStop', 'PreCompact', 'Interrupt']);
 const STREAM_EVENTS = new Set(['UserPromptSubmit', 'PostToolUse', 'Stop', 'SubagentStop', 'PreCompact', 'Interrupt']);
@@ -187,6 +188,13 @@ async function answerEvent({ host, port, n, payload, stateDir, request }) {
     () => streamSession({ payload: streamPayload, host, repo: repo?.name, stateDir, request })));
   if (CHECKPOINT_EVENTS.has(n.event)) actions.push(runAction('checkpoint', n, stateDir,
     () => checkpointSession({ payload: streamPayload, host, repo: repo?.name, stateDir, request })));
+  // This session's own identity (id + session_token) and its mail, for hosts the server can address.
+  const mailbox = MAILBOX_HOSTS.has(host);
+  const identity = mailbox && ['SessionStart', 'SubagentStart'].includes(n.event)
+    ? runAction('identity', n, stateDir, () => sessionIdentity(n, request)) : undefined;
+  const boundary = !mailbox ? '' : n.event === 'SessionStart' ? 'start'
+    : n.event === 'PostToolUse' && !n.agentId ? 'tool' : '';
+  const mail = boundary ? runAction('mailbox', n, stateDir, () => pullAtBoundary(n, stateDir, request, boundary)) : undefined;
   // Attach handlers before awaiting recall: other operations can finish while it is in flight.
   const completedActions = Promise.allSettled(actions);
   let context;
@@ -194,6 +202,8 @@ async function answerEvent({ host, port, n, payload, stateDir, request }) {
     context = await runAction('context', n, stateDir, () => recall(n, repo, request));
   }
   await completedActions;
+  const [own, delivered] = await Promise.all([identity, mail]);
+  const extra = [own?.text, delivered?.text].filter(text => typeof text === 'string' && text.trim()).join('\n\n');
   if (context?.failed) return port.formatContext(`Estelle recall was not obtained (${context.code}). Use its MCP tools directly; this is not an empty search result.`, n.event) ?? defaultOutput();
   if (context?.text && queuedContext) {
     const saved = await saveContext(grokContextPath, n.turnId, contextRequest, context.text, context.degraded);
@@ -213,6 +223,9 @@ async function answerEvent({ host, port, n, payload, stateDir, request }) {
     }
   }
   if (context?.text) return port.formatContext(context.text, n.event);
-  if (n.event === 'SessionStart' || n.event === 'SubagentStart') return port.formatContext(START_TEXT, n.event) ?? defaultOutput();
+  if (n.event === 'SessionStart' || n.event === 'SubagentStart') {
+    return port.formatContext(extra ? `${START_TEXT}\n\n${extra}` : START_TEXT, n.event) ?? defaultOutput();
+  }
+  if (extra) return port.formatContext(extra, n.event) ?? defaultOutput();
   return defaultOutput();
 }

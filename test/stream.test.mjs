@@ -667,8 +667,11 @@ for (const state of ['unavailable', 'linked']) {
     assert.deepEqual(await readdir(join(f.options.stateDir, 'deferred')), []);
     assert.equal(calls.filter(call => prCandidates(call.body.events ?? []).length).length, 1);
     assert.equal(calls.filter(call => call.route === '/checkpoint').length, 1);
-    const count = calls.length;
+    // A SessionStart also asks for the session's own identity and waiting mail (runtime/mailbox.mjs); those are
+    // per-start reads, not deferred work.
+    const capture = () => calls.filter(call => call.route !== '/session/mail').length;
+    const count = capture();
     await handleHook({ host: 'codex', payload: start, stateDir: f.options.stateDir, request });
-    assert.equal(calls.length, count, 'completed deferred work is not retried for association');
+    assert.equal(capture(), count, 'completed deferred work is not retried for association');
   });
 }
