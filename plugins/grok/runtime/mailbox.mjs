@@ -15,7 +15,9 @@ import { hash, readJson, writeJson } from './io.mjs';
 import { timelineIdentity } from './identity.mjs';
 
 // Hosts whose sessions the server can mail (its live list) and whose hook output carries additionalContext.
-export const MAILBOX_HOSTS = new Set(['claude-code', 'codex']);
+// OpenCode and Pi carry the text through their in-process plugin (adapters/opencode-plugin.mjs, adapters/pi-extension.mjs);
+// the server must list them as local hosts too, or identity is refused and only the start text is printed.
+export const MAILBOX_HOSTS = new Set(['claude-code', 'codex', 'opencode', 'pi']);
 export const TOOL_PULL_INTERVAL_MS = 10_000;
 // Characters of delivered text one hook output carries; the server already bounds a delivery well below this.
 const MAX_CONTEXT_CHARS = 12_000;

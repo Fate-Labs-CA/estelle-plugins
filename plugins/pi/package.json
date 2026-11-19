@@ -1,0 +1,40 @@
+{
+  "name": "@fatelabs/pi-estelle",
+  "version": "0.0.17",
+  "description": "Estelle MCP, memory and session hooks for coding agents.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "author": "Fate Labs",
+  "homepage": "https://github.com/Fate-Labs-CA/estelle-plugins/blob/main/docs/install/pi.md",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Fate-Labs-CA/estelle-plugins.git",
+    "directory": "plugins/pi"
+  },
+  "bugs": {
+    "url": "https://github.com/Fate-Labs-CA/estelle-plugins/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "estelle",
+    "mcp",
+    "memory",
+    "code-review"
+  ],
+  "pi": {
+    "extensions": [
+      "./adapters/pi-extension.mjs"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  }
+}

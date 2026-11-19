@@ -107,6 +107,6 @@ if (command === 'doctor') {
     process.exitCode = 1;
   }
 } else {
-  console.error('Usage: node runtime/cli.mjs hook <claude-code|codex|kimi|grok|cursor|dsh> | doctor | setup <host> [--apply] [--expect SHA256]');
+  console.error('Usage: node runtime/cli.mjs hook <claude-code|codex|kimi|grok|cursor|dsh|opencode|pi> | doctor | setup <host> [--apply] [--expect SHA256]');
   process.exitCode = 1;
 }

@@ -69,14 +69,15 @@ test('every host keeps its own manifest paths inside the installed package', asy
 });
 
 test('every host folder has separate native discovery and exclude development notes or cross-host manifests', async () => {
-  const hosts = ['claude', 'codex', 'cursor', 'dsh', 'grok', 'kimi'];
+  const hosts = ['claude', 'codex', 'cursor', 'dsh', 'grok', 'kimi', 'opencode', 'pi'];
   assert.deepEqual((await readdir(join(root, 'plugins'))).sort(), hosts);
   for (const [file, host] of [['.claude-plugin/marketplace.json', 'claude'],
     ['.agents/plugins/marketplace.json', 'codex'], ['.cursor-plugin/marketplace.json', 'cursor']]) {
     assert.equal((await json(file)).plugins[0].source, `./plugins/${host}`);
   }
   const manifestPaths = { claude: '.claude-plugin', codex: '.codex-plugin', cursor: '.cursor-plugin',
-    dsh: 'cordis.patch.yml', grok: 'plugin.json', kimi: 'kimi.plugin.json' };
+    dsh: 'cordis.patch.yml', grok: 'plugin.json', kimi: 'kimi.plugin.json', opencode: 'adapters/opencode-plugin.mjs',
+    pi: 'adapters/pi-extension.mjs' };
   for (const host of hosts) {
     const files = await readdir(join(root, 'plugins', host));
     for (const forbidden of ['docs', 'test', 'CONTEXT.md', 'DECISIONS.md', ...Object.entries(manifestPaths)
@@ -166,4 +167,34 @@ test('Claude runs cloud and handoff on the small model, and no other host or com
   for (const name of ['code', 'monitor', 'resume', 'review', 'rooms']) {
     assert.equal(await read(`plugins/claude/commands/${name}.md`), await read(`commands/${name}.md`), name);
   }
+});
+
+test('OpenCode and Pi packages are npm packages whose entry points ship inside them', async () => {
+  const opencode = await json('plugins/opencode/package.json');
+  const pi = await json('plugins/pi/package.json');
+  for (const manifest of [opencode, pi]) {
+    assert.equal(manifest.version, VERSION);
+    assert.equal(manifest.type, 'module');
+    assert.deepEqual(manifest.publishConfig, { access: 'public' });
+    assert.equal(manifest.repository.url, 'git+https://github.com/Fate-Labs-CA/estelle-plugins.git');
+    assert.equal(Object.hasOwn(manifest, 'dependencies'), false, 'no runtime dependency to install');
+  }
+  assert.equal(opencode.name, '@fatelabs/opencode-estelle');
+  assert.equal(opencode.exports['.'], './adapters/opencode-plugin.mjs');
+  await access(join(root, 'plugins/opencode', opencode.main));
+  for (const asset of ['agents/estelle-reviewer.md', 'commands/cloud.md', 'skills/estelle/SKILL.md', 'runtime/cli.mjs', 'README.md']) {
+    await access(join(root, 'plugins/opencode', asset));
+  }
+  assert.equal(pi.name, '@fatelabs/pi-estelle');
+  // `pi-package` is what puts a package in the pi.dev gallery.
+  assert.ok(pi.keywords.includes('pi-package'));
+  assert.deepEqual(pi.pi, { extensions: ['./adapters/pi-extension.mjs'], skills: ['./skills'] });
+  for (const path of [...pi.pi.extensions, ...pi.pi.skills, './runtime/cli.mjs', './commands/resume.md', './README.md']) {
+    await access(join(root, 'plugins/pi', path));
+  }
+  // `pi install git:github.com/Fate-Labs-CA/estelle-plugins` reads the repository root's manifest.
+  const rootManifest = await json('package.json');
+  for (const path of [...rootManifest.pi.extensions, ...rootManifest.pi.skills]) await access(join(root, path));
+  const readme = await readFile(join(root, 'plugins/pi/README.md'), 'utf8');
+  assert.doesNotMatch(readme, /\]\((?!https?:|#)/, 'package README links are absolute');
 });
