@@ -131,7 +131,7 @@ test('registers every command as a prompt the model receives, with the asked tex
   assert.deepEqual(outcome, { kind: 'success' });
   assert.equal(sent.length, 1);
   assert.equal(sent[0].source.kind, 'user');
-  assert.match(sent[0].content[0].text, /estelle_resume for the billing lane\./);
+  assert.match(sent[0].content[0].text, /Requested work \(blank means the most recent\): the billing lane\n?$/);
   assert(!sent[0].content[0].text.includes('$ARGUMENTS'));
 });
 
