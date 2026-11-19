@@ -114,7 +114,12 @@ test('/estelle:<name> becomes the shared command’s prompt; other input passes 
   await activate(pi, { env: {}, run: async () => null, instructions: '', commands: await readCommands(root) });
   const resume = await emit('input', { text: '/estelle:resume the auth work', source: 'interactive' }, ctx());
   assert.equal(resume.action, 'transform');
-  assert.match(resume.text, /^Call estelle_resume for the auth work\./);
+  assert.match(resume.text, /^Call estelle_resume\./);
+  assert.match(resume.text, /Requested work \(blank means the most recent\): the auth work\n?$/);
+  const bare = await emit('input', { text: '/estelle:resume', source: 'interactive' }, ctx());
+  assert.equal(bare.action, 'transform');
+  assert.doesNotMatch(bare.text, /for \.|\s\./, 'the no-argument form must not read "for ."');
+  assert.match(bare.text, /Requested work \(blank means the most recent\):\s*$/);
   const cloud = await emit('input', { text: '/estelle:cloud fix the flaky test', source: 'interactive' }, ctx());
   assert.ok(cloud.text.includes(`node "${join(root, 'runtime', 'cli.mjs')}" move cloud`));
   assert.ok(cloud.text.includes('fix the flaky test'));
