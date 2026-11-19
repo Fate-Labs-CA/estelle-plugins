@@ -5,7 +5,7 @@ is tested against `@deepseek-ai/dsh@0.2.1-rc.5` and `0.2.2-rc.1`. It needs Node.
 `PATH` for `dsh plugin`, and `ESTELLE_API_KEY` in the host environment.
 
 ```sh
-git clone --depth 1 https://github.com/uqeu/estelle-plugins
+git clone --depth 1 https://github.com/Fate-Labs-CA/estelle-plugins
 dsh plugin --profile web add "file:$PWD/estelle-plugins/plugins/dsh"
 dsh --profile web --dump-config | grep -n estelle
 ```
@@ -70,5 +70,5 @@ Estelle's model door works as a custom provider. Add this to `$DSH_HOME/profiles
 ## Copy/paste setup prompt
 
 ```text
-Install Estelle for DeepSeek Harness from https://github.com/uqeu/estelle-plugins using plugins/dsh. Follow docs/install/dsh.md. Use the native dsh plugin command, keep any existing profile patch rows, and confirm with `dsh --profile <profile> --dump-config` that the estelle rows are present. Never print ESTELLE_API_KEY.
+Use the current source: read https://github.com/Fate-Labs-CA/estelle-plugins at its latest main (or install the published npm package where one exists), never a cached or older local copy of the repository. Install Estelle for DeepSeek Harness from https://github.com/Fate-Labs-CA/estelle-plugins using plugins/dsh. Follow docs/install/dsh.md. Use the native dsh plugin command, keep any existing profile patch rows, and confirm with `dsh --profile <profile> --dump-config` that the estelle rows are present. Never print ESTELLE_API_KEY.
 ```
