@@ -1,6 +1,6 @@
 {
   "name": "estelle",
-  "version": "0.0.19",
+  "version": "0.0.20",
   "description": "Estelle MCP, memory and session hooks for coding agents.",
   "license": "Apache-2.0",
   "author": {
