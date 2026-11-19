@@ -81,7 +81,10 @@ The community list is the [Ecosystem](https://opencode.ai/docs/ecosystem/) page,
 is no stated review bar. [awesome-opencode](https://github.com/awesome-opencode/awesome-opencode) and opencode.cafe
 are separate community lists.
 
-Steps (nothing here has been published):
+0.0.18 is published (`npm view @fatelabs/opencode-estelle time` shows it on 2026-11-19), and it was installed
+from npm with `opencode plugin @fatelabs/opencode-estelle -g` in a scratch home: `opencode mcp list` showed
+`Estelle connected` and a model turn called `estelle_resume` and `estelle_grep`. No ecosystem listing has been
+requested. Steps for a later release:
 
 1. `npm run build`, then from `plugins/opencode`: `npm publish --access public` with an npm account that can publish
    to the `@fatelabs` scope (the scope exists: `@fatelabs/estelle` is published).

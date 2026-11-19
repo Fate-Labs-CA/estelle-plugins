@@ -9,13 +9,13 @@ Estelle's instructions and the session hooks. Nothing else is configured by hand
 
 ## Install
 
-From npm, once the package is published:
+From npm (published as `@fatelabs/opencode-estelle`):
 
 ```sh
 opencode plugin @fatelabs/opencode-estelle -g
 ```
 
-Before that, from a clone of this repository (the path must be absolute):
+From a clone of this repository instead (the path must be absolute):
 
 ```json
 { "plugin": ["file:///absolute/path/to/estelle-plugins/plugins/opencode"] }
@@ -34,6 +34,8 @@ the key.
 - `opencode mcp list` shows `Estelle connected`.
 - In a session, `/estelle:resume` is offered, and the agent list has `estelle-reviewer`.
 - `node <package>/runtime/cli.mjs doctor` shows `opencode` status rows after a turn.
+- For scripts, use `opencode run --format json "<prompt>" < /dev/null`. With stdin left as an open pipe, `opencode run`
+  waited with no output in testing, with or without this plugin (`--pure`); a closed stdin let it finish.
 
 If you use an xAI model: Estelle's `review` tool schema is refused by xAI until a server change lands. Add
 `"tools": { "Estelle_review": false }` to your config meanwhile.
@@ -43,5 +45,5 @@ What OpenCode can and cannot do for Estelle, with sources: [docs/hosts/opencode.
 ## Copy/paste setup prompt
 
 ```text
-Install Estelle for OpenCode from https://github.com/Fate-Labs-CA/estelle-plugins using plugins/opencode. Follow docs/install/opencode.md. Use `opencode plugin @fatelabs/opencode-estelle -g` if the package is on npm; otherwise add the absolute file:// path of plugins/opencode to the plugin array of my OpenCode config, preserving everything else in it. Keep hooks and MCP on the same ESTELLE_API_KEY environment key; never request or display credentials. Then tell me to restart OpenCode. Report package loading, `opencode mcp list`, and observed hooks separately. No paid installation tests.
+Install Estelle for OpenCode from https://github.com/Fate-Labs-CA/estelle-plugins using plugins/opencode. Follow docs/install/opencode.md. Run `opencode plugin @fatelabs/opencode-estelle -g`, which adds the package to my global OpenCode config and preserves everything else in it. Keep hooks and MCP on the same ESTELLE_API_KEY environment key; never request or display credentials. Then tell me to restart OpenCode. Report package loading, `opencode mcp list`, and observed hooks separately. No paid installation tests.
 ```

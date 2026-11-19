@@ -10,7 +10,8 @@ agents are not part of it.
 
 ## Install
 
-From npm, once the package is published:
+From npm (published as `@fatelabs/pi-estelle`; npm packages with the `pi-package` keyword are eligible for the
+[pi.dev package gallery](https://pi.dev/packages)):
 
 ```sh
 pi install npm:@fatelabs/pi-estelle
@@ -41,5 +42,5 @@ What Pi can and cannot do for Estelle, with sources: [docs/hosts/pi.md](../hosts
 ## Copy/paste setup prompt
 
 ```text
-Install Estelle for Pi from https://github.com/Fate-Labs-CA/estelle-plugins. Follow docs/install/pi.md: run `pi install npm:@fatelabs/pi-estelle` if the package is on npm, otherwise `pi install git:github.com/Fate-Labs-CA/estelle-plugins`. Do not edit Pi settings by hand. Keep hooks and MCP on the same ESTELLE_API_KEY environment key; never request or display credentials. Then tell me to restart Pi or run /reload. Report package loading, /mcp status, and observed hooks separately. No paid installation tests.
+Install Estelle for Pi from https://github.com/Fate-Labs-CA/estelle-plugins. Follow docs/install/pi.md: run `pi install npm:@fatelabs/pi-estelle`. Do not edit Pi settings by hand. Keep hooks and MCP on the same ESTELLE_API_KEY environment key; never request or display credentials. Then tell me to restart Pi or run /reload. Report package loading, /mcp status, and observed hooks separately. No paid installation tests.
 ```
