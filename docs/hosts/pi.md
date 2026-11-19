@@ -83,9 +83,13 @@ after an update.
 manifest, `publishConfig.access: public`, Apache-2.0, repository and homepage links, and the install page as README.
 
 0.0.18 is published (`npm view @fatelabs/pi-estelle time` shows it on 2026-11-19), and it was installed from npm
-with `pi install npm:@fatelabs/pi-estelle` in a scratch home and run in RPC mode against a real model. As of
-2026-11-19 02:40 UTC, `https://pi.dev/packages/@fatelabs/pi-estelle` still answered 404, so the gallery had not
-picked it up yet. Steps for a later release:
+with `pi install npm:@fatelabs/pi-estelle` in a scratch home and run in RPC mode against a real model. At
+2026-11-19 02:40 UTC, `https://pi.dev/packages/@fatelabs/pi-estelle` still answered 404. Later on 2026-11-19 it
+answered 200 with version 0.0.18, types `extension, skill` and the `pi` manifest above, while
+`pi.dev/packages/@fatelabs/opencode-estelle` (no `pi-package` keyword) and `pi.dev/packages/lodash` answered 404, so
+the gallery picked it up from the keyword alone with nothing else to add. npm's own search
+(`npm search "keywords:pi-package estelle"`) still did not return the package at that time; pi.dev did not need it
+to. The page shows the author as the npm publisher's account, not the `author` field. Steps for a later release:
 
 1. `npm run build`, then from `plugins/pi`: `npm publish --access public` with an npm account that can publish to
    the `@fatelabs` scope.
