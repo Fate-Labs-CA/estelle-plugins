@@ -42,5 +42,5 @@ What Pi can and cannot do for Estelle, with sources: [docs/hosts/pi.md](https://
 ## Copy/paste setup prompt
 
 ```text
-Install Estelle for Pi from https://github.com/Fate-Labs-CA/estelle-plugins. Follow docs/install/pi.md: run `pi install npm:@fatelabs/pi-estelle`. Do not edit Pi settings by hand. Keep hooks and MCP on the same ESTELLE_API_KEY environment key; never request or display credentials. Then tell me to restart Pi or run /reload. Report package loading, /mcp status, and observed hooks separately. No paid installation tests.
+Use the current source: read https://github.com/Fate-Labs-CA/estelle-plugins at its latest main (or install the published npm package where one exists), never a cached or older local copy of the repository. Install Estelle for Pi from https://github.com/Fate-Labs-CA/estelle-plugins. Follow docs/install/pi.md: run `pi install npm:@fatelabs/pi-estelle`. Do not edit Pi settings by hand. Keep hooks and MCP on the same ESTELLE_API_KEY environment key; never request or display credentials. Then tell me to restart Pi or run /reload. Report package loading, /mcp status, and observed hooks separately. No paid installation tests.
 ```

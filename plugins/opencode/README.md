@@ -45,5 +45,5 @@ What OpenCode can and cannot do for Estelle, with sources: [docs/hosts/opencode.
 ## Copy/paste setup prompt
 
 ```text
-Install Estelle for OpenCode from https://github.com/Fate-Labs-CA/estelle-plugins using plugins/opencode. Follow docs/install/opencode.md. Run `opencode plugin @fatelabs/opencode-estelle -g`, which adds the package to my global OpenCode config and preserves everything else in it. Keep hooks and MCP on the same ESTELLE_API_KEY environment key; never request or display credentials. Then tell me to restart OpenCode. Report package loading, `opencode mcp list`, and observed hooks separately. No paid installation tests.
+Use the current source: read https://github.com/Fate-Labs-CA/estelle-plugins at its latest main (or install the published npm package where one exists), never a cached or older local copy of the repository. Install Estelle for OpenCode from https://github.com/Fate-Labs-CA/estelle-plugins using plugins/opencode. Follow docs/install/opencode.md. Run `opencode plugin @fatelabs/opencode-estelle -g`, which adds the package to my global OpenCode config and preserves everything else in it. Keep hooks and MCP on the same ESTELLE_API_KEY environment key; never request or display credentials. Then tell me to restart OpenCode. Report package loading, `opencode mcp list`, and observed hooks separately. No paid installation tests.
 ```

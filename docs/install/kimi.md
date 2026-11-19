@@ -23,7 +23,7 @@ Kimi's actual process must have the same Node/key access. Validate authenticatio
 Inside the **interactive Kimi TUI**:
 
 ```text
-/plugins install https://github.com/uqeu/estelle-plugins
+/plugins install https://github.com/Fate-Labs-CA/estelle-plugins
 /plugins info estelle
 /reload
 ```
@@ -40,7 +40,7 @@ If Estelle is already registered and you want to install it again from GitHub, u
 ```text
 /plugins remove estelle
 /reload
-/plugins install https://github.com/uqeu/estelle-plugins
+/plugins install https://github.com/Fate-Labs-CA/estelle-plugins
 /plugins info estelle
 /reload
 ```
@@ -66,5 +66,5 @@ GitHub install path.
 ## Copy/paste setup prompt
 
 ```text
-Check that Kimi Code is installed and that its actual process can find external Node.js 22+ and ESTELLE_API_KEY from my Estelle account; report any missing prerequisite without printing the key. Install Estelle with the native interactive command /plugins install https://github.com/uqeu/estelle-plugins. Follow docs/install/kimi.md and docs/migration/from-cli.md. For a fresh Estelle registration, use /plugins remove estelle and /reload first; preserve chats, unrelated settings, other hosts and shared memories. Do not manually edit configuration; automated cleanup of an old install is not available for this host, so report it as pending. Use native approval and /reload after installation. Keep hooks and MCP on the same environment key; never request or display credentials. Report package, authenticated MCP and observed hooks separately, including trust/reload and any pending step. The setup check does not prove hook execution. Do not run kimi -p '/plugins …' or launch a model turn as an installation test. If you cannot operate the interactive TUI, give me the exact GitHub install command and report installation pending.
+Use the current source: read https://github.com/Fate-Labs-CA/estelle-plugins at its latest main (or install the published npm package where one exists), never a cached or older local copy of the repository. Check that Kimi Code is installed and that its actual process can find external Node.js 22+ and ESTELLE_API_KEY from my Estelle account; report any missing prerequisite without printing the key. Install Estelle with the native interactive command /plugins install https://github.com/Fate-Labs-CA/estelle-plugins. Follow docs/install/kimi.md and docs/migration/from-cli.md. For a fresh Estelle registration, use /plugins remove estelle and /reload first; preserve chats, unrelated settings, other hosts and shared memories. Do not manually edit configuration; automated cleanup of an old install is not available for this host, so report it as pending. Use native approval and /reload after installation. Keep hooks and MCP on the same environment key; never request or display credentials. Report package, authenticated MCP and observed hooks separately, including trust/reload and any pending step. The setup check does not prove hook execution. Do not run kimi -p '/plugins …' or launch a model turn as an installation test. If you cannot operate the interactive TUI, give me the exact GitHub install command and report installation pending.
 ```
