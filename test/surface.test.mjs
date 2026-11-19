@@ -35,9 +35,9 @@ async function surfaceFiles() {
   return [...skills, ...commands, ...agents, 'instructions.md'];
 }
 
-test('the fixture is the 44 tools the server reports, so a stale list cannot pass quietly', () => {
-  assert.equal(tools.base.length, 44);
-  assert.equal(new Set(tools.base).size, 44);
+test('the fixture is the 45 tools the server reports, so a stale list cannot pass quietly', () => {
+  assert.equal(tools.base.length, 45);
+  assert.equal(new Set(tools.base).size, 45);
   for (const name of tools.gated) assert(!tools.base.includes(name), name);
 });
 
