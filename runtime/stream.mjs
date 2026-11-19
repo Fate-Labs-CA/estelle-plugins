@@ -16,7 +16,7 @@ export const LIMITS = Object.freeze({
 const INJECTED = ['<system-reminder', '<command-', '<local-command', '<task-notification', '[SYSTEM NOTIFICATION', 'Caveat:'];
 const CODEX_INJECTED = [...INJECTED, '<environment_context', '<user_instructions', '# AGENTS.md instructions', '<skill', '<turn_aborted', '<user_shell_command'];
 const AGENTS = { claude: 'claude-code', 'claude-code': 'claude-code', codex: 'codex', kimi: 'kimi-code', 'kimi-code': 'kimi-code',
-  grok: 'grok', cursor: 'cursor', dsh: 'deepseek-harness', 'deepseek-harness': 'deepseek-harness' };
+  grok: 'grok', cursor: 'cursor', dsh: 'deepseek-harness', 'deepseek-harness': 'deepseek-harness', opencode: 'opencode', pi: 'pi' };
 const WAITING = 'waiting_for_review/input_required';
 const string = value => typeof value === 'string' ? value : '';
 const validTime = value => typeof value === 'string' && Number.isFinite(Date.parse(value));
@@ -45,7 +45,7 @@ function messageEvents(blocks, role, id, at, harness, notes, sidechain = false, 
     } else if (block.type === 'tool_result') {
       out.push(event(key, 'tool_result', agent(harness), at, { call_id: block.tool_use_id ?? null, ok: block.is_error !== true, output: cap(textOf(block.content)) }));
     } else if (role === 'assistant' && block.type === 'tool_use') {
-      out.push(harness === 'cursor' ? cursorTool(block, key, at, sidechain, child) : claudeTool(block, key, at, sidechain, child));
+      out.push(harness === 'cursor' ? cursorTool(block, key, at, sidechain, child) : claudeTool(block, key, at, sidechain, child, harness));
     } else if (role === 'assistant' && block.type === 'thinking' && string(block.thinking).trim()) {
       out.push(event(key, 'thinking', agent(harness), at, { text: cap(block.thinking) }));
     }
@@ -57,10 +57,12 @@ function messageEvents(blocks, role, id, at, harness, notes, sidechain = false, 
   return out;
 }
 
-function claudeTool(block, id, at, sidechain, child) {
+// OpenCode names MCP tools `<server>_<tool>` (Estelle_verify); Claude Code and Pi name them `mcp__<server>__<tool>`.
+const ESTELLE_TOOL = /mcp__estelle__|^estelle_/i;
+function claudeTool(block, id, at, sidechain, child, harness = 'claude-code') {
   const name = string(block.name) || 'tool';
   const input = block.input ?? {};
-  const who = sidechain || child ? 'subagent' : 'claude-code';
+  const who = sidechain || child ? 'subagent' : harness;
   if (child && name === 'SubagentHandback') return event(id, 'agent_message', agent(who), at, { text: cap(string(input.message)), report: true });
   if (['Write', 'Edit', 'MultiEdit'].includes(name)) {
     const edits = name === 'MultiEdit' ? input.edits ?? [] : [input];
@@ -69,7 +71,7 @@ function claudeTool(block, id, at, sidechain, child) {
     return event(id, 'edit', agent(who), at, { path: string(input.file_path), diff: cap(diff), call_id: block.id ?? null });
   }
   const summary = name === 'Bash' ? `Ran ${string(input.description) || string(input.command).slice(0, 80)}` : name === 'Read' ? `Read ${string(input.file_path)}` : name;
-  return event(id, 'tool_call', { kind: /mcp__estelle__/i.test(name) ? 'estelle' : 'agent', id: who }, at,
+  return event(id, 'tool_call', { kind: ESTELLE_TOOL.test(name) ? 'estelle' : 'agent', id: who }, at,
     { call_id: block.id ?? null, tool: name, summary: cap(summary), input: sanitize({ ...input, ...(input.file_path ? { path: input.file_path } : {}) }) });
 }
 
@@ -100,7 +102,8 @@ export function mapClaude(entry, offset, notes = {}, child = false) {
   if (!['user', 'assistant'].includes(entry.type) || entry.isMeta || entry.isCompactSummary) return [];
   const content = entry.message?.content;
   const blocks = typeof content === 'string' ? [{ type: 'text', text: content }] : Array.isArray(content) ? content : [];
-  const out = messageEvents(blocks, entry.type, id, at, 'claude-code', notes, entry.isSidechain === true, child);
+  // OpenCode's plugin writes its session in this same shape (adapters/opencode-mirror.mjs); notes.harness labels it.
+  const out = messageEvents(blocks, entry.type, id, at, notes.harness ?? 'claude-code', notes, entry.isSidechain === true, child);
   if (entry.type === 'assistant' && entry.message?.usage && out.length) {
     const usage = entry.message.usage;
     out[0].payload.usage = { input: usage.input_tokens ?? 0, output: usage.output_tokens ?? 0,
@@ -452,6 +455,34 @@ export function mapDsh(record, offset, notes = {}) {
   return [];
 }
 
+const PI_AGENT = 'pi';
+/** Pi's own session file (docs/session-format.md, version 3): `message` entries carrying an AgentMessage. Extension
+ *  messages (role `custom`, Estelle's own injected context among them) and system prompt records are not conversation. */
+export function mapPi(entry, offset, notes = {}) {
+  if (!entry || entry.type !== 'message' || !validTime(entry.timestamp) || !string(entry.id)) return [];
+  const { timestamp: at, id } = entry;
+  const message = entry.message;
+  if (!message || typeof message !== 'object') return [];
+  if (message.role === 'user') {
+    const blocks = typeof message.content === 'string' ? [{ type: 'text', text: message.content }]
+      : Array.isArray(message.content) ? message.content : [];
+    return messageEvents(blocks, 'user', id, at, PI_AGENT, notes);
+  }
+  if (message.role === 'toolResult') {
+    return messageEvents([{ type: 'tool_result', tool_use_id: string(message.toolCallId) || null,
+      is_error: message.isError === true, content: Array.isArray(message.content) ? message.content : [] }], 'tool', id, at, PI_AGENT, notes);
+  }
+  if (message.role !== 'assistant' || !Array.isArray(message.content)) return [];
+  const blocks = message.content.map(block => block?.type === 'toolCall'
+    ? { type: 'tool_use', id: block.id, name: block.name, input: block.arguments ?? {} } : block);
+  const out = messageEvents(blocks, 'assistant', id, at, PI_AGENT, notes);
+  if (message.usage && out.length) out[0].payload.usage = { input: message.usage.input ?? 0, output: message.usage.output ?? 0,
+    cache_read: message.usage.cacheRead ?? 0, cache_write: message.usage.cacheWrite ?? 0, model: string(message.model) || null };
+  // A reply that stopped without asking for a tool is the end of the turn: Pi waits for its person.
+  if (message.stopReason === 'stop') out.push(lifecycle(`${id}:turn-end`, at, 'waiting_for_review', 'input_required'));
+  return out;
+}
+
 async function readJson(path, fallback, max = LIMITS.stateBytes) {
   let handle;
   try {
@@ -584,7 +615,7 @@ function collectWindow(window, host, notes, remaining, child = false) {
   let invalid = 0;
   let lines = 0;
   const mapper = host === 'codex' ? mapCodex : host === 'kimi-code' ? mapKimi
-    : host === 'grok' ? mapGrok : host === 'cursor' ? mapCursor : host === DSH_AGENT ? mapDsh : mapClaude;
+    : host === 'grok' ? mapGrok : host === 'cursor' ? mapCursor : host === DSH_AGENT ? mapDsh : host === PI_AGENT ? mapPi : mapClaude;
   const buffer = window.buffer;
   for (let from = 0; from < buffer.length && lines < LIMITS.lines; lines++) {
     const end = buffer.indexOf(10, from) + 1;
@@ -650,6 +681,7 @@ export async function streamSession({ payload, host, repo, stateDir, request }) 
   const notes = { repository: repo };
   // Grok and Cursor transcript lines carry no verified timestamps; capture time stamps their events.
   if (harness === 'grok' || harness === 'cursor') notes.observedAt = new Date().toISOString();
+  if (harness === 'opencode') notes.harness = harness;
   let events = [];
   let offset = state.offset;
   let invalid = 0;
@@ -715,5 +747,9 @@ export async function streamSession({ payload, host, repo, stateDir, request }) 
     ...(harness === 'grok' ? { transcript_format: 'grok-jsonl-inferred', current_format_verified: false,
       event_times: 'capture-time', capture_scope: 'hook transcriptPath JSONL; ACP update and chat-history lines recognized, other lines skipped' } : {}),
     ...(harness === 'cursor' ? { transcript_format: 'cursor-jsonl-inferred', current_format_verified: false,
-      event_times: 'capture-time', capture_scope: 'hook transcript_path JSONL; tool outputs are not recorded by the host' } : {}) };
+      event_times: 'capture-time', capture_scope: 'hook transcript_path JSONL; tool outputs are not recorded by the host' } : {}),
+    ...(harness === 'opencode' ? { transcript_format: 'opencode-plugin-mirror', current_format_verified: true,
+      capture_scope: 'messages the plugin read from OpenCode after each turn; subagent sessions are captured as their own sessions' } : {}),
+    ...(harness === PI_AGENT ? { transcript_format: 'pi-session-v3', current_format_verified: true,
+      capture_scope: "Pi's own session file, every branch in file order; extension messages are skipped" } : {}) };
 }

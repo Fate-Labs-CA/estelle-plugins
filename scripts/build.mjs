@@ -144,10 +144,40 @@ emit('plugins/dsh/cordis.patch.yml', `# Estelle for DeepSeek Harness: memory and
           X-Estelle-Repo: !!js "process.env.ESTELLE_REPO ?? ''"
 `);
 
-const HOSTS = ['claude', 'codex', 'kimi', 'grok', 'cursor', 'dsh'];
+// OpenCode and Pi load an npm-shaped package and run its JavaScript in their own process (adapters/opencode-plugin.mjs,
+// adapters/pi-extension.mjs). Both packages are published to npm under the Fate Labs scope; neither is published by this build.
+const npmPackage = (host, name, extra) => ({ name, version, description, license: 'Apache-2.0', type: 'module',
+  author: 'Fate Labs', homepage: `https://github.com/Fate-Labs-CA/estelle-plugins/blob/main/docs/install/${host}.md`,
+  repository: { type: 'git', url: 'git+https://github.com/Fate-Labs-CA/estelle-plugins.git', directory: `plugins/${host}` },
+  bugs: { url: 'https://github.com/Fate-Labs-CA/estelle-plugins/issues' }, engines: { node: '>=22' },
+  publishConfig: { access: 'public' }, ...extra });
+emit('plugins/opencode/package.json', npmPackage('opencode', '@fatelabs/opencode-estelle', {
+  keywords: ['opencode', 'opencode-plugin', 'estelle', 'mcp', 'memory', 'code-review'],
+  main: './adapters/opencode-plugin.mjs',
+  exports: { '.': './adapters/opencode-plugin.mjs', './package.json': './package.json' } }));
+const PI_MANIFEST = { extensions: ['./adapters/pi-extension.mjs'], skills: ['./skills'] };
+emit('plugins/pi/package.json', npmPackage('pi', '@fatelabs/pi-estelle', {
+  // `pi-package` is what lists an npm package in the pi.dev gallery (Pi docs/packages.md, "Create a package").
+  keywords: ['pi-package', 'pi', 'pi-extension', 'estelle', 'mcp', 'memory', 'code-review'],
+  pi: PI_MANIFEST }));
+// npm and the pi.dev gallery show the package's own README: the install page, with its links made absolute.
+const BLOB = 'https://github.com/Fate-Labs-CA/estelle-plugins/blob/main';
+for (const host of ['opencode', 'pi']) {
+  const page = await readFile(join(root, 'docs', 'install', `${host}.md`), 'utf8');
+  emit(`plugins/${host}/README.md`, page.replace(/\]\((?!https?:|#)([^)]+)\)/g,
+    (_, target) => `](${new URL(target, `${BLOB}/docs/install/`).href})`));
+}
+// `pi install git:github.com/Fate-Labs-CA/estelle-plugins` reads the repository root's package.json, so the root names
+// the Pi package's resources. Hand-authored like the rest of that file; the build only checks it still agrees.
+const rootPi = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).pi;
+const expectedRootPi = Object.fromEntries(Object.entries(PI_MANIFEST).map(([key, paths]) => [key, paths.map(path => path.replace('./', './plugins/pi/'))]));
+if (JSON.stringify(rootPi) !== JSON.stringify(expectedRootPi)) throw new Error(`package.json "pi" must be ${JSON.stringify(expectedRootPi)}`);
+
+const HOSTS = ['claude', 'codex', 'kimi', 'grok', 'cursor', 'dsh', 'opencode', 'pi'];
 const ASSETS = ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE', 'NOTICE'];
 // Codex gets generated skills and Claude gets generated copies (both above); the other hosts copy commands as they are.
-const assetsFor = host => [...ASSETS, ...(['codex', 'claude'].includes(host) ? [] : ['commands']), ...(host === 'claude' ? ['agents'] : [])];
+const assetsFor = host => [...ASSETS, ...(['codex', 'claude'].includes(host) ? [] : ['commands']),
+  ...(['claude', 'opencode'].includes(host) ? ['agents'] : [])];
 async function inventory(directory, prefix = '') {
   const output = new Map();
   for (const entry of await readdir(directory, { withFileTypes: true })) {

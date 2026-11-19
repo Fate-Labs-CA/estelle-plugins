@@ -1,6 +1,6 @@
 # Estelle plugins
 
-Estelle for Claude Code, Codex, Kimi Code, Grok Build and Cursor. Each host has its own package
+Estelle for Claude Code, Codex, Kimi Code, Grok Build, Cursor, OpenCode and Pi. Each host has its own package
 under `plugins/`. They connect to `https://api.fatelabs.ca/mcp`.
 
 Install your coding host first, with external Node.js 22+. Claude Code signs in to MCP with OAuth and
@@ -21,6 +21,8 @@ Version: `0.0.17`.
 | Grok Build | [Grok](docs/install/grok.md) |
 | DeepSeek Harness (developer preview) | [dsh](docs/install/dsh.md) |
 | Cursor | [Cursor](docs/install/cursor.md) |
+| OpenCode | [OpenCode](docs/install/opencode.md) · [what it supports](docs/hosts/opencode.md) |
+| Pi | [Pi](docs/install/pi.md) · [what it supports](docs/hosts/pi.md) |
 
 Estelle for ChatGPT is a separate package in `chatgpt/estelle/`, prepared for OpenAI review and not yet listed. See [ChatGPT](docs/install/chatgpt.md).
 
@@ -81,7 +83,11 @@ Install or update Estelle for Cursor from https://github.com/uqeu/estelle-plugin
 
 Includes MCP connections, coding skills, recall hooks and a warning when an edit writes what looks like a real key. The warning never stops the edit.
 Successful empty recall adds no context. Hook execution alone does not establish MCP authentication.
-All five hosts support bounded conversation capture. The Grok and Cursor transcript dialects are
+OpenCode and Pi load an npm-shaped package that runs inside the host. OpenCode's transcript is a mirror the
+plugin writes after each turn from OpenCode's own session API; Pi's is Pi's own session file. Neither is published
+to npm yet; install from this repository until it is.
+
+All seven hosts support bounded conversation capture. The Grok and Cursor transcript dialects are
 inferred from the hook payload contract, not yet verified against a live host session, so their
 captures disclose `format_verified: false` and must not be described as a complete handoff.
 

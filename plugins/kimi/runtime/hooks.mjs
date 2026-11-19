@@ -23,6 +23,8 @@ async function adapter(host) {
   if (host === 'grok') return import('../adapters/grok.mjs');
   if (host === 'cursor') return import('../adapters/cursor.mjs');
   if (host === 'dsh') return import('../adapters/dsh.mjs');
+  if (host === 'opencode') return import('../adapters/opencode.mjs');
+  if (host === 'pi') return import('../adapters/pi.mjs');
   throw new Error('unsupported_host');
 }
 
@@ -59,7 +61,7 @@ export async function drainOne(stateDir, request) {
     await writeJson(cursorPath, { last: name });
     const path = join(stateDir, 'deferred', name);
     const item = await readJson(path, 16_000);
-    if (!['claude-code', 'codex', 'kimi', 'grok', 'cursor', 'dsh'].includes(item.host)) throw new Error('unsupported_host');
+    if (!['claude-code', 'codex', 'kimi', 'grok', 'cursor', 'dsh', 'opencode', 'pi'].includes(item.host)) throw new Error('unsupported_host');
     const repo = repository(item.payload.cwd);
     const payload = { ...item.payload, hook_event_name: 'Stop' };
     if (item.host === 'kimi') {
@@ -153,7 +155,8 @@ function withWarning(host, output, warning) {
   console.error(warning);
   if (host === 'kimi') return output;
   if (host === 'cursor') return { ...output, user_message: warning, agent_message: warning };
-  if (host === 'dsh') return { ...output, warning };
+  // dsh, OpenCode and Pi run Estelle from their own in-process plugin, which shows `warning` in the host's own way.
+  if (['dsh', 'opencode', 'pi'].includes(host)) return { ...output, warning };
   const earlier = output?.hookSpecificOutput?.additionalContext;
   const additionalContext = earlier ? `${earlier}\n\n${warning}` : warning;
   if (host === 'grok') return { ...output, hookSpecificOutput: { ...output?.hookSpecificOutput, additionalContext } };

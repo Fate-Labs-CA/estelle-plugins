@@ -11,5 +11,13 @@
     "test": "node --test test/*.test.mjs",
     "build": "node scripts/build.mjs",
     "check": "node scripts/build.mjs --check"
+  },
+  "pi": {
+    "extensions": [
+      "./plugins/pi/adapters/pi-extension.mjs"
+    ],
+    "skills": [
+      "./plugins/pi/skills"
+    ]
   }
 }

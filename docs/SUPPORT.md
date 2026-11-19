@@ -1,16 +1,16 @@
 # Host support
 
-| Feature | Claude Code | Codex | Kimi Code | Grok Build | Cursor |
-|---|---|---|---|---|---|
-| Native package and MCP configuration | Included | Included | Included | Included | Included |
-| Skills | Yes | Yes | Yes | Yes | Yes |
-| Commands | Native | Plugin skills | Native | Native | Native |
-| Startup instructions | Hook context | Hook context | Startup skill | Skills/MCP | Rule and hook context |
-| Automatic recall | Prompt hook | Prompt hook | Prompt hook | Next matching pre-tool hook | Next matching post-tool hook |
-| Transcript capture | Bounded JSONL | Bounded rollout | Bounded main-agent journal | Bounded JSONL (inferred dialect) | Bounded JSONL (inferred dialect) |
-| Checkpoints | Bounded conversation | Bounded conversation | Active main-agent branch | Bounded conversation (inferred dialect) | Bounded conversation (inferred dialect) |
-| Exit save | Reference; retry later | Reference; retry later | Reference; retry later | Reference; retry later | Reference; retry later |
-| Hook approval after an update | Not required | Required; see [Codex](install/codex.md) | Host prompt | Host prompt | Host prompt |
+| Feature | Claude Code | Codex | Kimi Code | Grok Build | Cursor | OpenCode | Pi |
+|---|---|---|---|---|---|---|---|
+| Native package and MCP configuration | Included | Included | Included | Included | Included | Plugin `config` hook | `registerMcpServer` |
+| Skills | Yes | Yes | Yes | Yes | Yes | Yes (`skills.paths`) | Yes (`pi.skills`) |
+| Commands | Native | Plugin skills | Native | Native | Native | Native (`command` config) | Input transform |
+| Startup instructions | Hook context | Hook context | Startup skill | Skills/MCP | Rule and hook context | `instructions` + system prompt | System prompt section |
+| Automatic recall | Prompt hook | Prompt hook | Prompt hook | Next matching pre-tool hook | Next matching post-tool hook | Prompt hook (synthetic part) | Prompt hook (session message) |
+| Transcript capture | Bounded JSONL | Bounded rollout | Bounded main-agent journal | Bounded JSONL (inferred dialect) | Bounded JSONL (inferred dialect) | Plugin-written mirror | Pi session file |
+| Checkpoints | Bounded conversation | Bounded conversation | Active main-agent branch | Bounded conversation (inferred dialect) | Bounded conversation (inferred dialect) | Bounded conversation | Bounded conversation (all branches) |
+| Exit save | Reference; retry later | Reference; retry later | Reference; retry later | Reference; retry later | Reference; retry later | Reference; retry later | Reference; retry later |
+| Hook approval after an update | Not required | Required; see [Codex](install/codex.md) | Host prompt | Host prompt | Host prompt | Not required | Project trust for project installs |
 
 This table describes packaged paths, not a claim that a particular installation has run. Check
 package loading, MCP authentication and actual hook execution separately. Successful empty recall
@@ -39,6 +39,9 @@ the agent. Grok and Cursor transcript readers are inferred from the hook payload
 third-party observations of the on-disk JSONL, not yet verified against a live host session: their
 checkpoints are marked partial, their event times are capture time (the transcript lines carry no
 verified timestamps), unrecognized lines are skipped, and Cursor does not record tool outputs.
+
+OpenCode and Pi run Estelle inside the host process and hand each event to the same runner; what each host
+can and cannot do is in [hosts/opencode.md](hosts/opencode.md) and [hosts/pi.md](hosts/pi.md).
 
 Rooms needs server-side host support, an authenticated owner and a session proof. Native hook
 identity and Cursor's `user_email` are not substitutes for that proof or permission to share.
