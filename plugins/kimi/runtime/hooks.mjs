@@ -126,6 +126,8 @@ async function recall(n, repo, request) {
 }
 
 const START_TEXT = 'If Estelle MCP tools are available, call estelle_resume before planning and use their live schemas. '
+  + 'A cloud session (start, run there, hand off, steer) is estelle_move; if unsure what Estelle can do, ask estelle_docs '
+  + 'before saying you don\'t know. '
   + 'Use only this session’s verified Room identity; never invent or borrow a token. '
   + 'Check capture coverage before claiming a complete handoff.';
 
