@@ -21,8 +21,19 @@ Version: `0.0.18`.
 | Grok Build | [Grok](docs/install/grok.md) |
 | DeepSeek Harness (developer preview) | [dsh](docs/install/dsh.md) |
 | Cursor | [Cursor](docs/install/cursor.md) |
-| OpenCode | [OpenCode](docs/install/opencode.md) · [what it supports](docs/hosts/opencode.md) |
-| Pi | [Pi](docs/install/pi.md) · [what it supports](docs/hosts/pi.md) |
+| OpenCode | [OpenCode](docs/install/opencode.md) · [what it supports](docs/hosts/opencode.md) · npm [`@fatelabs/opencode-estelle`](https://www.npmjs.com/package/@fatelabs/opencode-estelle) |
+| Pi | [Pi](docs/install/pi.md) · [what it supports](docs/hosts/pi.md) · npm [`@fatelabs/pi-estelle`](https://www.npmjs.com/package/@fatelabs/pi-estelle) · [pi.dev packages](https://pi.dev/packages) |
+
+OpenCode and Pi install from npm with one command each:
+
+```sh
+opencode plugin @fatelabs/opencode-estelle -g
+pi install npm:@fatelabs/pi-estelle
+```
+
+Pi has no sub-agents, so the four Estelle agents are not part of the Pi package; its commands and skills cover
+the same workflows. In both hosts, `ESTELLE_API_KEY` in the host's environment signs in MCP and the hooks; the
+browser OAuth sign-in path has not been run live in either.
 
 Estelle for ChatGPT is a separate package in `chatgpt/estelle/`, prepared for OpenAI review and not yet listed. See [ChatGPT](docs/install/chatgpt.md).
 
@@ -81,11 +92,29 @@ Install or update Estelle for Cursor from https://github.com/uqeu/estelle-plugin
 
 </details>
 
+<details>
+<summary>OpenCode</summary>
+
+```text
+Install Estelle for OpenCode. Follow https://github.com/Fate-Labs-CA/estelle-plugins/blob/main/docs/install/opencode.md and run `opencode plugin @fatelabs/opencode-estelle -g`, which adds the package to my global OpenCode config and preserves everything else in it. Keep hooks and MCP on the same ESTELLE_API_KEY environment key; never request or display credentials. Then tell me to restart OpenCode. Report package loading, `opencode mcp list`, and observed hooks separately. No paid installation tests.
+```
+
+</details>
+
+<details>
+<summary>Pi</summary>
+
+```text
+Install Estelle for Pi. Follow https://github.com/Fate-Labs-CA/estelle-plugins/blob/main/docs/install/pi.md and run `pi install npm:@fatelabs/pi-estelle`. Do not edit Pi settings by hand. Keep hooks and MCP on the same ESTELLE_API_KEY environment key; never request or display credentials. Then tell me to restart Pi or run /reload. Report package loading, /mcp status, and observed hooks separately. No paid installation tests.
+```
+
+</details>
+
 Includes MCP connections, coding skills, recall hooks and a warning when an edit writes what looks like a real key. The warning never stops the edit.
 Successful empty recall adds no context. Hook execution alone does not establish MCP authentication.
-OpenCode and Pi load an npm-shaped package that runs inside the host. OpenCode's transcript is a mirror the
-plugin writes after each turn from OpenCode's own session API; Pi's is Pi's own session file. Neither is published
-to npm yet; install from this repository until it is.
+OpenCode and Pi load an npm package that runs inside the host: `@fatelabs/opencode-estelle` and
+`@fatelabs/pi-estelle`, both published at 0.0.18. OpenCode's transcript is a mirror the plugin writes after each
+turn from OpenCode's own session API; Pi's is Pi's own session file.
 
 All seven hosts support bounded conversation capture. The Grok and Cursor transcript dialects are
 inferred from the hook payload contract, not yet verified against a live host session, so their

@@ -82,7 +82,10 @@ after an update.
 `plugins/pi/package.json` is ready for that: name `@fatelabs/pi-estelle`, keywords including `pi-package`, the `pi`
 manifest, `publishConfig.access: public`, Apache-2.0, repository and homepage links, and the install page as README.
 
-Steps (nothing here has been published):
+0.0.18 is published (`npm view @fatelabs/pi-estelle time` shows it on 2026-11-19), and it was installed from npm
+with `pi install npm:@fatelabs/pi-estelle` in a scratch home and run in RPC mode against a real model. As of
+2026-11-19 02:40 UTC, `https://pi.dev/packages/@fatelabs/pi-estelle` still answered 404, so the gallery had not
+picked it up yet. Steps for a later release:
 
 1. `npm run build`, then from `plugins/pi`: `npm publish --access public` with an npm account that can publish to
    the `@fatelabs` scope.
