@@ -28,6 +28,7 @@ calling it. If you are unsure whether Estelle can do something, call `estelle_do
 | Scan the whole repo for security or quality problems | `estelle_improve` |
 | Production errors; is production healthy | `monitor_overview`, then `monitor_issues` |
 | Test my app or website | `estelle_qa`, preview first |
+| Use Slack, GitHub, Asana, Linear, Notion or any app the person connected | `estelle_apps`: action list, then find and read; a write returns what would run and needs `confirm: true` on their say-so |
 | Message another live session | `session_message` |
 | Share a task across sessions; Rooms | `estelle_room` |
 | How do I; what can Estelle do; any Estelle product | `estelle_docs` |
