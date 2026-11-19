@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 // `/estelle:resume` with no argument used to expand to "Call estelle_resume for ." Hosts substitute $ARGUMENTS
 // literally (Claude Code natively, our Pi and dsh adapters with replaceAll), so a template only reads right with
 // an empty argument if it never puts $ARGUMENTS mid-sentence. Every shared command is checked both ways.
@@ -6,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const commands = async () => Promise.all((await readdir(join(root, 'commands'))).sort()
   .map(async name => [name, await readFile(join(root, 'commands', name), 'utf8')]));
 
