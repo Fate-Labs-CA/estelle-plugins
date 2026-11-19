@@ -5,13 +5,14 @@ import { createHash, randomUUID } from 'node:crypto';
 import { cap, sanitize, FIELD_CAP } from './redact.mjs';
 import { timelineIdentity } from './identity.mjs';
 import { normalizeKimiRecord } from './kimi-history.mjs';
+import { noteTaskNotification, syncSubagents } from './stream-subagents.mjs';
 
 export const LIMITS = Object.freeze({
   readBytes: 8_000_000, skipBytes: 256_000_000, batchEvents: 50, batchBytes: 2_000_000,
   claudeEvents: 200, codexEvents: 1_000, codexWindows: 4, lines: 10_000,
   spoolBytes: 64 * 1024 * 1024, spoolFiles: 4096, drainFiles: 64, stateBytes: 32_000,
   messageBlocks: 100, directoryEntries: 2_000, prResultBytes: 4096,
-  subagents: 40, subagentEvents: 400,
+  subagents: 40, subagentEvents: 400, subagentLines: 3_000, subagentStateBytes: 128_000,
 });
 const INJECTED = ['<system-reminder', '<command-', '<local-command', '<task-notification', '[SYSTEM NOTIFICATION', 'Caveat:'];
 const CODEX_INJECTED = [...INJECTED, '<environment_context', '<user_instructions', '# AGENTS.md instructions', '<skill', '<turn_aborted', '<user_shell_command'];
@@ -35,11 +36,9 @@ function messageEvents(blocks, role, id, at, harness, notes, sidechain = false, 
     const key = `${id}:${index}`;
     const text = string(block.text);
     if (['text', 'input_text', 'output_text'].includes(block.type) && text.trim()) {
-      if (role === 'user' && injected(text, harness === 'codex' ? CODEX_INJECTED : INJECTED)) continue;
+      if (role === 'user' && injected(text, harness === 'codex' ? CODEX_INJECTED : INJECTED)) { noteTaskNotification(text, notes); continue; }
       if (role === 'user' && !sidechain) notes.title ??= text.trim().split('\n')[0].slice(0, 90);
-      out.push(event(key, role === 'user' && !sidechain ? 'customer_message' : 'agent_message',
-        role === 'user' && !sidechain ? { kind: 'customer' } : agent(sidechain || child ? 'subagent' : harness), at,
-        { text: cap(text), ...(sidechain ? { subagent: true } : {}) }));
+      out.push(textEvent(key, role, at, harness, text, sidechain, child));
     } else if (role === 'user' && ['image', 'input_image'].includes(block.type)) {
       out.push(event(key, 'artifact', { kind: 'customer' }, at, { title: 'Image you attached', media: 'image', stored: false }));
     } else if (block.type === 'tool_result') {
@@ -47,7 +46,7 @@ function messageEvents(blocks, role, id, at, harness, notes, sidechain = false, 
     } else if (role === 'assistant' && block.type === 'tool_use') {
       out.push(harness === 'cursor' ? cursorTool(block, key, at, sidechain, child) : claudeTool(block, key, at, sidechain, child, harness));
     } else if (role === 'assistant' && block.type === 'thinking' && string(block.thinking).trim()) {
-      out.push(event(key, 'thinking', agent(harness), at, { text: cap(block.thinking) }));
+      out.push(event(key, 'thinking', agent(sidechain || child ? 'subagent' : harness), at, { text: cap(block.thinking) }));
     }
     // Only public transcript text is transported; private/encrypted reasoning is never recovered.
   }
@@ -55,6 +54,15 @@ function messageEvents(blocks, role, id, at, harness, notes, sidechain = false, 
     out.push(lifecycle(`${id}:input`, at, 'running', 'input_received'));
   }
   return out;
+}
+
+/** One text block. In a subagent's transcript (every line `isSidechain`) a `user` turn is the parent's brief to it; inside the
+    subagent's own timeline (`child`) its replies are the conversation, while a sidechain reply read inline is an aside. */
+function textEvent(key, role, at, harness, text, sidechain, child) {
+  if (role === 'user' && !sidechain) return event(key, 'customer_message', { kind: 'customer' }, at, { text: cap(text) });
+  if (role === 'user') return event(key, 'agent_message', agent(harness), at, { text: cap(text), brief_to_subagent: true });
+  return event(key, 'agent_message', agent(sidechain || child ? 'subagent' : harness), at,
+    { text: cap(text), ...(sidechain && !child ? { subagent: true } : {}) });
 }
 
 // OpenCode names MCP tools `<server>_<tool>` (Estelle_verify); Claude Code and Pi name them `mcp__<server>__<tool>`.
@@ -116,7 +124,7 @@ function claudeAttachment(entry, notes, child) {
   const attachment = entry.attachment ?? {};
   if (attachment.type === 'queued_command') {
     const text = textOf(attachment.prompt).trim();
-    if (!text || injected(text, INJECTED)) return [];
+    if (!text || injected(text, INJECTED)) { noteTaskNotification(text, notes); return []; }
     notes.title ??= text.split('\n')[0].slice(0, 90);
     return [event(`${entry.uuid}:queued`, 'customer_message', { kind: 'customer' }, entry.timestamp, { text: cap(text) }),
       ...(child ? [] : [lifecycle(`${entry.uuid}:input`, entry.timestamp, 'running', 'input_received')])];
@@ -483,7 +491,7 @@ export function mapPi(entry, offset, notes = {}) {
   return out;
 }
 
-async function readJson(path, fallback, max = LIMITS.stateBytes) {
+export async function readJson(path, fallback, max = LIMITS.stateBytes) {
   let handle;
   try {
     handle = await open(path, 'r');
@@ -499,7 +507,7 @@ async function readJson(path, fallback, max = LIMITS.stateBytes) {
   } finally { await handle?.close(); }
 }
 
-async function saveJson(path, value) {
+export async function saveJson(path, value) {
   const temp = `${path}.${process.pid}.${randomUUID()}.tmp`;
   try {
     await writeFile(temp, JSON.stringify(value), { mode: 0o600, flag: 'wx' });
@@ -520,7 +528,7 @@ async function listBounded(dir, bound) {
   return files.sort();
 }
 
-function retryable(error) {
+export function retryable(error) {
   return !Number.isInteger(error.status) || error.status >= 500 || [401, 403, 408, 429].includes(error.status);
 }
 
@@ -530,7 +538,7 @@ function associationPartial(response, events) {
   return !(row?.state === 'linked' && row.linked === 1 && row.deferred === 0 && row.unconfirmed === 0);
 }
 
-async function sendBatch(request, session, events) {
+export async function sendBatch(request, session, events) {
   let pending = events;
   let dropped = 0;
   const bound = events.length + 1;
@@ -580,7 +588,7 @@ async function drainSpool(dir, request) {
   return { replayed, ...(associationIncomplete ? { association_partial: true } : {}) };
 }
 
-async function readWindow(file, offset) {
+export async function readWindow(file, offset) {
   const handle = await open(file, 'r');
   try {
     const length = (await handle.stat()).size;
@@ -645,7 +653,7 @@ function collapse(events, last) {
   return { events: kept, last };
 }
 
-function eventBatches(events) {
+export function eventBatches(events) {
   const batches = [];
   let batch = [];
   let size = 0;
@@ -739,7 +747,10 @@ export async function streamSession({ payload, host, repo, stateDir, request }) 
     }
   }
   await saveJson(statePath, { offset, started, last_at: events.at(-1)?.at ?? last, last_lifecycle: collapsed.last, invalid_lines: invalid, skipped_lines: skipped, last_error: null });
-  return { sent, dropped, replayed, ...(associationIncomplete ? { association_partial: true } : {}), backlog: incomplete, incomplete: incomplete || harness === 'kimi-code', invalid_lines: invalid, skipped_lines: skipped, offset, session_id: timeline,
+  // Each subagent is its own timeline, `<parent>/agent-<Agent call id>`; OpenCode reuses this dialect but has no such directory.
+  const subagents = harness === 'claude-code'
+    ? await syncSubagents({ transcript, parent: timeline, repo, stateDir, request, notified: notes.notified ?? [] }) : null;
+  return { sent, dropped, replayed, ...(subagents ? { subagents } : {}), ...(associationIncomplete ? { association_partial: true } : {}), backlog: incomplete, incomplete: incomplete || harness === 'kimi-code', invalid_lines: invalid, skipped_lines: skipped, offset, session_id: timeline,
     ...(harness === 'kimi-code' ? { transcript_format: 'kimi-wire', current_format_verified: true,
       capture_scope: 'main-agent journal; stream includes recorded branch history' } : {}),
     ...(harness === DSH_AGENT ? { transcript_format: 'dsh-session-events', current_format_verified: true,

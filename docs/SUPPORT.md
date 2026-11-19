@@ -8,6 +8,7 @@
 | Startup instructions | Hook context | Hook context | Startup skill | Skills/MCP | Rule and hook context | `instructions` + system prompt | System prompt section |
 | Automatic recall | Prompt hook | Prompt hook | Prompt hook | Next matching pre-tool hook | Next matching post-tool hook | Prompt hook (synthetic part) | Prompt hook (session message) |
 | Transcript capture | Bounded JSONL | Bounded rollout | Bounded main-agent journal | Bounded JSONL (inferred dialect) | Bounded JSONL (inferred dialect) | Plugin-written mirror | Pi session file |
+| Subagent capture | Each its own timeline under the parent (`<session>/subagents/`, bounded per run) | Not captured (child threads are separate rollouts) | Not captured (main-agent journal) | Not captured | Not captured | Own sessions, not linked to the parent | No subagents |
 | Checkpoints | Bounded conversation | Bounded conversation | Active main-agent branch | Bounded conversation (inferred dialect) | Bounded conversation (inferred dialect) | Bounded conversation | Bounded conversation (all branches) |
 | Exit save | Reference; retry later | Reference; retry later | Reference; retry later | Reference; retry later | Reference; retry later | Reference; retry later | Reference; retry later |
 | Hook approval after an update | Not required | Required; see [Codex](install/codex.md) | Host prompt | Host prompt | Host prompt | Not required | Project trust for project installs |
