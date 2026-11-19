@@ -1,6 +1,6 @@
 ---
 name: estelle
-description: "Use Estelle for repository evidence, shared memory, Rooms, production monitoring, Twice app testing, Silos, Security, CI, Orchestra, Atlas and engineering requests from Claude Code, Codex, Kimi Code, Grok Build, Cursor, OpenCode or Pi. Inspect the connected tool schemas before calling them."
+description: "Use Estelle for repository evidence, shared memory, cloud sessions, Rooms, production monitoring, Twice app testing, Silos, Security, CI, Orchestra, Atlas and engineering requests from Claude Code, Codex, Kimi Code, Grok Build, Cursor, OpenCode or Pi. Inspect the connected tool schemas before calling them."
 user-invocable: false
 metadata:
   short-description: "Use Estelle for repository evidence, memory, Rooms, monitoring and cloud work."
@@ -10,6 +10,30 @@ metadata:
 
 Estelle connects this coding session to the hosted service at `https://api.fatelabs.ca/mcp`.
 Use the tools actually advertised by this host. A plugin, skill or slash command does not add a backend capability by itself.
+
+<!-- intent-map:start (generated from intent-map.md by scripts/build.mjs) -->
+## What to call first
+
+You have Estelle's MCP tools in this session. Pick one from what the person asks, and read its live schema before
+calling it. If you are unsure whether Estelle can do something, call `estelle_docs` before saying you don't know.
+
+| The person asks | Call first |
+| --- | --- |
+| Start, launch or run something in a cloud session; "run this in the cloud"; "do it in a cloud session" | `estelle_move` with `mode: "cloud"`, `prompt: "<their task>"` and `repo: "<owner/name>"` from this checkout's git origin unless they name another. `action: "preview"` spends nothing; `action: "move"` starts a billed machine and needs `confirm: true` on their say-so. |
+| Hand this session off to the cloud | `estelle_move` with `mode: "handoff"` |
+| Check on or steer a cloud session | `estelle_move` with `action: "status"` or `action: "steer"` |
+| Pick up where we left off | `estelle_resume` |
+| What did we decide; what happened last time | `memory_chat`, or `list_sessions` then `get_session` |
+| Does this exist; where is it; who calls it | `verify`, `find_definition`, `locate`, `estelle_grep`, `find_usages` |
+| Review this change | `review` |
+| Check a diff for secrets, injection or vulnerable dependencies | `scan` |
+| Scan the whole repo for security or quality problems | `estelle_improve` |
+| Production errors; is production healthy | `monitor_overview`, then `monitor_issues` |
+| Test my app or website | `estelle_qa`, preview first |
+| Message another live session | `session_message` |
+| Share a task across sessions; Rooms | `estelle_room` |
+| How do I; what can Estelle do; any Estelle product | `estelle_docs` |
+<!-- intent-map:end -->
 
 ## `/estelle handoff` and `/estelle cloud`
 
@@ -96,8 +120,8 @@ For any question about Estelle itself, call `estelle_docs` with `query` or `page
 | Product | What it does | Tool |
 | --- | --- | --- |
 | Twice | Tests a web app through user journeys in a cloud browser and reports evidence | `estelle_qa` |
-| Silos | Cloud computers that run agents, builds and tests | `estelle_launch_agent`, `estelle_silo` |
-| Security | Scans code for security-sensitive findings | `scan` |
+| Silos | Cloud computers that run agents, builds and tests; a cloud session runs in one | `estelle_move`, `estelle_silo`, `estelle_launch_agent` |
+| Security | Scans a diff (`scan`) or the whole repo (`estelle_improve`) for security-sensitive findings | `scan`, `estelle_improve` |
 | CI | Runs builds and tests in Silos | `estelle_ci` |
 | Orchestra | Plans builds and follows their work | `orchestra` |
 | Atlas | A cited guide to an indexed repository | `kb_ask`, `kb_page` |

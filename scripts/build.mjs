@@ -30,6 +30,16 @@ for (const [file, pattern, replacement] of [
   if ([...source.matchAll(pattern)].length !== 1) throw new Error(`Release metadata anchor missing or repeated: ${file}`);
   emit(file, source.replace(pattern, replacement));
 }
+// One intent map (what the person asks, the tool to call first) for every host. It is written into the generated region
+// of each file every host reads at session start: instructions.md (Cursor, OpenCode, Pi, dsh) and the estelle skill
+// (Claude Code, Codex, Kimi, Grok). Edit intent-map.md, never the region.
+const INTENT_MAP = await readFile(join(root, 'intent-map.md'), 'utf8');
+const INTENT_REGION = /(<!-- intent-map:start[^\n]*-->\n)[\s\S]*?(<!-- intent-map:end -->)/g;
+for (const file of ['instructions.md', 'skills/estelle/SKILL.md']) {
+  const source = await readFile(join(root, file), 'utf8');
+  if ([...source.matchAll(INTENT_REGION)].length !== 1) throw new Error(`Intent map region missing or repeated: ${file}`);
+  emit(file, source.replace(INTENT_REGION, (_, start, end) => `${start}${INTENT_MAP}${end}`));
+}
 emit('.claude-plugin/marketplace.json', marketplace('claude'));
 emit('.agents/plugins/marketplace.json', marketplace('codex'));
 emit('.grok-plugin/marketplace.json', { name: 'estelle-plugins', plugins: [{ name: 'estelle', source: './plugins/grok' }] });
@@ -96,7 +106,7 @@ emit('plugins/cursor/mcp.json', { mcpServers: { Estelle: { url: server.url,
 emit('plugins/cursor/hooks/hooks.json', { version: 1, hooks: Object.fromEntries(CURSOR_EVENTS.filter(event => event !== 'subagentStart').map(event => [event,
   [{ command: command('cursor', 'CURSOR_PLUGIN_ROOT'), timeout: event === 'sessionEnd' ? 3 : 20 }]])) });
 emit('plugins/cursor/rules/estelle.mdc', '---\ndescription: Use Estelle tools for repository context and shared work\nalwaysApply: true\n---\n'
-  + await readFile(join(root, 'instructions.md'), 'utf8'));
+  + generated.get('instructions.md'));
 
 // A dsh plugin is an npm-shaped bundle: this manifest and one Cordis patch layer. `dsh plugin --profile <name> add` installs it.
 const DSH_PEERS = ['@deepseek-ai/dsh-llm'];

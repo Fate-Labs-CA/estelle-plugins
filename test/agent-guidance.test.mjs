@@ -30,3 +30,17 @@ test('all native host guidance copies match the authored positive instructions',
   assert(cursor.endsWith(await read('instructions.md')));
   assert.doesNotMatch(cursor, /\bgate\b/i);
 });
+
+test('one intent map reaches every host from intent-map.md, and a hand edit to the region is refused', async () => {
+  const map = await read('intent-map.md');
+  for (const word of ['`estelle_move`', 'mode: "cloud"', 'mode: "handoff"', '`estelle_docs`', '`estelle_qa`',
+    '`session_message`', '`estelle_room`', '`estelle_improve`', '`scan`', 'before saying you don\'t know']) {
+    assert(map.includes(word), word);
+  }
+  const allHosts = ['claude', 'codex', 'cursor', 'dsh', 'grok', 'kimi', 'opencode', 'pi'];
+  for (const file of ['instructions.md', 'skills/estelle/SKILL.md']) {
+    assert.equal((await read(file)).split(map).length, 2, `${file} carries the map exactly once`);
+    for (const host of allHosts) assert((await read(`plugins/${host}/${file}`)).includes(map), `${host}/${file}`);
+  }
+  assert((await read('plugins/cursor/rules/estelle.mdc')).includes(map));
+});

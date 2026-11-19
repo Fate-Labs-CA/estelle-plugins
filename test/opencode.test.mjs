@@ -200,6 +200,8 @@ test('the real hook runner gives an OpenCode session its identity and mail at st
   };
   const output = await handleHook({ host: 'opencode', payload: envelope('session.created'), stateDir, request });
   assert.match(output.additionalContext, /call estelle_resume before planning/);
+  assert.match(output.additionalContext, /cloud session .* is estelle_move/);
+  assert.match(output.additionalContext, /ask estelle_docs before saying you don't know/);
   assert.match(output.additionalContext, /\[ESTELLE\] id opencode-ses_abc123/);
   assert.match(output.additionalContext, /waiting/);
   const mail = calls.filter(call => call.route === '/session/mail');

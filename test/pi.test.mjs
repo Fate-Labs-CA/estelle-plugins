@@ -48,6 +48,7 @@ test('the MCP server entry signs in with the environment key, or leaves Pi’s O
   assert.equal(keyed.toolExposure.estelle_resume, 'direct');
   assert.equal(Object.hasOwn(keyed.toolExposure, 'review'), false, 'review stays deferred: its root oneOf breaks some providers');
   assert.ok(DIRECT_TOOLS.includes('estelle_grep') && DIRECT_TOOLS.includes('verify'));
+  assert.equal(keyed.toolExposure.estelle_docs, 'direct', 'Estelle\'s own docs are one call away, not behind tool_search');
   assert.equal(Object.hasOwn(estelleServer({}), 'headers'), false);
   assert.equal(Object.hasOwn(estelleServer({ ESTELLE_API_KEY: 'a\nb' }), 'headers'), false);
 });

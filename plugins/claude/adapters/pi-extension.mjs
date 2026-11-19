@@ -11,7 +11,7 @@ const MAX_TOOL_WARNINGS = 64;
 // answered 400 `invalid_client_tool_schema` for the whole request, measured 2026-11-18), so declaring it up front would
 // break every turn on those providers instead of only the turn that asks for it.
 export const DIRECT_TOOLS = Object.freeze(['estelle_resume', 'estelle_grep', 'verify', 'find_definition', 'find_usages',
-  'locate', 'memory_chat', 'estelle_move']);
+  'locate', 'memory_chat', 'estelle_move', 'estelle_docs']);
 
 const COMMAND = /^\/estelle:([a-z][a-z-]{0,40})(?:\s+([\s\S]*))?$/;
 
