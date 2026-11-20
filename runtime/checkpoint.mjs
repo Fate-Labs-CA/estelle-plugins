@@ -10,7 +10,8 @@ export const CHECKPOINT_LIMITS = Object.freeze({
   records: 100_000, messages: 400, chars: 4_000, blocks: 1_000,
 });
 const HOSTS = { claude: 'claude-code', 'claude-code': 'claude-code', codex: 'codex', kimi: 'kimi-code', 'kimi-code': 'kimi-code',
-  grok: 'grok', cursor: 'cursor', dsh: 'deepseek-harness', 'deepseek-harness': 'deepseek-harness', opencode: 'opencode', pi: 'pi' };
+  grok: 'grok', cursor: 'cursor', dsh: 'deepseek-harness', 'deepseek-harness': 'deepseek-harness', opencode: 'opencode', pi: 'pi',
+  hermes: 'hermes', 'qwen-code': 'qwen-code' };
 const INJECTED = ['<environment_context', '<user_instructions', '# AGENTS.md instructions', '<skill', '<system-reminder', '<task-notification', '<command-', '<local-command', '<turn_aborted'];
 const string = value => typeof value === 'string' ? value : '';
 const shortened = text => Array.from(redact(text)).slice(0, CHECKPOINT_LIMITS.chars).join('');
@@ -53,8 +54,9 @@ function blockText(block) {
 
 function messageOf(record, host, subagent) {
   if (!record || typeof record !== 'object') return null;
-  // OpenCode's plugin mirror is written in Claude Code's line shape (adapters/opencode-mirror.mjs).
-  if (host === 'claude-code' || host === 'opencode') {
+  // OpenCode's and Hermes's plugin mirrors are written in Claude Code's line shape (adapters/opencode-mirror.mjs,
+  // hosts/hermes/__init__.py).
+  if (host === 'claude-code' || host === 'opencode' || host === 'hermes') {
     if (!['user', 'assistant'].includes(record.type) || record.isMeta || record.isCompactSummary || (record.isSidechain && !subagent)) return null;
     return { role: record.type, ...record.message };
   }
@@ -71,6 +73,15 @@ function messageOf(record, host, subagent) {
     // dsh also sends its runtime context and skill catalog as user-role messages with another source.
     if (record.type === 'user/message') return record.data?.source?.kind === 'user' ? { role: 'user', content: record.data.content } : null;
     return record.type === 'assistant/message' ? { role: 'assistant', content: record.data?.message?.content } : null;
+  }
+  if (host === 'qwen-code') {
+    // Qwen Code's chat recording: the person's own prompts and the model's replies, as Gemini-style parts.
+    const role = record.type === 'user' && (!record.provenance || record.provenance === 'real_user') ? 'user'
+      : record.type === 'assistant' ? 'assistant' : null;
+    const parts = Array.isArray(record.message?.parts) ? record.message.parts : [];
+    // Hook context Qwen Code appends to the prompt (`<qwen:user-prompt-submit-context>`) is not what the person typed.
+    return role ? { role, content: parts.filter(part => typeof part?.text === 'string' && part.thought !== true && !part.text.trimStart().startsWith('<qwen:'))
+      .map(part => ({ type: 'text', text: part.text })) } : null;
   }
   if (host === 'pi') {
     // Pi's session file: `message` entries. Extension messages (role `custom`) are not the conversation.

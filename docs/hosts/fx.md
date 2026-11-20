@@ -1,0 +1,24 @@
+# fx: what the host offers and how Estelle uses it
+
+"fx" is the coding agent CLI from Vercel Labs ([vercel-labs/fx](https://github.com/vercel-labs/fx), release v0.0.17 of
+2026-11-14, marked experimental). It is registered as `fx` in Vercel's `skills` CLI agent list beside Qwen Code and
+OpenClaw ([vercel-labs/skills#2006](https://github.com/vercel-labs/skills/pull/2006)). Read on 2026-11-20 from
+[fx.sh/docs](https://fx.sh/docs/capabilities/mcp) and [fx.sh/llms-full.txt](https://fx.sh/llms-full.txt); the binary was
+not run here.
+
+| Mechanism | fx v0.0.17 | Source |
+|---|---|---|
+| MCP | `~/.fx/mcp.json` (user) and `.mcp.json` (project, approved per workspace). Remote: `{"type": "http", "url": ...}` with `bearer_token_env`, or browser OAuth started when a server asks for it (`/mcp add <name> <url>`, `/mcp login <name>`). A literal `Authorization` header is refused. `fx mcp list --json`. | fx.sh/docs/capabilities/mcp |
+| Skills | `~/.fx/skills`, `.fx/skills`, `.agents/skills`, `.claude/skills`. | fx.sh/llms-full.txt |
+| Instructions | `AGENTS.md` (nested) and `~/.fx/AGENTS.md`. | fx.sh/llms-full.txt |
+| Hooks, plugins | None documented. | fx.sh/llms-full.txt |
+
+## How Estelle maps onto it
+
+MCP through fx's own config (OAuth, or `bearer_token_env: ESTELLE_API_KEY` from `plugins/fx/mcp.json`) and the shared
+skills copied into `~/.fx/skills`.
+
+## Gaps, said plainly
+
+- No session capture, recall or write warning: fx has no hooks.
+- Not run here.

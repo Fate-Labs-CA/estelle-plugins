@@ -69,7 +69,7 @@ test('every host keeps its own manifest paths inside the installed package', asy
 });
 
 test('every host folder has separate native discovery and exclude development notes or cross-host manifests', async () => {
-  const hosts = ['claude', 'codex', 'cursor', 'dsh', 'grok', 'kimi', 'opencode', 'pi'];
+  const hosts = ['claude', 'codex', 'cursor', 'dsh', 'fx', 'grok', 'hermes', 'kimi', 'mini-swe-agent', 'openclaw', 'opencode', 'pi', 'qwen'];
   assert.deepEqual((await readdir(join(root, 'plugins'))).sort(), hosts);
   for (const [file, host] of [['.claude-plugin/marketplace.json', 'claude'],
     ['.agents/plugins/marketplace.json', 'codex'], ['.cursor-plugin/marketplace.json', 'cursor']]) {
@@ -77,13 +77,26 @@ test('every host folder has separate native discovery and exclude development no
   }
   const manifestPaths = { claude: '.claude-plugin', codex: '.codex-plugin', cursor: '.cursor-plugin',
     dsh: 'cordis.patch.yml', grok: 'plugin.json', kimi: 'kimi.plugin.json', opencode: 'adapters/opencode-plugin.mjs',
-    pi: 'adapters/pi-extension.mjs' };
+    pi: 'adapters/pi-extension.mjs', qwen: 'qwen-extension.json', hermes: 'plugin.yaml', 'mini-swe-agent': 'estelle.yaml' };
   for (const host of hosts) {
     const files = await readdir(join(root, 'plugins', host));
     for (const forbidden of ['docs', 'test', 'CONTEXT.md', 'DECISIONS.md', ...Object.entries(manifestPaths)
-      .filter(([other]) => other !== host).map(([, path]) => path)]) assert(!files.includes(forbidden), `${host}: ${forbidden}`);
+      .filter(([other, path]) => other !== host && !(host === 'openclaw' && path === 'plugin.json')).map(([, path]) => path)]) {
+      assert(!files.includes(forbidden), `${host}: ${forbidden}`);
+    }
     await access(join(root, 'docs', 'install', `${host}.md`));
   }
+  // OpenClaw's Agent Plugins manifest is a root plugin.json, the same file name as Grok's; its $schema tells them apart.
+  const agentPlugin = await json('plugins/openclaw/plugin.json');
+  assert.equal(agentPlugin.$schema, 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json');
+  assert.equal(agentPlugin.name, 'estelle');
+  assert.equal(Object.hasOwn(await json('plugins/grok/plugin.json'), '$schema'), false);
+  for (const host of ['openclaw', 'fx']) {
+    await access(join(root, 'plugins', host, 'skills', 'estelle', 'SKILL.md'));
+    await assert.rejects(access(join(root, 'plugins', host, 'runtime')), { code: 'ENOENT' }, `${host} ships no hook runner`);
+  }
+  assert.deepEqual((await json('plugins/fx/mcp.json')).mcpServers.Estelle,
+    { type: 'http', url: 'https://api.fatelabs.ca/mcp', bearer_token_env: 'ESTELLE_API_KEY' });
   for (const forbidden of ['CONTEXT.md', 'DECISIONS.md', 'docs/VERIFICATION.md', 'docs/research']) {
     await assert.rejects(access(join(root, forbidden)), { code: 'ENOENT' });
   }

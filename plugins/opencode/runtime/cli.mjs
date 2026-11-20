@@ -96,6 +96,17 @@ if (command === 'doctor') {
   const verdict = telemetryCheck(Buffer.concat(chunks).toString('utf8'));
   console.log(verdict);
   if (verdict !== TELEMETRY_OFF) process.exitCode = 1;
+} else if (command === 'mcp') {
+  // `mcp tools` / `mcp call <tool> '<json>'`: Estelle's tools from a shell, for hosts with no MCP client (mini-swe-agent).
+  try {
+    const { runMcpCommand } = await import('./mcp-call.mjs');
+    console.log(await runMcpCommand(process.argv.slice(3)));
+  } catch (error) {
+    const own = /^(credential_|mcp_|arguments_|invalid_mcp_url)/.test(error.message ?? '');
+    const code = error.message === 'usage' ? 'usage: mcp tools | mcp call <tool> \'<json arguments>\'' : own ? error.message : errorCode(error);
+    console.error(`Estelle MCP call failed: ${code}`);
+    process.exitCode = 1;
+  }
 } else if (command === 'setup') {
   try {
     const { runSetupArgs } = await import('./setup.mjs');
@@ -107,6 +118,6 @@ if (command === 'doctor') {
     process.exitCode = 1;
   }
 } else {
-  console.error('Usage: node runtime/cli.mjs hook <claude-code|codex|kimi|grok|cursor|dsh|opencode|pi> | doctor | setup <host> [--apply] [--expect SHA256]');
+  console.error('Usage: node runtime/cli.mjs hook <claude-code|codex|kimi|grok|cursor|dsh|opencode|pi|hermes|qwen-code> | doctor | mcp tools | mcp call <tool> <json> | setup <host> [--apply] [--expect SHA256]');
   process.exitCode = 1;
 }

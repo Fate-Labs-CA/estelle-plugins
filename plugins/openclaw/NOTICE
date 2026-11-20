@@ -1,0 +1,6 @@
+Estelle Plugins
+Copyright Fate Labs
+
+Includes adapted public plugin assets and hook behavior from uqeu/estelle-cli,
+commit 6d5633d5537160ce8632a01d86c619ddc3a3e29e (Apache-2.0).
+The hosted Estelle backend is not included.
