@@ -61,6 +61,21 @@ export function linesFor({ info, parts }) {
   return out;
 }
 
+/** The task call in the spawner's messages that created `child`, with the task's title: OpenCode's task tool records the
+ *  child as `state.metadata.sessionId` on its tool part, running or finished (packages/opencode/src/tool/task.ts,
+ *  `ctx.metadata`). Null when no part names it yet. Pure: messages in, `{call, title}` out. */
+export function spawningCall(messages, child) {
+  const list = Array.isArray(messages) ? messages.slice(-MAX_MESSAGES) : [];
+  for (const message of list) {
+    for (const part of Array.isArray(message?.parts) ? message.parts.slice(0, MAX_PARTS) : []) {
+      if (part?.type !== 'tool' || part.state?.metadata?.sessionId !== child || typeof part.callID !== 'string') continue;
+      const title = part.state.title ?? part.state.input?.description;
+      return { call: part.callID, title: typeof title === 'string' ? title.slice(0, 90) : '' };
+    }
+  }
+  return null;
+}
+
 async function seed(path) {
   const ids = new Set();
   let handle;

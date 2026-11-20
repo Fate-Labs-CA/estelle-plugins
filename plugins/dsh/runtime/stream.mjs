@@ -6,6 +6,7 @@ import { cap, sanitize, FIELD_CAP } from './redact.mjs';
 import { timelineIdentity } from './identity.mjs';
 import { normalizeKimiRecord } from './kimi-history.mjs';
 import { noteTaskNotification, syncSubagents } from './stream-subagents.mjs';
+import { noteCodexSpawn, syncCodexSubagents } from './stream-codex-subagents.mjs';
 
 export const LIMITS = Object.freeze({
   readBytes: 8_000_000, skipBytes: 256_000_000, batchEvents: 50, batchBytes: 2_000_000,
@@ -111,7 +112,8 @@ export function mapClaude(entry, offset, notes = {}, child = false) {
   const content = entry.message?.content;
   const blocks = typeof content === 'string' ? [{ type: 'text', text: content }] : Array.isArray(content) ? content : [];
   // OpenCode's plugin writes its session in this same shape (adapters/opencode-mirror.mjs); notes.harness labels it.
-  const out = messageEvents(blocks, entry.type, id, at, notes.harness ?? 'claude-code', notes, entry.isSidechain === true, child);
+  const sidechain = entry.isSidechain === true || notes.sidechain === true;
+  const out = messageEvents(blocks, entry.type, id, at, notes.harness ?? 'claude-code', notes, sidechain, child);
   if (entry.type === 'assistant' && entry.message?.usage && out.length) {
     const usage = entry.message.usage;
     out[0].payload.usage = { input: usage.input_tokens ?? 0, output: usage.output_tokens ?? 0,
@@ -251,6 +253,7 @@ export function mapCodex(record, offset, notes = {}) {
   const item = record.payload ?? record;
   if (record.type === 'event_msg') {
     if (item.type === 'item_completed') {
+      noteCodexSpawn(item.item, at, notes);
       const original = nativeCompletion(item.item, id, at);
       return item.item?.type === 'CommandExecution' && original.length
         ? [...original, ...observedPrCandidate(item.item, id, at, notes.repository, original[0])] : original;
@@ -669,6 +672,28 @@ export function eventBatches(events) {
   return batches;
 }
 
+/** An OpenCode child session the plugin linked to the task call that created it (adapters/opencode-plugin.mjs), or null:
+    an unlinked child is captured as its own session, as before. */
+function openCodeSubagent(payload, host) {
+  const call = payload.parent_call_id;
+  if (!safeSession(payload.root_session_id) || typeof call !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(call)) return null;
+  const parent = timelineIdentity(host, payload.root_session_id);
+  return { parent, call, timeline: `${parent}/agent-${call}`, title: string(payload.subagent_title).trim().slice(0, 90) };
+}
+
+/** The hook's lifecycle word for this boundary. A subagent's turn end is its end, and its next prompt an explicit reopen. */
+function boundaryEvents({ hook, timeline, offset, last, started, incomplete, sub, ended }) {
+  if (started && hook === 'UserPromptSubmit') {
+    if (sub) return ended ? { events: [lifecycle(`${timeline}:resumed:${offset}`, new Date().toISOString(), 'running', 'resumed')], ended: false } : { events: [], ended };
+    const at = new Date(Math.max(Date.now(), validTime(last) ? Date.parse(last) : 0)).toISOString();
+    return { events: [lifecycle(`${timeline}:prompt:${offset}`, at, 'running', 'input_received')], ended };
+  }
+  if (incomplete || !last || !['Stop', 'SessionEnd'].includes(hook)) return { events: [], ended };
+  if (sub) return ended ? { events: [], ended } : { events: [lifecycle(`${timeline}:end:${offset}`, last, 'ended', 'completed')], ended: true };
+  const end = hook === 'SessionEnd';
+  return { events: [lifecycle(`${timeline}:${end ? 'end' : 'stop'}:${offset}`, last, end ? 'ended' : 'waiting_for_review', end ? 'completed' : 'input_required')], ended };
+}
+
 /** request(path, body) must reject HTTP failures with {status,message}. No credentials are persisted here. */
 export async function streamSession({ payload, host, repo, stateDir, request }) {
   const harness = AGENTS[host];
@@ -685,8 +710,10 @@ export async function streamSession({ payload, host, repo, stateDir, request }) 
   const statePath = join(stateDir, `${harness}-${session}.stream.json`);
   const state = await readJson(statePath, { offset: 0, started: false, last_lifecycle: null });
   if (!Number.isSafeInteger(state.offset) || state.offset < 0) throw new Error('invalid transcript cursor');
-  const timeline = timelineIdentity(host, session);
-  const notes = { repository: repo };
+  const sub = harness === 'opencode' ? openCodeSubagent(payload, host) : null;
+  const timeline = sub ? sub.timeline : timelineIdentity(host, session);
+  // A linked OpenCode child is its own timeline under the root, as a Claude Code subagent is; its user turn is the brief.
+  const notes = { repository: repo, ...(sub ? { sidechain: true } : {}) };
   // Grok and Cursor transcript lines carry no verified timestamps; capture time stamps their events.
   if (harness === 'grok' || harness === 'cursor') notes.observedAt = new Date().toISOString();
   if (harness === 'opencode') notes.harness = harness;
@@ -704,7 +731,7 @@ export async function streamSession({ payload, host, repo, stateDir, request }) 
       offset = window.skipTo; skipped++; incomplete = offset < window.length;
       continue;
     }
-    const collected = collectWindow(window, harness, notes, budget - events.length);
+    const collected = collectWindow(window, harness, notes, budget - events.length, Boolean(sub));
     events.push(...collected.events); invalid += collected.invalid;
     incomplete = collected.offset < window.length;
     if (collected.offset === offset) break;
@@ -714,17 +741,12 @@ export async function streamSession({ payload, host, repo, stateDir, request }) 
   const first = events[0]?.at;
   const started = state.started || Boolean(first);
   if (!state.started && first) events.unshift(event(`${timeline}:started`, 'lifecycle', { kind: 'system', id: 'estelle-hook' }, first,
-    { state: 'running', reason: 'started', title: cap(notes.title || `${harness} session`), repo, origin: harness, harness }));
+    { state: 'running', reason: 'started', title: cap(sub?.title || notes.title || `${harness} session`), repo, origin: harness,
+      ...(sub ? { harness: 'subagent', parent: sub.parent, call_id: sub.call } : { harness }) }));
   // Do not announce a turn end ahead of still-unread transcript events.
   const last = events.at(-1)?.at ?? state.last_at;
-  if (started && payload.hook_event_name === 'UserPromptSubmit') {
-    const at = new Date(Math.max(Date.now(), validTime(last) ? Date.parse(last) : 0)).toISOString();
-    events.push(lifecycle(`${timeline}:prompt:${offset}`, at, 'running', 'input_received'));
-  }
-  if (!incomplete && last && ['Stop', 'SessionEnd'].includes(payload.hook_event_name)) {
-    const end = payload.hook_event_name === 'SessionEnd';
-    events.push(lifecycle(`${timeline}:${end ? 'end' : 'stop'}:${offset}`, last, end ? 'ended' : 'waiting_for_review', end ? 'completed' : 'input_required'));
-  }
+  const boundary = boundaryEvents({ hook: payload.hook_event_name, timeline, offset, last, started, incomplete, sub, ended: state.ended === true });
+  events.push(...boundary.events);
   const collapsed = collapse(events, state.last_lifecycle);
   const batches = eventBatches(collapsed.events.map(item => sanitize(item)));
   let sent = 0;
@@ -746,10 +768,13 @@ export async function streamSession({ payload, host, repo, stateDir, request }) 
         pending: true, incomplete: true, error: 'stream upload pending; cursor retained' };
     }
   }
-  await saveJson(statePath, { offset, started, last_at: events.at(-1)?.at ?? last, last_lifecycle: collapsed.last, invalid_lines: invalid, skipped_lines: skipped, last_error: null });
-  // Each subagent is its own timeline, `<parent>/agent-<Agent call id>`; OpenCode reuses this dialect but has no such directory.
+  await saveJson(statePath, { offset, started, last_at: events.at(-1)?.at ?? last, last_lifecycle: collapsed.last, invalid_lines: invalid, skipped_lines: skipped, last_error: null,
+    ...(boundary.ended ? { ended: true } : {}) });
+  // Each subagent is its own timeline, `<parent>/agent-<spawning call id>`; OpenCode reuses this dialect but has no such directory.
   const subagents = harness === 'claude-code'
-    ? await syncSubagents({ transcript, parent: timeline, repo, stateDir, request, notified: notes.notified ?? [] }) : null;
+    ? await syncSubagents({ transcript, parent: timeline, repo, stateDir, request, notified: notes.notified ?? [] })
+    : harness === 'codex'
+      ? await syncCodexSubagents({ transcript, session, parent: timeline, repo, stateDir, request, spawns: notes.spawns ?? [] }) : null;
   return { sent, dropped, replayed, ...(subagents ? { subagents } : {}), ...(associationIncomplete ? { association_partial: true } : {}), backlog: incomplete, incomplete: incomplete || harness === 'kimi-code', invalid_lines: invalid, skipped_lines: skipped, offset, session_id: timeline,
     ...(harness === 'kimi-code' ? { transcript_format: 'kimi-wire', current_format_verified: true,
       capture_scope: 'main-agent journal; stream includes recorded branch history' } : {}),
@@ -760,7 +785,7 @@ export async function streamSession({ payload, host, repo, stateDir, request }) 
     ...(harness === 'cursor' ? { transcript_format: 'cursor-jsonl-inferred', current_format_verified: false,
       event_times: 'capture-time', capture_scope: 'hook transcript_path JSONL; tool outputs are not recorded by the host' } : {}),
     ...(harness === 'opencode' ? { transcript_format: 'opencode-plugin-mirror', current_format_verified: true,
-      capture_scope: 'messages the plugin read from OpenCode after each turn; subagent sessions are captured as their own sessions' } : {}),
+      capture_scope: 'messages the plugin read from OpenCode after each turn; a subagent session linked to the task call that created it is captured under its root, an unlinked one as its own session' } : {}),
     ...(harness === PI_AGENT ? { transcript_format: 'pi-session-v3', current_format_verified: true,
       capture_scope: "Pi's own session file, every branch in file order; extension messages are skipped" } : {}) };
 }

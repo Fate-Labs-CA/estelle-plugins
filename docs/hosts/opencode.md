@@ -61,7 +61,10 @@ so a failure there cannot take OpenCode down and `node runtime/cli.mjs doctor` r
 - Recall cannot be injected without a prompt: a session that only runs commands gets recall when the command's prompt
   is sent, as on every host.
 - The transcript is a mirror the plugin writes after each turn, not a file OpenCode keeps. Parts OpenCode never
-  finishes (an aborted tool) are not written. A subagent's work is captured as its own session.
+  finishes (an aborted tool) are not written. A subagent's work is captured under its root session as
+  `<root>/agent-<task call id>`, linked through the task tool part that names the child (`state.metadata.sessionId`,
+  read from OpenCode's source, not yet from a live session). A child the plugin cannot link (its parent unseen, or no
+  part names it yet) is captured as its own session, as before.
 - `review`'s input schema has a root `oneOf`. xAI refuses the whole request when any declared tool has one (measured:
   400 `invalid_client_tool_schema`), and OpenCode declares every MCP tool. On xAI models, until the server schema
   change lands, set `"tools": { "Estelle_review": false }`. Other providers were not tested.

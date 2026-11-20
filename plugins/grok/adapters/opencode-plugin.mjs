@@ -4,13 +4,15 @@
 import { join } from 'node:path';
 import { contextOf, END_TIMEOUT_MS, PLUGIN_ROOT, readAgents, readCommands, runHook, SERVER_NAME, SERVER_URL, warningOf }
   from './host-bridge.mjs';
-import { mirrorPath, syncMirror } from './opencode-mirror.mjs';
+import { mirrorPath, spawningCall, syncMirror } from './opencode-mirror.mjs';
 import { stateDirectory } from '../runtime/io.mjs';
 
 const HOST = 'opencode';
 // Sessions one OpenCode process keeps state for; the oldest is forgotten past this.
 const MAX_SESSIONS = 256;
 const MAX_TOOL_WARNINGS = 64;
+// Parent links followed to find a subagent's root session.
+const MAX_DEPTH = 8;
 
 /** The config this plugin adds. Pure, so the test reads exactly what OpenCode is given. Nothing the person configured
  *  is replaced: their own `Estelle` server, command or agent of the same name wins. */
@@ -49,7 +51,8 @@ export function createHooks({ directory, client, env = process.env, run = runHoo
   const envelope = (event, sessionID, extra = {}) => {
     const session = sessions.get(sessionID);
     return { hook_event_name: event, session_id: sessionID, cwd, transcript_path: mirrorPath(stateDir, sessionID),
-      ...(session?.parent ? { parent_session_id: session.parent } : {}), ...extra };
+      ...(session?.parent ? { parent_session_id: session.parent } : {}),
+      ...(session?.link ? { parent_call_id: session.link.call, root_session_id: session.root, subagent_title: session.link.title } : {}), ...extra };
   };
   const state = sessionID => sessions.get(sessionID) ?? remember(sessions, sessionID, { parent: null, context: '', written: new Set() });
 
@@ -61,8 +64,20 @@ export function createHooks({ directory, client, env = process.env, run = runHoo
     return session.started;
   }
 
+  /** A child session's task call in its parent, found once (the task tool names the child on its running part), and
+   *  its root: a subagent of a subagent is captured flat under the root, as the dashboard opens it. */
+  async function link(sessionID) {
+    const session = state(sessionID);
+    if (!session.parent || session.link) return;
+    try { session.link = spawningCall(await read(session.parent), sessionID); } catch { return; }
+    let root = session.parent;
+    for (let depth = 0; depth < MAX_DEPTH && sessions.get(root)?.parent; depth++) root = sessions.get(root).parent;
+    session.root = root;
+  }
+
   /** `current` is the person's message from chat.message, which OpenCode has not stored yet. */
   async function mirror(sessionID, idle, current) {
+    await link(sessionID);
     const session = state(sessionID);
     try {
       const messages = [...await read(sessionID), ...(current ? [current] : [])];
@@ -120,6 +135,7 @@ export function createHooks({ directory, client, env = process.env, run = runHoo
     },
     // Mail and room entries for this session arrive with the tool result the model is about to read.
     'tool.execute.after': async (input, output) => {
+      await link(input.sessionID);
       const text = contextOf(await run(HOST, envelope('tool.execute.after', input.sessionID, { tool_name: input.tool,
         tool_input: input.args ?? {}, tool_use_id: input.callID, tool_response: { output: String(output.output ?? '').slice(0, 4_000) } }), { env }));
       const warning = warnings.get(input.callID);

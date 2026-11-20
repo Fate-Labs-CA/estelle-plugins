@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { HOOK_EVENTS, normalize, formatContext } from '../adapters/opencode.mjs';
 import { createHooks, estelleConfig } from '../adapters/opencode-plugin.mjs';
-import { linesFor, mirrorPath, syncMirror } from '../adapters/opencode-mirror.mjs';
+import { linesFor, mirrorPath, spawningCall, syncMirror } from '../adapters/opencode-mirror.mjs';
 import { readAgents, readCommands } from '../adapters/host-bridge.mjs';
 import { handleHook } from '../runtime/hooks.mjs';
 import { streamSession } from '../runtime/stream.mjs';
@@ -235,4 +235,63 @@ test('the person’s message is in the mirror at once, and dispose saves a turn 
   await hooks.event({ event: { type: 'session.idle', properties: { sessionID: 'ses_run' } } });
   await hooks.dispose();
   assert.deepEqual(calls.slice(3).map(call => call.payload.hook_event_name), ['chat.message', 'session.idle']);
+});
+
+// OpenCode's task tool (packages/opencode/src/tool/task.ts, `ctx.metadata`) names the child session it created on its
+// own running tool part: `state.metadata.sessionId`, beside `callID`. Shapes from OpenCode's source, not a live session.
+const taskPart = (child, status = 'running') => ({ id: 'prt_task', type: 'tool', tool: 'task', callID: 'toolu_task_1',
+  state: { status, title: 'Find the flaky test', input: { description: 'Find the flaky test', prompt: 'Look in tests/' },
+    metadata: { parentSessionId: 'ses_root', sessionId: child }, time: { start: Date.parse('2026-11-18T10:00:02Z') } } });
+const parentMessages = child => [{ info: { id: 'msg_p', role: 'assistant', time: { created: Date.parse('2026-11-18T10:00:01Z') } },
+  parts: [taskPart(child)] }];
+const childMessages = [
+  { info: { id: 'msg_cu', role: 'user', time: { created: Date.parse('2026-11-18T10:00:03Z') } }, parts: [{ id: 'prt_cu', type: 'text', text: 'Look in tests/' }] },
+  { info: { id: 'msg_ca', role: 'assistant', time: { created: Date.parse('2026-11-18T10:00:04Z'), completed: Date.parse('2026-11-18T10:00:06Z') } },
+    parts: [{ id: 'prt_ct', type: 'tool', tool: 'bash', callID: 'call_c1', state: { status: 'completed', input: { command: 'npm test' }, output: 'ok',
+      time: { start: Date.parse('2026-11-18T10:00:04Z'), end: Date.parse('2026-11-18T10:00:05Z') } } },
+    { id: 'prt_cx', type: 'text', text: 'It is tests/a.test.js' }] },
+];
+
+test('a child session is linked to the task call that created it, through the parent’s own tool part', () => {
+  assert.deepEqual(spawningCall(parentMessages('ses_child'), 'ses_child'), { call: 'toolu_task_1', title: 'Find the flaky test' });
+  assert.equal(spawningCall(parentMessages('ses_other'), 'ses_child'), null);
+  assert.equal(spawningCall(null, 'ses_child'), null);
+});
+
+test('WIRED: a linked OpenCode child streams under its root as a subagent; UNWIRED: an unlinked one stays its own session', async t => {
+  const stateDir = await scratch(t);
+  const { calls, run } = recorder();
+  const messagesOf = async id => (id === 'ses_root' ? parentMessages('ses_child') : id === 'ses_child' ? childMessages : []);
+  const hooks = createHooks({ directory: CWD, stateDir, run, messagesOf });
+  await hooks.event({ event: { type: 'session.created', properties: { info: { id: 'ses_root' } } } });
+  await hooks.event({ event: { type: 'session.created', properties: { info: { id: 'ses_child', parentID: 'ses_root' } } } });
+  await hooks.event({ event: { type: 'session.idle', properties: { sessionID: 'ses_child' } } });
+  const idle = calls.find(call => call.payload.hook_event_name === 'session.idle').payload;
+  assert.equal(idle.parent_call_id, 'toolu_task_1');
+  assert.equal(idle.root_session_id, 'ses_root');
+  const sent = [];
+  const request = async (route, body) => { sent.push(body); return {}; };
+  await streamSession({ payload: { ...idle, hook_event_name: 'Stop' }, host: 'opencode', repo: 'fixture/repo', stateDir, request });
+  const child = 'opencode-ses_root/agent-toolu_task_1';
+  assert.deepEqual(sent.map(body => body.session_id), [child]);
+  const events = sent[0].events;
+  assert.deepEqual(events[0].payload, { state: 'running', reason: 'started', title: 'Find the flaky test', repo: 'fixture/repo',
+    origin: 'opencode', harness: 'subagent', parent: 'opencode-ses_root', call_id: 'toolu_task_1' });
+  assert.equal(events.find(e => e.kind === 'agent_message' && e.payload.brief_to_subagent)?.payload.text, 'Look in tests/');
+  assert.equal(events.find(e => e.kind === 'tool_call').author.id, 'subagent');
+  assert.ok(!events.some(e => e.kind === 'customer_message'), 'the brief is not the person speaking');
+  assert.deepEqual(events.at(-1).payload, { state: 'ended', reason: 'completed' });
+  // The parent sends a follow-up to the same child: an explicit reopen, then a second end.
+  await syncMirror({ messages: [...childMessages, { info: { id: 'msg_cu2', role: 'user', time: { created: Date.parse('2026-11-18T10:01:00Z') } },
+    parts: [{ id: 'prt_cu2', type: 'text', text: 'Now fix it' }] }], path: idle.transcript_path, written: new Set() });
+  await streamSession({ payload: { ...idle, hook_event_name: 'UserPromptSubmit' }, host: 'opencode', repo: 'fixture/repo', stateDir, request });
+  assert.deepEqual(sent.at(-1).events.at(-1).payload, { state: 'running', reason: 'resumed' });
+  // Unwired: the same child without the link is captured as its own session, as before.
+  const own = [];
+  const plain = { ...idle, parent_call_id: undefined, root_session_id: undefined, session_id: 'ses_child2', transcript_path: mirrorPath(stateDir, 'ses_child2') };
+  await syncMirror({ messages: childMessages, path: plain.transcript_path, written: new Set(), idle: true });
+  await streamSession({ payload: { ...plain, hook_event_name: 'Stop' }, host: 'opencode', repo: 'fixture/repo', stateDir,
+    request: async (route, body) => { own.push(body); return {}; } });
+  assert.deepEqual(own.map(body => body.session_id), ['opencode-ses_child2']);
+  assert.ok(own[0].events.some(e => e.kind === 'customer_message'));
 });
