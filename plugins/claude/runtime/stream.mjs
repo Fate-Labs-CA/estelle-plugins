@@ -18,7 +18,8 @@ export const LIMITS = Object.freeze({
 const INJECTED = ['<system-reminder', '<command-', '<local-command', '<task-notification', '[SYSTEM NOTIFICATION', 'Caveat:'];
 const CODEX_INJECTED = [...INJECTED, '<environment_context', '<user_instructions', '# AGENTS.md instructions', '<skill', '<turn_aborted', '<user_shell_command'];
 const AGENTS = { claude: 'claude-code', 'claude-code': 'claude-code', codex: 'codex', kimi: 'kimi-code', 'kimi-code': 'kimi-code',
-  grok: 'grok', cursor: 'cursor', dsh: 'deepseek-harness', 'deepseek-harness': 'deepseek-harness', opencode: 'opencode', pi: 'pi' };
+  grok: 'grok', cursor: 'cursor', dsh: 'deepseek-harness', 'deepseek-harness': 'deepseek-harness', opencode: 'opencode', pi: 'pi',
+  hermes: 'hermes', 'qwen-code': 'qwen-code' };
 const WAITING = 'waiting_for_review/input_required';
 const string = value => typeof value === 'string' ? value : '';
 const validTime = value => typeof value === 'string' && Number.isFinite(Date.parse(value));
@@ -494,6 +495,40 @@ export function mapPi(entry, offset, notes = {}) {
   return out;
 }
 
+const QWEN_AGENT = 'qwen-code';
+// Hook context Qwen Code appends to the person's prompt as its own part, e.g. `<qwen:user-prompt-submit-context>`.
+export const QWEN_INJECTED = ['<qwen:', ...INJECTED];
+/** Qwen Code's own chat recording (`~/.qwen/projects/<cwd>/chats/<session>.jsonl`, read from a real 0.28.0 session): one
+ *  record per line with `type` `user` | `assistant` | `tool_result` | `system` and a Gemini-style `message.parts`. Only the
+ *  person's own prompts (`provenance: real_user`) are user turns; `system` records (telemetry, memory catalogs) are not. */
+export function mapQwen(entry, offset, notes = {}) {
+  if (!entry || !validTime(entry.timestamp) || !string(entry.uuid)) return [];
+  const { timestamp: at, uuid: id } = entry;
+  const parts = Array.isArray(entry.message?.parts) ? entry.message.parts.slice(0, LIMITS.messageBlocks) : [];
+  if (entry.type === 'user') {
+    if (entry.provenance && entry.provenance !== 'real_user') return [];
+    return messageEvents(parts.filter(part => typeof part?.text === 'string' && !injected(part.text, QWEN_INJECTED))
+      .map(part => ({ type: 'text', text: part.text })),
+      'user', id, at, QWEN_AGENT, notes);
+  }
+  if (entry.type === 'tool_result') {
+    const failed = entry.toolCallResult?.status && entry.toolCallResult.status !== 'success';
+    return messageEvents(parts.filter(part => part?.functionResponse).map(({ functionResponse: done }) => ({ type: 'tool_result',
+      tool_use_id: string(done.id) || null, is_error: Boolean(failed || done.response?.error),
+      content: string(done.response?.output) || string(done.response?.error) })), 'tool', id, at, QWEN_AGENT, notes);
+  }
+  if (entry.type !== 'assistant') return [];
+  const blocks = parts.map(part => part?.functionCall
+    ? { type: 'tool_use', id: part.functionCall.id, name: part.functionCall.name, input: part.functionCall.args ?? {} }
+    : typeof part?.text === 'string' ? (part.thought === true ? { type: 'thinking', thinking: part.text } : { type: 'text', text: part.text })
+      : null).filter(Boolean);
+  const out = messageEvents(blocks, 'assistant', id, at, QWEN_AGENT, notes);
+  const usage = entry.usageMetadata;
+  if (usage && out.length) out[0].payload.usage = { input: usage.promptTokenCount ?? 0, output: usage.candidatesTokenCount ?? 0,
+    cache_read: usage.cachedContentTokenCount ?? 0, cache_write: 0, model: string(entry.model) || null };
+  return out;
+}
+
 export async function readJson(path, fallback, max = LIMITS.stateBytes) {
   let handle;
   try {
@@ -626,7 +661,8 @@ function collectWindow(window, host, notes, remaining, child = false) {
   let invalid = 0;
   let lines = 0;
   const mapper = host === 'codex' ? mapCodex : host === 'kimi-code' ? mapKimi
-    : host === 'grok' ? mapGrok : host === 'cursor' ? mapCursor : host === DSH_AGENT ? mapDsh : host === PI_AGENT ? mapPi : mapClaude;
+    : host === 'grok' ? mapGrok : host === 'cursor' ? mapCursor : host === DSH_AGENT ? mapDsh : host === PI_AGENT ? mapPi
+    : host === QWEN_AGENT ? mapQwen : mapClaude;
   const buffer = window.buffer;
   for (let from = 0; from < buffer.length && lines < LIMITS.lines; lines++) {
     const end = buffer.indexOf(10, from) + 1;
@@ -716,7 +752,7 @@ export async function streamSession({ payload, host, repo, stateDir, request }) 
   const notes = { repository: repo, ...(sub ? { sidechain: true } : {}) };
   // Grok and Cursor transcript lines carry no verified timestamps; capture time stamps their events.
   if (harness === 'grok' || harness === 'cursor') notes.observedAt = new Date().toISOString();
-  if (harness === 'opencode') notes.harness = harness;
+  if (harness === 'opencode' || harness === 'hermes') notes.harness = harness;
   let events = [];
   let offset = state.offset;
   let invalid = 0;
@@ -787,5 +823,9 @@ export async function streamSession({ payload, host, repo, stateDir, request }) 
     ...(harness === 'opencode' ? { transcript_format: 'opencode-plugin-mirror', current_format_verified: true,
       capture_scope: 'messages the plugin read from OpenCode after each turn; a subagent session linked to the task call that created it is captured under its root, an unlinked one as its own session' } : {}),
     ...(harness === PI_AGENT ? { transcript_format: 'pi-session-v3', current_format_verified: true,
-      capture_scope: "Pi's own session file, every branch in file order; extension messages are skipped" } : {}) };
+      capture_scope: "Pi's own session file, every branch in file order; extension messages are skipped" } : {}),
+    ...(harness === 'hermes' ? { transcript_format: 'hermes-plugin-mirror', current_format_verified: true, event_times: 'capture-time',
+      capture_scope: "the turn's messages the plugin read from Hermes's post_llm_call hook; subagent sessions are not linked to their parent" } : {}),
+    ...(harness === QWEN_AGENT ? { transcript_format: 'qwen-chat-recording', current_format_verified: true,
+      capture_scope: "Qwen Code's own chat recording; the person's prompts, replies, tool calls and results; system records are skipped" } : {}) };
 }

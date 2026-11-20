@@ -44,6 +44,21 @@ verified timestamps), unrecognized lines are skipped, and Cursor does not record
 OpenCode and Pi run Estelle inside the host process and hand each event to the same runner; what each host
 can and cannot do is in [hosts/opencode.md](hosts/opencode.md) and [hosts/pi.md](hosts/pi.md).
 
+| Feature | Qwen Code | Hermes Agent | mini-swe-agent | OpenClaw | fx |
+|---|---|---|---|---|---|
+| Package | Extension (`qwen-extension.json`) | Directory plugin (`plugin.yaml`) | One config file | Agent Plugins bundle | Skills and an `mcp.json` entry |
+| MCP | Extension, OAuth from `/mcp` | `hermes mcp add`, OAuth or key | `runtime/cli.mjs mcp` through bash, key only | `openclaw mcp add`, OAuth | `/mcp add`, OAuth or key |
+| Skills | Yes | Yes (`estelle:<skill>`) | No | Yes | Yes (copied to `~/.fx/skills`) |
+| Commands | Native (`/estelle:*`) | Plugin commands (`/estelle-*`) | No | No | No |
+| Automatic recall | Prompt hook | `pre_llm_call` context | No | No | No |
+| Transcript capture | Qwen Code's chat recording | Plugin-written mirror (capture-time stamps) | No | No | No |
+| Checkpoints and exit save | Yes | Yes | No | No | No |
+
+Qwen Code, Hermes and mini-swe-agent were run end to end in testing against local stand-ins for the model, the MCP
+server and the hook API; OpenClaw and fx were not run. Details: [hosts/qwen.md](hosts/qwen.md),
+[hosts/hermes.md](hosts/hermes.md), [hosts/mini-swe-agent.md](hosts/mini-swe-agent.md), [hosts/openclaw.md](hosts/openclaw.md),
+[hosts/fx.md](hosts/fx.md).
+
 Rooms needs server-side host support, an authenticated owner and a session proof. Native hook
 identity and Cursor's `user_email` are not substitutes for that proof or permission to share.
 Plugins do not take over another terminal or bypass member/admin permissions.

@@ -183,10 +183,53 @@ const rootPi = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).pi
 const expectedRootPi = Object.fromEntries(Object.entries(PI_MANIFEST).map(([key, paths]) => [key, paths.map(path => path.replace('./', './plugins/pi/'))]));
 if (JSON.stringify(rootPi) !== JSON.stringify(expectedRootPi)) throw new Error(`package.json "pi" must be ${JSON.stringify(expectedRootPi)}`);
 
-const HOSTS = ['claude', 'codex', 'kimi', 'grok', 'cursor', 'dsh', 'opencode', 'pi'];
+// Qwen Code: one extension directory (`qwen extensions install`). MCP is the URL alone, so Qwen Code's own OAuth signs in
+// from `/mcp` (a pinned Authorization header would disable that, and an unset variable is sent as literal text). Hooks are
+// Qwen Code's Claude-shaped command hooks. In an extension's hooks Qwen Code fills in `${CLAUDE_PLUGIN_ROOT}` only
+// (core/src/extension/variables.ts, substituteHookVariables); `${extensionPath}` reached the shell empty in testing.
+const QWEN_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'PreCompact', 'SessionEnd'];
+emit('plugins/qwen/qwen-extension.json', { name: 'estelle', version, description,
+  mcpServers: { Estelle: { httpUrl: server.url } }, contextFileName: 'instructions.md' });
+emit('plugins/qwen/hooks/hooks.json', nativeHooks('qwen-code', 'CLAUDE_PLUGIN_ROOT', QWEN_EVENTS));
+// Qwen Code commands are Markdown with `{{args}}`; the runner path is where `qwen extensions install` puts the extension.
+const QWEN_CLI = '~/.qwen/extensions/estelle/runtime/cli.mjs';
+for (const entry of (await readdir(join(root, 'commands'))).sort()) {
+  const source = await readFile(join(root, 'commands', entry), 'utf8');
+  if (!/^---\ndescription: .+\n---\n/.test(source)) throw new Error(`Command needs one description line: ${entry}`);
+  emit(`plugins/qwen/commands/estelle/${entry}`, source.replaceAll('$ARGUMENTS', '{{args}}').replaceAll('<Estelle cli.mjs>', QWEN_CLI));
+}
+
+// Hermes Agent: a directory plugin (`plugin.yaml` and an `__init__.py` with `register(ctx)`), installed with
+// `hermes plugins install Fate-Labs-CA/estelle-plugins/plugins/hermes`. The Python side is hosts/hermes/__init__.py.
+emit('plugins/hermes/plugin.yaml', `name: estelle
+version: ${version}
+description: ${description}
+author: Fate Labs
+provides_hooks: [on_session_start, pre_llm_call, pre_tool_call, post_tool_call, post_llm_call, on_session_finalize]
+`);
+emit('plugins/hermes/__init__.py', await readFile(join(root, 'hosts', 'hermes', '__init__.py'), 'utf8'));
+
+// mini-swe-agent: bash is its only tool, so it gets no MCP client and no hooks. One config file it merges with its own
+// (`mini -c mini.yaml -c estelle.yaml`) tells the model to reach Estelle through `runtime/cli.mjs mcp`.
+emit('plugins/mini-swe-agent/estelle.yaml', await readFile(join(root, 'hosts', 'mini-swe-agent', 'estelle.yaml'), 'utf8'));
+
+// OpenClaw: an Agent Plugins 1.0.0 bundle (root `plugin.json` with the standard's $schema, and `skills/`), which
+// `openclaw plugins install` maps into native skills (OpenClaw docs/plugins/bundles.md). No `mcp.json`: the standard's
+// remote entry carries only a URL and static headers, with no OAuth, so the server is added with `openclaw mcp add`.
+emit('plugins/openclaw/plugin.json', { $schema: 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json',
+  name: 'estelle', version, description: 'Estelle skills for OpenClaw. The Estelle MCP server is added with openclaw mcp add.' });
+// fx (vercel-labs/fx): no plugin format and no hooks. The package is the skills fx reads from `~/.fx/skills` and an
+// `mcp.json` entry to merge into `~/.fx/mcp.json` for key sign-in; `/mcp add Estelle <url>` signs in with OAuth instead.
+emit('plugins/fx/mcp.json', { mcpServers: { Estelle: { type: 'http', url: server.url, bearer_token_env: 'ESTELLE_API_KEY' } } });
+
+const HOSTS = ['claude', 'codex', 'kimi', 'grok', 'cursor', 'dsh', 'opencode', 'pi', 'qwen', 'hermes', 'mini-swe-agent',
+  'openclaw', 'fx'];
 const ASSETS = ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE', 'NOTICE'];
 // Codex gets generated skills and Claude gets generated copies (both above); the other hosts copy commands as they are.
-const assetsFor = host => [...ASSETS, ...(['codex', 'claude'].includes(host) ? [] : ['commands']),
+// mini-swe-agent needs only the runtime (its bridge); OpenClaw and fx take only content, no hook runner.
+const CONTENT_ONLY = ['skills', 'instructions.md', 'LICENSE', 'NOTICE'];
+const assetsFor = host => host === 'mini-swe-agent' ? ['runtime', 'LICENSE', 'NOTICE']
+  : ['openclaw', 'fx'].includes(host) ? CONTENT_ONLY : [...ASSETS, ...(['codex', 'claude', 'qwen'].includes(host) ? [] : ['commands']),
   ...(['claude', 'opencode'].includes(host) ? ['agents'] : [])];
 async function inventory(directory, prefix = '') {
   const output = new Map();
