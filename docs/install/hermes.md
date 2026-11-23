@@ -40,6 +40,10 @@ Hooks need `ESTELLE_API_KEY` in the environment Hermes starts from. Without it, 
 
 What Hermes can and cannot do for Estelle, with sources: [docs/hosts/hermes.md](../hosts/hermes.md).
 
+## Update
+
+These hosts do not update Estelle for you. Run `hermes plugins install Fate-Labs-CA/estelle-plugins/plugins/hermes --enable`, then restart Hermes. Estelle checks once a day, at the start of a session, whether a newer release exists and shows one line when yours is behind (`ESTELLE_PLUGIN_UPDATE_CHECK=0` turns the check off).
+
 ## Copy/paste setup prompt
 
 ```text

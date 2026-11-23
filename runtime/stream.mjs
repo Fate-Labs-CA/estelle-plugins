@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { cap, sanitize, FIELD_CAP } from './redact.mjs';
 import { timelineIdentity } from './identity.mjs';
+import { VERSION } from './version.mjs';
 import { normalizeKimiRecord } from './kimi-history.mjs';
 import { noteTaskNotification, syncSubagents } from './stream-subagents.mjs';
 import { noteCodexSpawn, syncCodexSubagents } from './stream-codex-subagents.mjs';
@@ -576,14 +577,14 @@ function associationPartial(response, events) {
   return !(row?.state === 'linked' && row.linked === 1 && row.deferred === 0 && row.unconfirmed === 0);
 }
 
-export async function sendBatch(request, session, events) {
+export async function sendBatch(request, session, events, host) {
   let pending = events;
   let dropped = 0;
   const bound = events.length + 1;
   for (let attempt = 0; attempt < bound; attempt++) {
     if (!pending.length) return { dropped };
     try {
-      const response = await request('/session/events', { session_id: session, events: pending });
+      const response = await request('/session/events', { session_id: session, plugin_version: VERSION, ...(host ? { host } : {}), events: pending });
       return { dropped, association_partial: associationPartial(response, pending) };
     }
     catch (error) {
@@ -790,7 +791,7 @@ export async function streamSession({ payload, host, repo, stateDir, request, no
   let associationIncomplete = replay.association_partial === true;
   for (const [index, batch] of batches.entries()) {
     try {
-      const result = await sendBatch(request, timeline, batch);
+      const result = await sendBatch(request, timeline, batch, host);
       dropped += result.dropped; sent += batch.length - result.dropped;
       associationIncomplete ||= result.association_partial === true;
     }

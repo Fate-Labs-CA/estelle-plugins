@@ -41,6 +41,10 @@ hooks are user-level, so that does not apply to them.
 
 What Qwen Code can and cannot do for Estelle, with sources: [docs/hosts/qwen.md](../hosts/qwen.md).
 
+## Update
+
+These hosts do not update Estelle for you. Pull your estelle-plugins clone, run `qwen extensions install ./estelle-plugins/plugins/qwen`, then restart Qwen Code. Estelle checks once a day, at the start of a session, whether a newer release exists and shows one line when yours is behind (`ESTELLE_PLUGIN_UPDATE_CHECK=0` turns the check off).
+
 ## Copy/paste setup prompt
 
 ```text

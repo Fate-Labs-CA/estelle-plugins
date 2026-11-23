@@ -5,11 +5,22 @@ Package: `plugins/claude`. Requires Node.js 22.
 ## Install
 
 ```text
-/plugin marketplace add uqeu/estelle-plugins
+/plugin marketplace add Fate-Labs-CA/estelle-plugins
 /plugin install estelle@estelle-plugins
 ```
 
 Review the normal installation and hook trust prompts, then restart Claude Code. In a session, run `/mcp`, choose **Estelle**, and sign in with your browser. No key is needed for this.
+
+## Keep it up to date
+
+Claude Code does not update a third-party marketplace by default, so an install stays on the release it was made at. Turn auto-update on: run `/plugin`, open **Marketplaces**, choose `estelle-plugins` and enable auto-update. To update by hand:
+
+```text
+/plugin marketplace update estelle-plugins
+/plugin update estelle@estelle-plugins
+```
+
+At the start of a session Estelle checks once a day whether a newer release exists and shows one line when yours is behind. Set `ESTELLE_PLUGIN_UPDATE_CHECK=0` to turn that check off.
 
 Only Claude Code has been exercised with OAuth. Codex, Kimi Code, Grok Build and Cursor still use `ESTELLE_API_KEY`.
 

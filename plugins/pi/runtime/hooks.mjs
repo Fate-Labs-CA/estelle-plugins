@@ -11,6 +11,7 @@ import { queueReindex } from './reindex.mjs';
 import { timelineIdentity } from './identity.mjs';
 import { mutatingTool, writeWarning } from './write-warning.mjs';
 import { beginContext, saveContext, takeContext } from './queued-context.mjs';
+import { updateNotice } from './update-check.mjs';
 import { MAILBOX_HOSTS, pullAtBoundary, sessionIdentity } from './mailbox.mjs';
 import { SUBAGENT_TEXT, SUPERVISED_HOSTS, SUPERVISE_BOUNDARY, subagentIdentity, subagentTask, superviseAtBoundary } from './supervise.mjs';
 
@@ -138,7 +139,7 @@ const START_TEXT = 'If Estelle MCP tools are available, call estelle_resume befo
   + 'Check capture coverage before claiming a complete handoff.';
 
 /** One host event, one process. Network failures are recorded separately from successful empty results. */
-export async function handleHook({ host, payload, stateDir, request }) {
+export async function handleHook({ host, payload, stateDir, request, update }) {
   const port = await adapter(host);
   const n = port.normalize(payload);
   if (!n.event) throw new Error('event_missing');
@@ -153,9 +154,26 @@ export async function handleHook({ host, payload, stateDir, request }) {
     await recordStatus(stateDir, { host, event: n.event, mode: 'protect', status: 'partial', code: 'input_bound' });
     return port.defaultOutput?.(payload.hook_event_name) ?? null;
   }
-  const output = await answerEvent({ host, port, n, payload, stateDir, request });
-  return found ? withWarning(host, output, found.warning) : output;
+  // Only the real runner passes `update`; a bare call never reaches the network. Started now so it overlaps the hook's own work.
+  const notice = update && n.event === 'SessionStart'
+    ? updateNotice({ host, stateDir, ...update }).catch(() => null) : null;
+  const output = await answerEvent({ host, port, n, payload, stateDir, request, notice });
+  const shown = withUpdateNotice(host, output, await notice);
+  return found ? withWarning(host, shown, found.warning) : shown;
 }
+
+/** The update line, in the one place each host shows its person. ⛔ It adds words and never a decision.
+ *  Hosts without a verified channel get it through the start context instead (see answerEvent). */
+function withUpdateNotice(host, output, line) {
+  if (!line) return output;
+  if (host === 'cursor') return { ...output, user_message: line };
+  if (host === 'claude-code' || host === 'codex') return { ...output, systemMessage: line };
+  if (host === 'pi') return { ...output, warning: line };
+  if (host === 'kimi' || host === 'grok') console.error(line); // stderr is the only place they show a person anything at this event
+  return output;
+}
+
+const UI_NOTICE_HOSTS = new Set(['claude-code', 'codex', 'cursor', 'pi']);
 
 /** The warning added to whatever this event already answers. ⛔ It adds words and never a decision: no host is told to stop.
  *  Each host's own field, because each shows a different one. Stderr too, the only place Kimi has at this event. */
@@ -171,7 +189,7 @@ function withWarning(host, output, warning) {
   return { ...output, systemMessage: warning, hookSpecificOutput: { ...output?.hookSpecificOutput, hookEventName: 'PreToolUse', additionalContext } };
 }
 
-async function answerEvent({ host, port, n, payload, stateDir, request }) {
+async function answerEvent({ host, port, n, payload, stateDir, request, notice: updatePending }) {
   const defaultOutput = () => port.defaultOutput?.(payload.hook_event_name) ?? null;
   const queuedContext = host === 'grok' || host === 'cursor';
   const grokContextPath = join(stateDir, 'context', `${hash(`${host}:${n.sessionId}`)}.json`);
@@ -227,7 +245,9 @@ async function answerEvent({ host, port, n, payload, stateDir, request }) {
   await completedActions;
   const [own, delivered, watched, memory] = await Promise.all([identity, mail, watch, inherited]);
   const notice = watched?.text || '';
-  const extra = [own?.text, delivered?.text, memory?.text, ...(n.event === 'Stop' ? [] : [notice])]
+  const updateLine = updatePending && !UI_NOTICE_HOSTS.has(host) ? await updatePending : null;
+  const extra = [own?.text, delivered?.text, memory?.text, ...(n.event === 'Stop' ? [] : [notice]),
+    updateLine && `Estelle plugin update: tell the person this once, in your first reply. ${updateLine}`]
     .filter(text => typeof text === 'string' && text.trim()).join('\n\n');
   // A Stop hook cannot add model context without blocking the stop; the person sees this line, and the next prompt's
   // check names whatever is still running.

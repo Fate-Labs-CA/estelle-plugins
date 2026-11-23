@@ -39,6 +39,10 @@ With `ESTELLE_API_KEY` set, MCP and the hooks use that one key. Without it, MCP 
 
 What Pi can and cannot do for Estelle, with sources: [docs/hosts/pi.md](../hosts/pi.md).
 
+## Update
+
+These hosts do not update Estelle for you. Run `pi install npm:@fatelabs/pi-estelle`, then restart Pi or run /reload. Estelle checks once a day, at the start of a session, whether a newer release exists and shows one line when yours is behind (`ESTELLE_PLUGIN_UPDATE_CHECK=0` turns the check off).
+
 ## Copy/paste setup prompt
 
 ```text

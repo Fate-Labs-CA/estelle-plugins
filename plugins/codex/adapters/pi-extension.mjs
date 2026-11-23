@@ -66,7 +66,10 @@ export async function activate(pi, { env = process.env, run = runHook, commands,
   // SessionStart fires on startup, /new, /resume, /fork and reload, so the identity line is restated after each.
   pi.on('session_start', async (_event, ctx) => {
     if (ctx.hasUI && typeof ctx.ui.addAutocompleteProvider === 'function') ctx.ui.addAutocompleteProvider(current => completer(current, byName));
-    context = contextOf(await hook('session_start', ctx));
+    const started = await hook('session_start', ctx);
+    context = contextOf(started);
+    const notice = warningOf(started);
+    if (notice && ctx.hasUI) ctx.ui.notify(notice, 'warning');
   });
   pi.on('before_agent_start', async (event, ctx) => {
     // Instructions and this session's identity live in the system prompt, so a compaction never drops them.
