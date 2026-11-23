@@ -39,6 +39,15 @@ function spy() {
 
 const prompt = (f, text) => ({ session_id: 'mem-session', cwd: f.root, hook_event_name: 'UserPromptSubmit', transcript_path: null, prompt: text });
 
+test('the prompt hook asks for memories by name, so a server whose chunk push is off still returns them (#2151)', async t => {
+  const f = await fixture(t);
+  const { calls, request } = spy();
+  await handleHook({ host: 'claude-code', payload: prompt(f, 'why did we pick pgvector for recall'), stateDir: f.stateDir, request });
+  const body = calls.find(call => call.route === '/search').body;
+  assert.deepEqual(body.kinds, ['memory']);
+  assert.equal(body.code, false, 'still the quiet hook shape: no code search');
+});
+
 test('a <private> span in a prompt never reaches recall, and the rest of the prompt still does', async t => {
   const f = await fixture(t);
   const { calls, request } = spy();

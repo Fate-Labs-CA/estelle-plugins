@@ -119,7 +119,7 @@ async function recall(n, repo, request) {
   const query = typeof n.prompt === 'string' ? scrub(n.prompt).trim().slice(0, 8_000) : '';
   // A prompt that was nothing but <private> spans asks Estelle nothing.
   if (!query || query === '[private]' || !repo) return { text: '', skipped: true };
-  const body = { repo: repo.name, query, code: false, host: n.host,
+  const body = { repo: repo.name, query, code: false, kinds: ['memory'], host: n.host,
     timeline_session: timelineIdentity(n.host, n.sessionId) };
   const result = await request('/search', body);
   if (typeof result.recall !== 'string') throw new Error('response_json');
