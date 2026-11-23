@@ -7,7 +7,8 @@
 // which the first JS port of the stream left out (0.0.13 to 0.0.20 sent no subagent timelines at all).
 //
 // One subagent's states: unseen -> started (its first event, with title, parent and call id) -> ended. The end is the
-// host's word: the meta's `finished: true`, the subagent's own `SubagentHandback`, or a `<task-notification>` for its call
+// host's word: its own `SubagentStop` hook (`stopped`, remembered until its final reply, one with no tool call, is read),
+// the meta's `finished: true`, the subagent's own `SubagentHandback`, or a `<task-notification>` for its call
 // in the parent (`failed`/`killed` -> `failed`); or its last reply called no tool and the file has been quiet for
 // QUIET_MS. An ended subagent is never read again. Every bound is in LIMITS (stream.mjs) or declared below.
 import { opendir, stat } from 'node:fs/promises';
@@ -116,7 +117,7 @@ async function stepAgent(file, meta, callId, ctx, st, bounds) {
   const status = ctx.notified.get(callId);
   const quiet = ctx.now - file.mtime >= QUIET_MS;
   // Never end a subagent ahead of its own unread lines.
-  const done = !unread && (meta.finished === true || st.handback || status !== undefined || (quiet && !st.open_tool));
+  const done = !unread && (meta.finished === true || st.handback || status !== undefined || (st.stopped && !st.open_tool) || (quiet && !st.open_tool));
   const endAt = st.last_at ?? st.last_event_at;
   if (st.started && done && endAt) {
     const reason = ['failed', 'killed'].includes(status) ? 'failed' : 'completed';
@@ -143,16 +144,16 @@ function loadNotified(saved, fresh) {
 
 /** Mirror every subagent's new lines. Runs after the parent's own upload; `notified` is what the parent pass just read.
     Returns `{ sent, agents, error? }`. An agent's cursor moves only after the server accepted its events. */
-export async function syncSubagents({ transcript, parent, repo, stateDir, request, notified = [], now = Date.now() }) {
+export async function syncSubagents({ transcript, parent, repo, stateDir, request, notified = [], stopped = '', now = Date.now() }) {
   try {
-    return await mirror({ transcript, parent, repo, stateDir, request, notified, now });
+    return await mirror({ transcript, parent, repo, stateDir, request, notified, stopped, now });
   } catch {
     // The parent's own upload already landed; a subagent pass that cannot run says so instead of failing the hook.
     return { sent: 0, agents: 0, error: 'subagent transcripts could not be read; nothing was mirrored this run' };
   }
 }
 
-async function mirror({ transcript, parent, repo, stateDir, request, notified, now }) {
+async function mirror({ transcript, parent, repo, stateDir, request, notified, stopped, now }) {
   const dir = subagentDir(transcript);
   const report = { sent: 0, agents: 0 };
   if (!dir) return report;
@@ -172,6 +173,8 @@ async function mirror({ transcript, parent, repo, stateDir, request, notified, n
     const callId = meta?.toolUseId;
     if (!safeCallId(callId)) continue; // no parent call recorded: nothing in the parent conversation to hang it on
     const st = { offset: 0, started: false, done: false, open_tool: true, handback: false, ...known };
+    // The host's own SubagentStop names the agent by the id in its file name; remember it until the last reply is read.
+    if (stopped && file.name === `agent-${stopped}.jsonl`) st.stopped = true;
     try {
       const step = await stepAgent(file, meta, callId, ctx, st, { lines, events: budget });
       lines -= Math.max(1, step.lines);
