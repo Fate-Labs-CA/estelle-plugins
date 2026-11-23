@@ -107,6 +107,14 @@ if (command === 'doctor') {
     console.error(`Estelle MCP call failed: ${code}`);
     process.exitCode = 1;
   }
+} else if (command === 'mcp-headers') {
+  // Claude Code's `headersHelper` for the Estelle server: prints the headers (JSON) to add to the MCP connection.
+  try {
+    const { mcpRepoHeaders } = await import('./mcp-headers.mjs');
+    console.log(JSON.stringify(mcpRepoHeaders()));
+  } catch {
+    console.log('{}');
+  }
 } else if (command === 'setup') {
   try {
     const { runSetupArgs } = await import('./setup.mjs');
@@ -118,6 +126,6 @@ if (command === 'doctor') {
     process.exitCode = 1;
   }
 } else {
-  console.error('Usage: node runtime/cli.mjs hook <claude-code|codex|kimi|grok|cursor|dsh|opencode|pi|hermes|qwen-code> | doctor | mcp tools | mcp call <tool> <json> | setup <host> [--apply] [--expect SHA256]');
+  console.error('Usage: node runtime/cli.mjs hook <claude-code|codex|kimi|grok|cursor|dsh|opencode|pi|hermes|qwen-code> | doctor | mcp-headers | mcp tools | mcp call <tool> <json> | setup <host> [--apply] [--expect SHA256]');
   process.exitCode = 1;
 }
