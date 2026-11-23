@@ -104,7 +104,8 @@ test('Gitless prompt capture does not authorize repository recall or reindex', a
     prompt: 'Explain the local parser' }, stateDir: f.stateDir, request: spy.request });
   assert.equal(output, null);
   assert.ok(spy.calls.some(call => call.route === '/session/events'));
-  assert.equal(spy.calls.some(call => call.route !== '/session/events'), false, 'only capture, no repository guess');
+  // The supervision ask names a session, never a repository, so it is not a repository guess (runtime/supervise.mjs).
+  assert.equal(spy.calls.some(call => call.route !== '/session/events' && call.body?.action !== 'supervise'), false, 'only capture, no repository guess');
   assert.equal(JSON.parse(await readFile(join(f.stateDir, 'status', 'codex-context.json'), 'utf8')).status, 'skipped');
 });
 
@@ -551,8 +552,9 @@ test('a running session receives mail at its next tool call, at most once per in
   const quiet = await handleHook({ host: 'claude-code', payload: claudePayload(f, 'PostToolUse', { tool_name: 'Read',
     tool_input: {}, tool_response: {} }), stateDir: f.stateDir, request: empty.request });
   assert.equal(quiet?.hookSpecificOutput?.additionalContext, undefined, 'control: nothing waiting, nothing printed');
-  assert.deepEqual(empty.calls.filter(c => c.route === '/session/mail').map(c => c.body),
-    [{ action: 'deliver', session_id: id, boundary: 'tool' }]);
+  // The two asks run together, so their order is not part of the contract.
+  assert.deepEqual(empty.calls.filter(c => c.route === '/session/mail').map(c => c.body).sort((a, b) => a.action.localeCompare(b.action)),
+    [{ action: 'deliver', session_id: id, boundary: 'tool' }, { action: 'supervise', session_id: id, boundary: 'tool' }]);
 
   const throttled = mailboxSpy({ deliver: { context: 'should not be pulled yet' } });
   await handleHook({ host: 'claude-code', payload: claudePayload(f, 'PostToolUse', { tool_name: 'Read', tool_input: {},

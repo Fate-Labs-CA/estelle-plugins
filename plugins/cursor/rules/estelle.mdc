@@ -54,6 +54,14 @@ Keep validation, error handling, accessibility and protection against data loss.
 Run checks that distinguish correct behavior from the reported bug. Review the result. State what
 was tested and what remains unverified.
 
+Subagents get the same Estelle you do: their start hook gives each one Estelle's guidance, memory recalled for its task,
+and its own Room identity (never yours). Put the whole task in the subagent's prompt. A custom agent definition with a
+`tools:` list keeps Estelle's MCP tools only if the list names them (`mcp__plugin_estelle_Estelle__*`, or
+`mcp__Estelle__*` when the server is added by hand); an agent with no `tools:` line inherits every tool. Estelle watches
+your subagents: a line that starts "Estelle: subagent" says one is quiet or keeps failing and what you can do (read its
+output, message it, stop it); act on it instead of waiting. A subagent that has nothing left to do should hand back and
+end; stop one you no longer need.
+
 In Rooms, speak as this session with proof supplied to this session. Never borrow another session's
 token or speak as the person. Hooks can capture only what their host records and exposes; do not
 promise complete history without checking capture coverage.
