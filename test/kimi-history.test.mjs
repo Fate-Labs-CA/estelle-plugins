@@ -129,3 +129,20 @@ test('known credentials are redacted, unknown content and text caps remain parti
   assert.match(result.messages[0].content, /redacted/);
   assert.equal(result.coverage.complete, false);
 });
+
+test('a loop-only wire (Kimi 2.6.0) is read as turns and tool records; a wire with appended turns keeps the old reading', async t => {
+  const loop = event => ({ type: 'context.append_loop_event', time: at + 1, event });
+  const loopOnly = await fixture(t, [metadata, appended('user', 'go'),
+    loop({ type: 'content.part', part: { type: 'text', text: 'working' } }),
+    loop({ type: 'tool.call', toolCallId: 'k1', name: 'Read', args: { path: 'a' } }),
+    loop({ type: 'tool.result', toolCallId: 'k1', result: { output: 'ok' } }),
+    loop({ type: 'step.end', step: 1 })]);
+  const read = await readKimiHistory({ sessionId: loopOnly.sessionId, cwd: loopOnly.cwd, home: loopOnly.home });
+  assert.deepEqual(read.records.map(r => r.message.role), ['user', 'assistant', 'assistant', 'tool']);
+  assert.equal(read.records[2].message.toolCalls[0].name, 'Read');
+  assert.equal(read.coverage.unsupported, 0);
+  const mixed = await fixture(t, [metadata, appended('user', 'go'), appended('assistant', 'done'),
+    loop({ type: 'content.part', part: { type: 'text', text: 'done' } })]);
+  const both = await readKimiHistory({ sessionId: mixed.sessionId, cwd: mixed.cwd, home: mixed.home });
+  assert.deepEqual(both.records.map(r => r.message.role), ['user', 'assistant']);
+});
