@@ -6,7 +6,7 @@ import { safeSession, hash, repository, readJson, writeJson, errorCode, recordSt
 import { streamSession } from './stream.mjs';
 import { ANNOUNCING_HOSTS, announceSubagent } from './subagent-hooks.mjs';
 import { checkpointSession } from './checkpoint.mjs';
-import { redact } from './redact.mjs';
+import { scrub } from './redact.mjs';
 import { queueReindex } from './reindex.mjs';
 import { timelineIdentity } from './identity.mjs';
 import { mutatingTool, writeWarning } from './write-warning.mjs';
@@ -116,9 +116,10 @@ async function runAction(mode, normalized, stateDir, operation) {
 }
 
 async function recall(n, repo, request) {
-  const query = typeof n.prompt === 'string' ? n.prompt.trim().slice(0, 8_000) : '';
-  if (!query || !repo) return { text: '', skipped: true };
-  const body = { repo: repo.name, query: redact(query), code: false, host: n.host,
+  const query = typeof n.prompt === 'string' ? scrub(n.prompt).trim().slice(0, 8_000) : '';
+  // A prompt that was nothing but <private> spans asks Estelle nothing.
+  if (!query || query === '[private]' || !repo) return { text: '', skipped: true };
+  const body = { repo: repo.name, query, code: false, host: n.host,
     timeline_session: timelineIdentity(n.host, n.sessionId) };
   const result = await request('/search', body);
   if (typeof result.recall !== 'string') throw new Error('response_json');

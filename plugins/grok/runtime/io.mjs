@@ -69,12 +69,22 @@ export function git(cwd, args, { strict = false, raw = false, bytes = false, tim
   } catch { if (strict) throw new Error('git_failed'); return ''; }
 }
 
+/** `owner/name` from any spelling of one remote: https or ssh URL, scp-style `git@host:owner/name`, with or without
+ *  credentials, a port, `.git`, or trailing slashes. Two clones of one repository must give one name, because that name
+ *  is the key their shared memory lives under. */
+export function repoNameFromRemote(remote) {
+  const path = String(remote || '').trim().replace(/[?#].*$/, '').replace(/\/+$/, '').replace(/\.git$/i, '').replace(/\/+$/, '');
+  const match = /(?:[:/])([^/:\s]+\/[^/\s]+)$/.exec(path);
+  return match ? match[1] : '';
+}
+
 export function repository(cwd, env = process.env) {
   const root = git(cwd, ['rev-parse', '--show-toplevel'], { raw: true }).replace(/\r?\n$/, '');
   if (!root) return null;
-  const remote = git(root, ['remote', 'get-url', 'origin']);
-  const match = /(?:[:/])([^/:\s]+\/[^/\s]+?)(?:\.git)?$/.exec(remote);
-  const name = env.ESTELLE_REPO || match?.[1];
+  // A checkout whose remote is not called origin (a fork's `upstream`, a renamed remote) is still that repository.
+  const remotes = git(root, ['remote']).split('\n').filter(Boolean);
+  const remote = git(root, ['remote', 'get-url', remotes.includes('origin') ? 'origin' : remotes[0] ?? 'origin']);
+  const name = env.ESTELLE_REPO || repoNameFromRemote(remote);
   if (!name || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(name)) return null;
   return { root, name };
 }
