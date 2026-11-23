@@ -1,6 +1,6 @@
 // Bounded conversation checkpoint client, ported from the public CLI contract.
 import { open } from 'node:fs/promises';
-import { redact, sanitize } from './redact.mjs';
+import { redact, scrub, stripPrivate, sanitize } from './redact.mjs';
 import { cloudExecutionIdentity } from './identity.mjs';
 import { safeSession, grokContentText } from './stream.mjs';
 import { readKimiHistory } from './kimi-history.mjs';
@@ -14,7 +14,13 @@ const HOSTS = { claude: 'claude-code', 'claude-code': 'claude-code', codex: 'cod
   hermes: 'hermes', 'qwen-code': 'qwen-code' };
 const INJECTED = ['<environment_context', '<user_instructions', '# AGENTS.md instructions', '<skill', '<system-reminder', '<task-notification', '<command-', '<local-command', '<turn_aborted'];
 const string = value => typeof value === 'string' ? value : '';
-const shortened = text => Array.from(redact(text)).slice(0, CHECKPOINT_LIMITS.chars).join('');
+const trimmed = text => Array.from(text).slice(0, CHECKPOINT_LIMITS.chars).join('');
+const shortened = text => trimmed(scrub(text));
+const PRIVATE_ONLY = /^(?:\s|\[private\])*$/;
+/** Messages with their <private> spans gone; a message that was nothing but private spans is not a message. */
+const withoutPrivate = messages => messages
+  .map(message => ({ ...message, content: stripPrivate(message.content) }))
+  .filter(message => !PRIVATE_ONLY.test(message.content));
 
 async function readPart(file, start, bytes) {
   const buffer = Buffer.alloc(bytes);
@@ -118,9 +124,11 @@ function checkpointText(message, counters) {
     ? blocks.slice(0, CHECKPOINT_LIMITS.blocks).map(blockText).filter(Boolean).join('\n') : '');
   // ACP chunk fragments split mid-word; trimming each fragment would corrupt the merged turn.
   if (!text.trim() || (message.role === 'user' && INJECTED.some(prefix => text.trim().startsWith(prefix)))) return null;
-  const clean = redact(message.chunk ? text : text.trim());
+  // A <private> span can open in one ACP fragment and close in a later one: those are stripped after the merge.
+  const clean = message.chunk ? redact(text) : scrub(text.trim());
+  if (PRIVATE_ONLY.test(clean)) return null;
   if (Array.from(clean).length > CHECKPOINT_LIMITS.chars) counters.messages_truncated++;
-  return { role: message.role, content: shortened(clean), ...(message.chunk ? { chunk: true } : {}) };
+  return { role: message.role, content: trimmed(clean), ...(message.chunk ? { chunk: true } : {}) };
 }
 
 /** ACP chunk updates split one host message over many lines; merge consecutive same-role fragments. */
@@ -174,7 +182,7 @@ export async function readTranscriptMessages({ path, host, subagent = false }) {
   messages.reverse();
   const legacy = harness === 'kimi-code';
   const inferred = harness === 'grok' || harness === 'cursor';
-  if (harness === 'grok') messages.splice(0, messages.length, ...mergeChunks(messages));
+  if (harness === 'grok') messages.splice(0, messages.length, ...withoutPrivate(mergeChunks(messages)));
   const partial = bounded.partial || legacy || inferred || counters.record_limit_reached || counters.partial_last_line || counters.turns_dropped > 0
     || counters.invalid_lines > 0 || counters.messages_truncated > 0 || counters.blocks_truncated > 0;
   if (partial && messages.length) messages[0].content = shortened(
@@ -200,7 +208,7 @@ export async function checkpointSession({ payload, host, repo, stateDir, request
     const history = await readKimiHistory({ sessionId: payload.session_id, cwd: payload.cwd });
     if (!history.available) return { saved: false, reason: history.coverage.reason, client: history.coverage };
     const selected = history.messages.slice(-CHECKPOINT_LIMITS.messages);
-    messages = selected.map(message => ({ ...message, content: shortened(message.content) }));
+    messages = withoutPrivate(selected.map(message => ({ ...message, content: shortened(message.content) })));
     const capped = selected.length < history.messages.length || selected.some(message => Array.from(message.content).length > CHECKPOINT_LIMITS.chars);
     client = { name: 'kimi-code', transcript_format: history.format,
       transcript_partial: !history.coverage.complete || capped, capture_coverage: history.coverage };

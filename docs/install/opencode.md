@@ -42,6 +42,10 @@ If you use an xAI model: Estelle's `review` tool schema is refused by xAI until 
 
 What OpenCode can and cannot do for Estelle, with sources: [docs/hosts/opencode.md](../hosts/opencode.md).
 
+## Update
+
+These hosts do not update Estelle for you. Run `opencode plugin @fatelabs/opencode-estelle -g`, then restart OpenCode. Estelle checks once a day, at the start of a session, whether a newer release exists and shows one line when yours is behind (`ESTELLE_PLUGIN_UPDATE_CHECK=0` turns the check off).
+
 ## Copy/paste setup prompt
 
 ```text

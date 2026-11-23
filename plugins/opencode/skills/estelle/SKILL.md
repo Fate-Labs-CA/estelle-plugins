@@ -35,6 +35,18 @@ calling it. If you are unsure whether Estelle can do something, call `estelle_do
 | Share a task across sessions; Rooms | `estelle_room` |
 | What do our docs, specs or policies say about X; anything the team uploaded to Intake | `estelle_intake` with `action: "search"` and their question; cite each passage's `cite_as`. `action: "read"` opens a page |
 | How do I; what can Estelle do; any Estelle product | `estelle_docs` |
+
+## Memory
+
+Estelle records this session's conversation in the background, with credentials redacted; you do not save it. What you
+can do:
+
+- Before you repeat an investigation, re-ask the person something, or contradict an earlier choice, look it up:
+  `memory_chat` for "what did we decide about X", `list_sessions` when a title or exact words would find it. Recall
+  that Estelle's hook already put in your context came from memory; use it, and say it came from Estelle.
+- Say a decision, a fix and its cause, or a constraint plainly in your reply when it is settled. What you write in the
+  reply is what gets remembered. Do not state a proposal the person has not accepted as if it were decided.
+- The person can keep text out of memory by wrapping it in `<private>...</private>`. Never repeat private text in a reply.
 <!-- intent-map:end -->
 
 ## `/estelle handoff` and `/estelle cloud`
@@ -104,6 +116,16 @@ press `t`, or choose **Trust all and continue** when Codex starts. Approving is 
 Read coverage and freshness. A stale index, an unknown commit, a bounded no-match or an abstention is a limit on evidence, not proof that code is absent or safe. Where an indexed answer disagrees with a current file you read, use the file and explain the mismatch. Navigation is not a replacement for executing relevant tests.
 
 Use source evidence, the project's checks and review to establish the change's behavior. Follow the user's authorized workflow.
+
+## Subagents
+
+Subagents get the same Estelle you do: their start hook gives each one Estelle's guidance, memory recalled for its task,
+and its own Room identity (never yours). Put the whole task in the subagent's prompt. A custom agent definition with a
+`tools:` list keeps Estelle's MCP tools only if the list names them (`mcp__plugin_estelle_Estelle__*`, or
+`mcp__Estelle__*` when the server is added by hand); an agent with no `tools:` line inherits every tool. Estelle watches
+your subagents: a line that starts "Estelle: subagent" says one is quiet or keeps failing and what you can do (read its
+output, message it, stop it); act on it instead of waiting. A subagent that has nothing left to do should hand back and
+end; stop one you no longer need.
 
 ## Rooms and cross-host continuation
 

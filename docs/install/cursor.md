@@ -17,6 +17,10 @@ as working. [Cursor's installation and management contract](https://cursor.com/d
 
 [Deterministic setup and migration limits](../migration/from-cli.md): automated cleanup for this host is pending; do not perform guessed config edits. The hosted backend controls permissions and tools.
 
+## Update
+
+These hosts do not update Estelle for you. Update Estelle from the Customize page, then run Developer: Reload Window. Estelle checks once a day, at the start of a session, whether a newer release exists and shows one line when yours is behind (`ESTELLE_PLUGIN_UPDATE_CHECK=0` turns the check off).
+
 ## Copy/paste setup prompt
 
 ```text

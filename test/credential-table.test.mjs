@@ -23,7 +23,7 @@ test('every true credential is flagged and every ordinary form passes', () => {
 });
 
 test('the vendor list is complete: each shape redaction knows is one the scan flags', () => {
-  assert.equal(VENDOR_PATTERNS.length, 12, 'a vendor shape was added or removed; add its row to the table');
+  assert.equal(VENDOR_PATTERNS.length, 25, 'a vendor shape was added or removed; add its row to the table');
   const covered = TRUE_ROWS.map(([, call]) => JSON.stringify(call.toolInput));
   for (const [pattern, label] of VENDOR_PATTERNS) {
     assert(covered.some(text => text.search(pattern) >= 0), `no table row exercises ${label}`);

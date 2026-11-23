@@ -4,7 +4,8 @@ import { join, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { cap, sanitize, FIELD_CAP } from './redact.mjs';
 import { timelineIdentity } from './identity.mjs';
-import { normalizeKimiRecord } from './kimi-history.mjs';
+import { VERSION } from './version.mjs';
+import { normalizeKimiRecord, normalizeKimiLoopEvent, kimiLoopTurnsIn } from './kimi-history.mjs';
 import { noteTaskNotification, syncSubagents } from './stream-subagents.mjs';
 import { noteCodexSpawn, syncCodexSubagents } from './stream-codex-subagents.mjs';
 
@@ -293,7 +294,7 @@ export function mapCodex(record, offset, notes = {}) {
 
 /** Current and legacy Kimi journal vocabulary, retaining original byte-offset replay IDs. */
 export function mapKimi(record, offset, notes = {}) {
-  record = normalizeKimiRecord(record) ?? record;
+  record = (notes.kimiLoopTurns && normalizeKimiLoopEvent(record)) || normalizeKimiRecord(record) || record;
   if (!record || !Number.isFinite(record.time)) return [];
   if (!Number.isFinite(new Date(record.time).getTime())) return [];
   const at = new Date(record.time).toISOString();
@@ -576,14 +577,14 @@ function associationPartial(response, events) {
   return !(row?.state === 'linked' && row.linked === 1 && row.deferred === 0 && row.unconfirmed === 0);
 }
 
-export async function sendBatch(request, session, events) {
+export async function sendBatch(request, session, events, host) {
   let pending = events;
   let dropped = 0;
   const bound = events.length + 1;
   for (let attempt = 0; attempt < bound; attempt++) {
     if (!pending.length) return { dropped };
     try {
-      const response = await request('/session/events', { session_id: session, events: pending });
+      const response = await request('/session/events', { session_id: session, plugin_version: VERSION, ...(host ? { host } : {}), events: pending });
       return { dropped, association_partial: associationPartial(response, pending) };
     }
     catch (error) {
@@ -753,6 +754,8 @@ export async function streamSession({ payload, host, repo, stateDir, request, no
   // Grok and Cursor transcript lines carry no verified timestamps; capture time stamps their events.
   if (harness === 'grok' || harness === 'cursor') notes.observedAt = new Date().toISOString();
   if (harness === 'opencode' || harness === 'hermes') notes.harness = harness;
+  // Kimi 2.6.0 records assistant and tool turns only as loop events; the first window that shows either vocabulary decides.
+  if (harness === 'kimi-code' && typeof state.kimi_loop_turns === 'boolean') notes.kimiLoopTurns = state.kimi_loop_turns;
   let events = [];
   let offset = state.offset;
   let invalid = 0;
@@ -767,6 +770,7 @@ export async function streamSession({ payload, host, repo, stateDir, request, no
       offset = window.skipTo; skipped++; incomplete = offset < window.length;
       continue;
     }
+    if (harness === 'kimi-code' && notes.kimiLoopTurns === undefined) notes.kimiLoopTurns = kimiLoopTurnsIn(window.buffer);
     const collected = collectWindow(window, harness, notes, budget - events.length, Boolean(sub));
     events.push(...collected.events); invalid += collected.invalid;
     incomplete = collected.offset < window.length;
@@ -790,7 +794,7 @@ export async function streamSession({ payload, host, repo, stateDir, request, no
   let associationIncomplete = replay.association_partial === true;
   for (const [index, batch] of batches.entries()) {
     try {
-      const result = await sendBatch(request, timeline, batch);
+      const result = await sendBatch(request, timeline, batch, host);
       dropped += result.dropped; sent += batch.length - result.dropped;
       associationIncomplete ||= result.association_partial === true;
     }
@@ -804,7 +808,7 @@ export async function streamSession({ payload, host, repo, stateDir, request, no
         pending: true, incomplete: true, error: 'stream upload pending; cursor retained' };
     }
   }
-  await saveJson(statePath, { offset, started, last_at: events.at(-1)?.at ?? last, last_lifecycle: collapsed.last, invalid_lines: invalid, skipped_lines: skipped, last_error: null,
+  await saveJson(statePath, { ...(typeof notes.kimiLoopTurns === 'boolean' ? { kimi_loop_turns: notes.kimiLoopTurns } : {}), offset, started, last_at: events.at(-1)?.at ?? last, last_lifecycle: collapsed.last, invalid_lines: invalid, skipped_lines: skipped, last_error: null,
     ...(boundary.ended ? { ended: true } : {}) });
   // Each subagent is its own timeline, `<parent>/agent-<spawning call id>`; OpenCode reuses this dialect but has no such directory.
   const subagents = harness === 'claude-code'

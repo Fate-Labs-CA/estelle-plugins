@@ -58,7 +58,7 @@ if (command === 'doctor') {
   try {
     payload = await readInput();
     const { handleHook } = await import('./hooks.mjs');
-    const output = await handleHook({ host, payload, stateDir: stateDirectory(), request: apiClient() });
+    const output = await handleHook({ host, payload, stateDir: stateDirectory(), request: apiClient(), update: {} });
     if (output) console.log(JSON.stringify(output));
   } catch (error) {
     if (host === 'cursor') {

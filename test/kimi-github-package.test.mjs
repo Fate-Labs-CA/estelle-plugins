@@ -39,7 +39,7 @@ test('release metadata in README and Grok instructions follows package.json and 
   const readme = await readFile(join(temporary, 'README.md'), 'utf8');
   const grok = await readFile(join(temporary, 'docs/install/grok.md'), 'utf8');
   assert.match(readme, /Version: `9\.8\.7`/);
-  assert.match(grok, /grok plugin install uqeu\/estelle-plugins@v9\.8\.7#plugins\/grok/);
+  assert.match(grok, /grok plugin install Fate-Labs-CA\/estelle-plugins@v9\.8\.7#plugins\/grok/);
   assert.equal(run('--check').status, 0);
   await writeFile(join(temporary, 'docs/install/grok.md'), grok.replace('@v9.8.7#', '@v0.0.0#'));
   const broken = run('--check');

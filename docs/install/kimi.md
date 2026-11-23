@@ -63,6 +63,10 @@ GitHub install path.
 [Native plugin commands and reload behavior](https://www.kimi.com/code/docs/en/kimi-code-cli/customization/plugins.html)
 · [`kimi -p` contract](https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-command.html).
 
+## Update
+
+These hosts do not update Estelle for you. Run `/plugins remove estelle`, `/reload`, `/plugins install https://github.com/Fate-Labs-CA/estelle-plugins`, then `/reload`. Estelle checks once a day, at the start of a session, whether a newer release exists and shows one line when yours is behind (`ESTELLE_PLUGIN_UPDATE_CHECK=0` turns the check off).
+
 ## Copy/paste setup prompt
 
 ```text
