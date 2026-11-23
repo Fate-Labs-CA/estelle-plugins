@@ -23,8 +23,8 @@ emit('runtime/version.mjs', `// Generated from package.json by scripts/build.mjs
 // Only release metadata is generated in these otherwise hand-authored install documents.
 for (const [file, pattern, replacement] of [
   ['README.md', /^Version: `\d+\.\d+\.\d+`\.$/gm, `Version: \`${version}\`.`],
-  ['docs/install/grok.md', /^grok plugin install uqeu\/estelle-plugins@v\d+\.\d+\.\d+#plugins\/grok$/gm,
-    `grok plugin install uqeu/estelle-plugins@v${version}#plugins/grok`],
+  ['docs/install/grok.md', /^grok plugin install Fate-Labs-CA\/estelle-plugins@v\d+\.\d+\.\d+#plugins\/grok$/gm,
+    `grok plugin install Fate-Labs-CA/estelle-plugins@v${version}#plugins/grok`],
 ]) {
   const source = await readFile(join(root, file), 'utf8');
   if ([...source.matchAll(pattern)].length !== 1) throw new Error(`Release metadata anchor missing or repeated: ${file}`);

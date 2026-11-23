@@ -3,12 +3,12 @@
 Package: `plugins/codex`. Requires Node.js 22 and `ESTELLE_API_KEY` in the host environment.
 
 ```sh
-codex plugin marketplace add uqeu/estelle-plugins --ref main
+codex plugin marketplace add Fate-Labs-CA/estelle-plugins --ref main
 codex plugin add estelle@estelle-plugins
 codex plugin list
 ```
 
-For an existing marketplace, run `codex plugin marketplace upgrade estelle-plugins` before reinstalling.
+For an existing marketplace, run `codex plugin marketplace upgrade estelle-plugins` before reinstalling. Estelle checks once a day, at the start of a session, whether a newer release exists and shows one line when yours is behind (`ESTELLE_PLUGIN_UPDATE_CHECK=0` turns the check off).
 
 ## Approve the hooks, after installing and after every update
 

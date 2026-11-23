@@ -3,13 +3,17 @@
 Package: `plugins/grok`. Requires Node.js 22 and `ESTELLE_API_KEY` in the host environment.
 
 ```sh
-grok plugin install uqeu/estelle-plugins@v0.0.24#plugins/grok
+grok plugin install Fate-Labs-CA/estelle-plugins@v0.0.24#plugins/grok
 grok plugin enable estelle
 ```
 
 Review the host’s normal installation and hook trust prompts, then start a fresh session.
 
 [Deterministic setup and migration limits](../migration/from-cli.md): automated cleanup for this host is pending; do not perform guessed config edits. The hosted backend controls permissions and tools.
+
+## Update
+
+These hosts do not update Estelle for you. Run `grok plugin install Fate-Labs-CA/estelle-plugins@v<latest>#plugins/grok`, then start a fresh session. Estelle checks once a day, at the start of a session, whether a newer release exists and shows one line when yours is behind (`ESTELLE_PLUGIN_UPDATE_CHECK=0` turns the check off).
 
 ## Copy/paste setup prompt
 
