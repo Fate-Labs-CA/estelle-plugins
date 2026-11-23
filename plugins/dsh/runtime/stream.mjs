@@ -731,7 +731,7 @@ function boundaryEvents({ hook, timeline, offset, last, started, incomplete, sub
 }
 
 /** request(path, body) must reject HTTP failures with {status,message}. No credentials are persisted here. */
-export async function streamSession({ payload, host, repo, stateDir, request }) {
+export async function streamSession({ payload, host, repo, stateDir, request, now = Date.now() }) {
   const harness = AGENTS[host];
   if (!harness) return { sent: 0, unsupported: true, reason: 'transcript dialect is not verified for this host' };
   const session = payload.session_id;
@@ -809,9 +809,9 @@ export async function streamSession({ payload, host, repo, stateDir, request }) 
   // Each subagent is its own timeline, `<parent>/agent-<spawning call id>`; OpenCode reuses this dialect but has no such directory.
   const subagents = harness === 'claude-code'
     ? await syncSubagents({ transcript, parent: timeline, repo, stateDir, request, notified: notes.notified ?? [],
-        stopped: payload.hook_event_name === 'SubagentStop' ? string(payload.agent_id).trim() : '' })
+        stopped: payload.hook_event_name === 'SubagentStop' ? string(payload.agent_id).trim() : '', now })
     : harness === 'codex'
-      ? await syncCodexSubagents({ transcript, session, parent: timeline, repo, stateDir, request, spawns: notes.spawns ?? [] }) : null;
+      ? await syncCodexSubagents({ transcript, session, parent: timeline, repo, stateDir, request, spawns: notes.spawns ?? [], now }) : null;
   return { sent, dropped, replayed, ...(subagents ? { subagents } : {}), ...(associationIncomplete ? { association_partial: true } : {}), backlog: incomplete, incomplete: incomplete || harness === 'kimi-code', invalid_lines: invalid, skipped_lines: skipped, offset, session_id: timeline,
     ...(harness === 'kimi-code' ? { transcript_format: 'kimi-wire', current_format_verified: true,
       capture_scope: 'main-agent journal; stream includes recorded branch history' } : {}),

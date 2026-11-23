@@ -10,6 +10,7 @@ import { ROOT, CHILD, GRANDCHILD, CALL, GRAND_CALL, at, line, event, item, codex
 
 const PARENT = `codex-${ROOT}`;
 const KID = `${PARENT}/agent-${CALL}`;
+const NOW = Date.parse(at(30));
 
 async function session(t, options) {
   const dir = await mkdtemp(join(tmpdir(), 'estelle-codex-subagent-test-'));
@@ -17,7 +18,8 @@ async function session(t, options) {
   const s = await codexSession(dir, options);
   const calls = [];
   const request = async (path, body) => { calls.push({ path, body }); return { accepted: body.events.length }; };
-  return { ...s, calls, options: { ...s.options, stateDir: join(dir, 'state'), request } };
+  // The fixture's clock is fixed (`at`), so the test's "now" is fixed beside it: a real clock would age the spawns past ACTIVE_MS.
+  return { ...s, calls, options: { ...s.options, stateDir: join(dir, 'state'), request, now: NOW } };
 }
 const sentTo = (calls, id) => calls.filter(c => c.body.session_id === id).flatMap(c => c.body.events);
 
