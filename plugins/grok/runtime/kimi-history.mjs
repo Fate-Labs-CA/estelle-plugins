@@ -55,6 +55,57 @@ export function normalizeKimiRecord(record) {
     ...(visible.incomplete ? { capture_incomplete: true } : {}) };
 }
 
+const LOOP_OBSERVATION = new Set(['step.begin', 'step.end', 'content.part', 'tool.call', 'tool.result']);
+const loopEvent = record => typeOf(record) === 'context.append_loop_event' && object(record.event) ? record.event : null;
+
+/**
+ * Kimi 2.6.0 no longer writes assistant and tool turns as `agent.message.appended`; it records them only as
+ * `context.append_loop_event` (content.part, tool.call, tool.result). This maps those to the same normalized record,
+ * with reasoning (`think` parts) omitted as everywhere else. Callers use it only for a wire that has no appended
+ * assistant or tool message, so an older wire that carries both is never captured twice.
+ */
+export function normalizeKimiLoopEvent(record) {
+  if (!object(record) || !timeOf(record.time)) return null;
+  const event = loopEvent(record);
+  if (!event) return null;
+  const id = string(event.toolCallId);
+  if (event.type === 'content.part' && event.part?.type === 'text' && string(event.part.text)) {
+    return { type: 'context.append_message', time: record.time,
+      message: { role: 'assistant', content: [{ type: 'text', text: cap(event.part.text) }], toolCalls: [] } };
+  }
+  if (event.type === 'tool.call' && id && string(event.name)) {
+    return { type: 'context.append_message', time: record.time,
+      message: { role: 'assistant', content: [], toolCalls: sanitize([{ type: 'function', id, name: event.name,
+        arguments: JSON.stringify(object(event.args) ? event.args : {}) }]) } };
+  }
+  if (event.type === 'tool.result' && id && object(event.result)) {
+    return { type: 'context.append_message', time: record.time,
+      message: { role: 'tool', toolCallId: id, isError: event.result.isError === true,
+        content: [{ type: 'text', text: cap(string(event.result.output)) }] } };
+  }
+  return null;
+}
+
+/** True when the wire holds an assistant or tool message in the older `agent.message.appended` vocabulary. */
+export function hasAppendedTurns(records) {
+  return records.some(record => ['assistant', 'tool'].includes(normalizeKimiRecord(record)?.message?.role));
+}
+
+/**
+ * Which vocabulary carries the assistant and tool turns in a window of wire lines: true for loop events only (Kimi 2.6.0),
+ * false once an appended assistant or tool message is seen, undefined while the window shows neither.
+ */
+export function kimiLoopTurnsIn(buffer, maxLines = 5_000) {
+  let loop = false;
+  for (const line of buffer.toString('utf8').split('\n', maxLines)) {
+    let record;
+    try { record = JSON.parse(line); } catch { continue; }
+    if (['assistant', 'tool'].includes(normalizeKimiRecord(record)?.message?.role)) return false;
+    if (normalizeKimiLoopEvent(record)) loop = true;
+  }
+  return loop ? true : undefined;
+}
+
 function switchEdge(record, line) {
   if (typeOf(record) !== 'agent.switched') return null;
   if (typeof record.branch !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(record.branch)) throw new Error('invalid_branch');
@@ -148,9 +199,11 @@ export async function readKimiHistory({ sessionId, cwd, home }) {
   }
   const normalized = [];
   let unsupported = 0;
+  const loopOnly = !hasAppendedTurns(active);
   for (const record of active) {
-    const item = normalizeKimiRecord(record);
+    const item = (loopOnly && normalizeKimiLoopEvent(record)) || normalizeKimiRecord(record);
     if (item) { normalized.push(item); if (item.capture_incomplete) unsupported++; }
+    else if (loopOnly && LOOP_OBSERVATION.has(loopEvent(record)?.type)) continue;
     else if (!OBSERVATION.has(typeOf(record))) unsupported++;
   }
   const messages = normalized.filter(record => record.type === 'context.append_message' && ['user', 'assistant'].includes(record.message.role))

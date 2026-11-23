@@ -675,3 +675,48 @@ for (const state of ['unavailable', 'linked']) {
     assert.equal(capture(), count, 'completed deferred work is not retried for association');
   });
 }
+
+// Shape taken from a real Kimi 2.6.0 `kimi -p` wire: assistant and tool turns exist only as loop events.
+const T = Date.parse(AT);
+const loop = (event, time = T) => ({ type: 'context.append_loop_event', agentId: 'main', time, event });
+const kimiLoopWire = () => [
+  { type: 'metadata', protocol_version: '1.5', created_at: T, min_protocol_version: '1.5' },
+  { type: 'context.append_message', time: T, message: { role: 'user', content: [{ type: 'text', text: 'run the test' }] } },
+  loop({ type: 'step.begin', uuid: 's1', turnId: '0', step: 1 }),
+  loop({ type: 'content.part', part: { type: 'think', think: 'private reasoning' } }),
+  loop({ type: 'content.part', part: { type: 'text', text: 'Calling resume.' } }),
+  loop({ type: 'tool.call', uuid: 'c1', toolCallId: 'tool_1', name: 'mcp__plugin-estelle_Estelle__estelle_resume', args: { task: 'x' } }),
+  loop({ type: 'tool.result', parentUuid: 'c1', toolCallId: 'tool_1', result: { output: 'WHERE: repo', durationMs: 5 } }),
+  loop({ type: 'tool.call', uuid: 'c2', toolCallId: 'tool_2', name: 'mcp__plugin-estelle_Estelle__memory_chat', args: { question: 'q' } }),
+  loop({ type: 'tool.result', parentUuid: 'c2', toolCallId: 'tool_2', result: { output: 'degraded', isError: true } }),
+  loop({ type: 'step.end', uuid: 's1', turnId: '0', step: 1 }),
+  { type: 'turn.ended', time: T },
+];
+
+test('Kimi 2.6.0 loop-event turns are streamed: assistant text, tool calls and results, never reasoning', async t => {
+  const f = await fixture(t, 'kimi');
+  await writeFile(f.transcript, kimiLoopWire().map(line).join(''));
+  f.options.payload.hook_event_name = 'Stop';
+  await streamSession(f.options);
+  const events = f.calls.flatMap(call => call.body.events);
+  const kinds = events.map(e => e.kind);
+  assert.deepEqual(events.filter(e => e.kind === 'tool_call').map(e => e.payload.tool),
+    ['mcp__plugin-estelle_Estelle__estelle_resume', 'mcp__plugin-estelle_Estelle__memory_chat']);
+  assert.deepEqual(events.filter(e => e.kind === 'tool_result').map(e => e.payload.ok), [true, false]);
+  assert.ok(kinds.includes('agent_message'));
+  assert.doesNotMatch(JSON.stringify(events), /private reasoning/);
+  assert.equal(JSON.parse(await readFile(join(f.options.stateDir, 'kimi-code-fixture-session.stream.json'), 'utf8')).kimi_loop_turns, true);
+});
+
+test('a Kimi wire that also carries appended assistant messages is not captured twice from its loop events', async t => {
+  const f = await fixture(t, 'kimi');
+  const appended = { type: 'agent.message.appended', time: T, message: { message: { role: 'assistant',
+    content: [{ type: 'text', text: 'Calling resume.' }], toolCalls: [{ type: 'function', id: 'tool_1', name: 'estelle_resume', arguments: '{}' }] } } };
+  await writeFile(f.transcript, [kimiLoopWire()[0], loop({ type: 'tool.call', uuid: 'c1', toolCallId: 'tool_1', name: 'estelle_resume', args: {} }),
+    appended].map(line).join(''));
+  f.options.payload.hook_event_name = 'Stop';
+  await streamSession(f.options);
+  const calls = f.calls.flatMap(call => call.body.events).filter(e => e.kind === 'tool_call');
+  assert.equal(calls.length, 1);
+  assert.equal(JSON.parse(await readFile(join(f.options.stateDir, 'kimi-code-fixture-session.stream.json'), 'utf8')).kimi_loop_turns, false);
+});
