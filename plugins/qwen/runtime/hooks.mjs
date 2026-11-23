@@ -4,6 +4,7 @@ import { normalize as claude, formatContext as claudeContext } from '../adapters
 import { normalize as codex, formatContext as codexContext } from '../adapters/codex.mjs';
 import { safeSession, hash, repository, readJson, writeJson, errorCode, recordStatus } from './io.mjs';
 import { streamSession } from './stream.mjs';
+import { ANNOUNCING_HOSTS, announceSubagent } from './subagent-hooks.mjs';
 import { checkpointSession } from './checkpoint.mjs';
 import { redact } from './redact.mjs';
 import { queueReindex } from './reindex.mjs';
@@ -13,7 +14,7 @@ import { beginContext, saveContext, takeContext } from './queued-context.mjs';
 import { MAILBOX_HOSTS, pullAtBoundary, sessionIdentity } from './mailbox.mjs';
 
 const CHECKPOINT_EVENTS = new Set(['Stop', 'SubagentStop', 'PreCompact', 'Interrupt']);
-const STREAM_EVENTS = new Set(['UserPromptSubmit', 'PostToolUse', 'Stop', 'SubagentStop', 'PreCompact', 'Interrupt']);
+const STREAM_EVENTS = new Set(['UserPromptSubmit', 'PostToolUse', 'Stop', 'SubagentStart', 'SubagentStop', 'PreCompact', 'Interrupt']);
 const MAX_DEFERRED_SCAN = 512;
 
 async function adapter(host) {
@@ -193,6 +194,9 @@ async function answerEvent({ host, port, n, payload, stateDir, request }) {
   // Session capture belongs to the authenticated account even before a workspace has Git metadata.
   if (STREAM_EVENTS.has(n.event)) actions.push(runAction('stream', n, stateDir,
     () => streamSession({ payload: streamPayload, host, repo: repo?.name, stateDir, request })));
+  // A host that names its subagents in a hook but keeps no child transcript the plugin reads: the child's start and end.
+  if (ANNOUNCING_HOSTS.has(host) && ['SubagentStart', 'SubagentStop'].includes(n.event)) actions.push(runAction('subagent', n, stateDir,
+    () => announceSubagent({ n, host, repo: repo?.name, stateDir, request })));
   if (CHECKPOINT_EVENTS.has(n.event)) actions.push(runAction('checkpoint', n, stateDir,
     () => checkpointSession({ payload: streamPayload, host, repo: repo?.name, stateDir, request })));
   // This session's own identity (id + session_token) and its mail, for hosts the server can address.

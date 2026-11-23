@@ -808,7 +808,8 @@ export async function streamSession({ payload, host, repo, stateDir, request }) 
     ...(boundary.ended ? { ended: true } : {}) });
   // Each subagent is its own timeline, `<parent>/agent-<spawning call id>`; OpenCode reuses this dialect but has no such directory.
   const subagents = harness === 'claude-code'
-    ? await syncSubagents({ transcript, parent: timeline, repo, stateDir, request, notified: notes.notified ?? [] })
+    ? await syncSubagents({ transcript, parent: timeline, repo, stateDir, request, notified: notes.notified ?? [],
+        stopped: payload.hook_event_name === 'SubagentStop' ? string(payload.agent_id).trim() : '' })
     : harness === 'codex'
       ? await syncCodexSubagents({ transcript, session, parent: timeline, repo, stateDir, request, spawns: notes.spawns ?? [] }) : null;
   return { sent, dropped, replayed, ...(subagents ? { subagents } : {}), ...(associationIncomplete ? { association_partial: true } : {}), backlog: incomplete, incomplete: incomplete || harness === 'kimi-code', invalid_lines: invalid, skipped_lines: skipped, offset, session_id: timeline,
