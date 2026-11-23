@@ -13,6 +13,7 @@
 import { join } from 'node:path';
 import { hash, readJson, writeJson } from './io.mjs';
 import { timelineIdentity } from './identity.mjs';
+import { subagentIdentity } from './supervise.mjs';
 
 // Hosts whose sessions the server can mail (its live list) and whose hook output carries additionalContext.
 // OpenCode and Pi carry the text through their in-process plugin (adapters/opencode-plugin.mjs, adapters/pi-extension.mjs);
@@ -24,9 +25,11 @@ const MAX_CONTEXT_CHARS = 12_000;
 
 const textOf = result => (typeof result?.context === 'string' ? result.context.slice(0, MAX_CONTEXT_CHARS) : '');
 
-/** This session's id and token, as the line to print. '' when the server issued none. */
+/** This session's id and token, as the line to print. '' when the server issued none. A SUBAGENT shares its parent's session
+    id, so it asks for its own (`subagentIdentity`): handing it the parent's line would let it speak as the parent. */
 export async function sessionIdentity(n, request) {
-  const result = await request('/session/mail', { action: 'identity', session_id: timelineIdentity(n.host, n.sessionId) });
+  const own = n.event === 'SubagentStart' ? subagentIdentity(n) : '';
+  const result = await request('/session/mail', { action: 'identity', session_id: own || timelineIdentity(n.host, n.sessionId) });
   return { text: textOf(result) };
 }
 

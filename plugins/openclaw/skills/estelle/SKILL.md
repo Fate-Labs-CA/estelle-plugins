@@ -117,6 +117,16 @@ Read coverage and freshness. A stale index, an unknown commit, a bounded no-matc
 
 Use source evidence, the project's checks and review to establish the change's behavior. Follow the user's authorized workflow.
 
+## Subagents
+
+Subagents get the same Estelle you do: their start hook gives each one Estelle's guidance, memory recalled for its task,
+and its own Room identity (never yours). Put the whole task in the subagent's prompt. A custom agent definition with a
+`tools:` list keeps Estelle's MCP tools only if the list names them (`mcp__plugin_estelle_Estelle__*`, or
+`mcp__Estelle__*` when the server is added by hand); an agent with no `tools:` line inherits every tool. Estelle watches
+your subagents: a line that starts "Estelle: subagent" says one is quiet or keeps failing and what you can do (read its
+output, message it, stop it); act on it instead of waiting. A subagent that has nothing left to do should hand back and
+end; stop one you no longer need.
+
 ## Rooms and cross-host continuation
 
 Use `estelle_room` for shared work. Inspect its live schema, then use read actions such as `list`, `get` and `tail` to inspect members, owned tasks, entries and available streams.
