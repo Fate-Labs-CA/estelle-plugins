@@ -18,16 +18,34 @@ export const VENDOR_PATTERNS = Object.freeze([
   [/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, '[redacted aws key]'],
   [/\bAIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])/g, '[redacted google key]'],
   [/\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/g, '[redacted sendgrid key]'],
+  [/\bnpm_[A-Za-z0-9]{30,}/g, '[redacted npm token]'],
+  [/\bglpat-[A-Za-z0-9_-]{20,}/g, '[redacted gitlab token]'],
+  [/\bhf_[A-Za-z0-9]{30,}/g, '[redacted huggingface token]'],
+  [/\bwhsec_[A-Za-z0-9]{16,}/g, '[redacted stripe webhook secret]'],
+  [/\bdop_v1_[a-f0-9]{40,}/g, '[redacted digitalocean token]'],
+  [/\bshp(?:at|ca|pa|ss)_[a-f0-9]{32}/g, '[redacted shopify token]'],
+  [/\blin_api_[A-Za-z0-9]{30,}/g, '[redacted linear key]'],
+  [/\bsbp_[a-f0-9]{40}/g, '[redacted supabase token]'],
+  [/\bSK[a-f0-9]{32}\b/g, '[redacted twilio key]'],
+  [/\bkey-[a-f0-9]{32}\b/g, '[redacted mailgun key]'],
+  [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9\/]{20,}/g, '[redacted slack webhook]'],
+  [/https:\/\/(?:discord(?:app)?\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]{20,}/g, '[redacted discord webhook]'],
+  [/https:\/\/[a-f0-9]{32}@[A-Za-z0-9.-]*sentry\.io\/\d+/g, '[redacted sentry dsn]'],
 ]);
 const PATTERNS = [
   ...VENDOR_PATTERNS,
-  [/\b([A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|API_KEY|PRIVATE_KEY)[A-Z0-9_]*)\s*=\s*["']?[^\s"']{8,}/gi, '$1=[redacted]'],
+  [/\b([A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY)[A-Z0-9_]*)\s*=\s*["']?[^\s"']{8,}/gi, '$1=[redacted]'],
   [/\b(Bearer\s+)[A-Za-z0-9._~+\/-]{8,}=*/gi, '$1[redacted]'],
+  // Any URL that carries a password (mysql, redis, mongodb, https, ...); the postgres rule above keeps its own label.
+  [/\b([a-z][a-z0-9+.-]*:\/\/[^:\s\/@]*:)[^@\s\/]+@/gi, '$1[redacted]@'],
+  [/\b(Authorization\s*[:=]\s*["']?(?:Basic|Token|Digest|ApiKey)\s+)[A-Za-z0-9._~+\/=:-]{8,}/gi, '$1[redacted]'],
+  [/\b(sshpass\s+-p\s*["']?)[^\s"']{4,}/g, '$1[redacted]'],
+  [/\b((?:AccountKey|SharedAccessKey|SharedAccessSignature)\s*=\s*)[^;\s"']{8,}/gi, '$1[redacted]'],
 ];
 // Rooms proofs are opaque HMACs: their field label, not a vendor prefix, identifies them.
 // Keep the delimiter so JSON snippets remain parseable after filtering. Bare values require
 // 16 characters; a code identifier such as `session_token: undefined` is not a credential.
-const LABELED_VALUE = /(["'`]?\b[A-Z0-9_-]{0,128}(?:SECRET|TOKEN|PASSWORD|API[_-]?KEY|PRIVATE[_-]?KEY)[A-Z0-9_-]{0,128}["'`]?\s*[:=]\s*)("(?:\\.|[^"\\\r\n]){8,}"|'(?:\\.|[^'\\\r\n]){8,}'|`[^`\r\n]{8,}`|[A-Za-z0-9._~+\/-]{16,}={0,2})(?=[\s,;)}\]<>]|$)/gi;
+const LABELED_VALUE = /(["'`]?\b[A-Z0-9_-]{0,128}(?:SECRET|TOKEN|PASSWORD|API[_-]?KEY|PRIVATE[_-]?KEY)[A-Z0-9_-]{0,128}["'`]?\s*[:=]\s*)("(?:\\.|[^"\\\r\n]){8,}"|'(?:\\.|[^'\\\r\n]){8,}'|`[^`\r\n]{8,}`|[A-Za-z0-9._~+\/-]{16,}={0,2})(?=[\s,;)}\]<>"'`]|$)/gi;
 
 function redactLabeledValue(match, label, value) {
   if (/^["'`]?\[redacted/i.test(value)) return match;
@@ -48,8 +66,25 @@ export function redact(text) {
       (_, label, quote) => `${label}${quote}[redacted named credential]${quote}`);
 }
 
+// The person's own opt-out: whatever they wrap in <private>...</private> is not sent anywhere. An opening tag with no
+// close hides everything after it, because guessing where a forgotten close belonged would leak.
+const PRIVATE_SPAN = /<private>[\s\S]*?(?:<\/private>|$)/gi;
+const PRIVATE_MARK = '[private]';
+
+/** `text` with every private span replaced by a marker; the marker keeps the surrounding sentence readable. */
+export function stripPrivate(text) {
+  if (typeof text !== 'string') throw new TypeError('stripPrivate expects text');
+  return text.replace(PRIVATE_SPAN, PRIVATE_MARK);
+}
+
+/** Everything that leaves the machine as conversation passes here: the private opt-out, then credential redaction.
+ *  `redact` alone stays the credential test other callers compare against (reindex, native-tree, native-export). */
+export function scrub(text) {
+  return redact(stripPrivate(text));
+}
+
 export function cap(text) {
-  const clean = redact(text);
+  const clean = scrub(text);
   const chars = Array.from(clean);
   if (chars.length <= FIELD_CAP) return clean;
   return `${chars.slice(0, FIELD_CAP).join('')}\n… [truncated: ${chars.length - FIELD_CAP} more characters not shown]`;
