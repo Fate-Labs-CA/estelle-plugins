@@ -1,6 +1,6 @@
 {
   "name": "@fatelabs/opencode-estelle",
-  "version": "0.0.25",
+  "version": "0.0.26",
   "description": "Estelle MCP, memory and session hooks for coding agents.",
   "license": "Apache-2.0",
   "type": "module",
