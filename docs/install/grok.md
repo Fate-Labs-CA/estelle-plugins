@@ -3,7 +3,7 @@
 Package: `plugins/grok`. Requires Node.js 22 and `ESTELLE_API_KEY` in the host environment.
 
 ```sh
-grok plugin install Fate-Labs-CA/estelle-plugins@v0.0.25#plugins/grok
+grok plugin install Fate-Labs-CA/estelle-plugins@v0.0.26#plugins/grok
 grok plugin enable estelle
 ```
 

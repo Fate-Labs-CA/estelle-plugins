@@ -1,5 +1,5 @@
 name: estelle
-version: 0.0.25
+version: 0.0.26
 description: Estelle MCP, memory and session hooks for coding agents.
 author: Fate Labs
 provides_hooks: [on_session_start, pre_llm_call, pre_tool_call, post_tool_call, post_llm_call, on_session_finalize]

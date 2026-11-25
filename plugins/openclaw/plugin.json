@@ -1,6 +1,6 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "estelle",
-  "version": "0.0.25",
+  "version": "0.0.26",
   "description": "Estelle skills for OpenClaw. The Estelle MCP server is added with openclaw mcp add."
 }
