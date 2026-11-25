@@ -575,3 +575,15 @@ test('a running session receives mail at its next tool call, at most once per in
   assert.equal(sub.calls.filter(c => c.route === '/session/mail').length, 0, 'a subagent never takes the session’s mail');
   assert.equal(inSubagent?.hookSpecificOutput?.additionalContext, undefined);
 });
+
+test('a prompt sends its recall before any capture request, so capture work cannot delay it (estelle#2272)', async t => {
+  const f = await fixture(t);
+  const path = await transcript(f, 'recall-first', 200);
+  const spy = requestSpy();
+  await handleHook({ host: 'claude-code', stateDir: f.stateDir, request: spy.request,
+    payload: claudePayload(f, 'UserPromptSubmit', { transcript_path: path, prompt: 'Where is the parser bound checked?' }) });
+  const routes = spy.calls.map(call => call.route);
+  assert.ok(routes.includes('/search'), `no recall was sent: ${routes.join(', ')}`);
+  assert.ok(routes.some(route => route !== '/search'), `the fixture produced no capture request to order against: ${routes.join(', ')}`);
+  assert.equal(routes[0], '/search', `recall must be first on the wire: ${routes.join(', ')}`);
+});

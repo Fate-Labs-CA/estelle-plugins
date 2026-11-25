@@ -205,6 +205,10 @@ async function answerEvent({ host, port, n, payload, stateDir, request, notice: 
   const streamPayload = { ...payload, session_id: n.sessionId, cwd: n.cwd,
     hook_event_name: n.event, transcript_path: n.transcriptPath || null };
   const repo = repository(n.cwd);
+  // The prompt's recall goes on the wire FIRST (estelle#2272): the capture work below parses the transcript in this
+  // same event loop, and started first it delayed the recall past its 8 s bound under load.
+  const recalling = n.event === 'UserPromptSubmit' ? runAction('context', n, stateDir, () => recall(n, repo, request)) : undefined;
+  if (recalling) await new Promise((resolve) => setImmediate(resolve));
   const actions = [];
   const edited = n.event === 'PostToolUse' && mutatingTool(n.toolName)
     && n.raw?.tool_response?.is_error !== true && n.raw?.tool_response?.success !== false;
@@ -238,10 +242,7 @@ async function answerEvent({ host, port, n, payload, stateDir, request, notice: 
   const mail = boundary ? runAction('mailbox', n, stateDir, () => pullAtBoundary(n, stateDir, request, boundary)) : undefined;
   // Attach handlers before awaiting recall: other operations can finish while it is in flight.
   const completedActions = Promise.allSettled(actions);
-  let context;
-  if (n.event === 'UserPromptSubmit') {
-    context = await runAction('context', n, stateDir, () => recall(n, repo, request));
-  }
+  const context = recalling ? await recalling : undefined;
   await completedActions;
   const [own, delivered, watched, memory] = await Promise.all([identity, mail, watch, inherited]);
   const notice = watched?.text || '';
