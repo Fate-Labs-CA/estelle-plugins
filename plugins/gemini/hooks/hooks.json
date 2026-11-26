@@ -1,0 +1,89 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "name": "estelle-SessionStart",
+            "type": "command",
+            "command": "node \"${extensionPath}${/}runtime${/}cli.mjs\" hook gemini-cli",
+            "timeout": 20000
+          }
+        ]
+      }
+    ],
+    "BeforeAgent": [
+      {
+        "hooks": [
+          {
+            "name": "estelle-BeforeAgent",
+            "type": "command",
+            "command": "node \"${extensionPath}${/}runtime${/}cli.mjs\" hook gemini-cli",
+            "timeout": 20000
+          }
+        ]
+      }
+    ],
+    "BeforeTool": [
+      {
+        "matcher": "write_file|replace",
+        "hooks": [
+          {
+            "name": "estelle-BeforeTool",
+            "type": "command",
+            "command": "node \"${extensionPath}${/}runtime${/}cli.mjs\" hook gemini-cli",
+            "timeout": 20000
+          }
+        ]
+      }
+    ],
+    "AfterTool": [
+      {
+        "hooks": [
+          {
+            "name": "estelle-AfterTool",
+            "type": "command",
+            "command": "node \"${extensionPath}${/}runtime${/}cli.mjs\" hook gemini-cli",
+            "timeout": 20000
+          }
+        ]
+      }
+    ],
+    "AfterAgent": [
+      {
+        "hooks": [
+          {
+            "name": "estelle-AfterAgent",
+            "type": "command",
+            "command": "node \"${extensionPath}${/}runtime${/}cli.mjs\" hook gemini-cli",
+            "timeout": 20000
+          }
+        ]
+      }
+    ],
+    "PreCompress": [
+      {
+        "hooks": [
+          {
+            "name": "estelle-PreCompress",
+            "type": "command",
+            "command": "node \"${extensionPath}${/}runtime${/}cli.mjs\" hook gemini-cli",
+            "timeout": 20000
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "name": "estelle-SessionEnd",
+            "type": "command",
+            "command": "node \"${extensionPath}${/}runtime${/}cli.mjs\" hook gemini-cli",
+            "timeout": 3000
+          }
+        ]
+      }
+    ]
+  }
+}

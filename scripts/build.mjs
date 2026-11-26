@@ -199,6 +199,44 @@ for (const entry of (await readdir(join(root, 'commands'))).sort()) {
   emit(`plugins/qwen/commands/estelle/${entry}`, source.replaceAll('$ARGUMENTS', '{{args}}').replaceAll('<Estelle cli.mjs>', QWEN_CLI));
 }
 
+// Gemini CLI: one extension directory (`gemini extensions install`). MCP is the URL alone (`httpUrl`), so Gemini CLI's own OAuth
+// signs in from `/mcp auth Estelle` (a pinned Authorization header would disable that). Hooks are `hooks/hooks.json`, never the
+// manifest. Gemini CLI fills in `${extensionPath}` and `${/}` there, takes `timeout` in MILLISECONDS, and names its events its
+// own way (adapters/gemini.mjs renames them). BeforeTool only ever carries the write warning, so it is limited to the two
+// file-writing tools. Notification, BeforeModel, AfterModel and BeforeToolSelection carry nothing Estelle uses.
+const GEMINI_EVENTS = ['SessionStart', 'BeforeAgent', 'BeforeTool', 'AfterTool', 'AfterAgent', 'PreCompress', 'SessionEnd'];
+emit('plugins/gemini/gemini-extension.json', { name: 'estelle', version, description,
+  mcpServers: { Estelle: { httpUrl: server.url } }, contextFileName: 'instructions.md' });
+emit('plugins/gemini/hooks/hooks.json', { hooks: Object.fromEntries(GEMINI_EVENTS.map(event => [event, [{
+  ...(event === 'BeforeTool' ? { matcher: 'write_file|replace' } : {}),
+  hooks: [{ name: `estelle-${event}`, type: 'command', command: 'node "${extensionPath}${/}runtime${/}cli.mjs" hook gemini-cli',
+    timeout: event === 'SessionEnd' ? 3000 : 20000 }] }]])) });
+// Gemini CLI commands are TOML (`prompt`, `description`) with `{{args}}`; `commands/estelle/code.toml` becomes `/estelle:code`.
+// The runner path is where `gemini extensions install` (and `link`) puts the extension. The prompt is a TOML literal string,
+// so backslashes and quotes stay as written; one that held a triple quote or a Gemini injection token would not survive.
+const GEMINI_CLI = '$HOME/.gemini/extensions/estelle/runtime/cli.mjs';
+const TOML_LITERAL = "'" + "'" + "'";
+for (const entry of (await readdir(join(root, 'commands'))).sort()) {
+  const source = await readFile(join(root, 'commands', entry), 'utf8');
+  const [, description, body] = /^---\ndescription: (.+)\n---\n([\s\S]+)$/.exec(source) ?? [];
+  if (!description) throw new Error(`Command needs one description line: ${entry}`);
+  const prompt = body.replaceAll('$ARGUMENTS', '{{args}}').replaceAll('<Estelle cli.mjs>', GEMINI_CLI);
+  if (prompt.includes(TOML_LITERAL) || /[!@]\{/.test(prompt)) throw new Error(`Command cannot be a Gemini CLI TOML literal: ${entry}`);
+  emit(`plugins/gemini/commands/estelle/${entry.replace(/\.md$/, '.toml')}`,
+    `description = ${JSON.stringify(description)}\nprompt = ${TOML_LITERAL}\n${prompt.trimEnd()}\n${TOML_LITERAL}\n`);
+}
+// Gemini CLI subagents (`agents/*.md`, preview): the same four definitions, with Gemini CLI's own tool names. Its loader is
+// strict: `tools` is a list of Gemini tool names (MCP tools are `mcp_<server>_<tool>`), and an unknown key rejects the file.
+const GEMINI_AGENT_TOOLS = { Read: 'read_file', Grep: 'grep_search', Glob: 'glob', Bash: 'run_shell_command', Write: 'write_file', Edit: 'replace' };
+const geminiTool = tool => GEMINI_AGENT_TOOLS[tool] ?? (/^mcp__Estelle__/.test(tool) ? tool.replace(/^mcp__Estelle__/, 'mcp_Estelle_') : null);
+for (const entry of (await readdir(join(root, 'agents'))).sort()) {
+  const source = await readFile(join(root, 'agents', entry), 'utf8');
+  const [, name, description, tools, body] = /^---\nname: (.+)\ndescription: (.+)\ntools: (.+)\n---\n([\s\S]+)$/.exec(source) ?? [];
+  if (!name) throw new Error(`Agent needs name, description and tools lines: ${entry}`);
+  const mapped = [...new Set(tools.split(',').map(tool => geminiTool(tool.trim())).filter(Boolean))];
+  emit(`plugins/gemini/agents/${entry}`, `---\nname: ${name}\ndescription: ${description}\ntools:\n${mapped.map(tool => `  - ${tool}`).join('\n')}\n---\n${body}`);
+}
+
 // Hermes Agent: a directory plugin (`plugin.yaml` and an `__init__.py` with `register(ctx)`), installed with
 // `hermes plugins install Fate-Labs-CA/estelle-plugins/plugins/hermes`. The Python side is hosts/hermes/__init__.py.
 emit('plugins/hermes/plugin.yaml', `name: estelle
@@ -222,14 +260,14 @@ emit('plugins/openclaw/plugin.json', { $schema: 'https://agent-plugins.org/schem
 // `mcp.json` entry to merge into `~/.fx/mcp.json` for key sign-in; `/mcp add Estelle <url>` signs in with OAuth instead.
 emit('plugins/fx/mcp.json', { mcpServers: { Estelle: { type: 'http', url: server.url, bearer_token_env: 'ESTELLE_API_KEY' } } });
 
-const HOSTS = ['claude', 'codex', 'kimi', 'grok', 'cursor', 'dsh', 'opencode', 'pi', 'qwen', 'hermes', 'mini-swe-agent',
+const HOSTS = ['claude', 'codex', 'kimi', 'grok', 'cursor', 'dsh', 'opencode', 'pi', 'qwen', 'gemini', 'hermes', 'mini-swe-agent',
   'openclaw', 'fx'];
 const ASSETS = ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE', 'NOTICE'];
 // Codex gets generated skills and Claude gets generated copies (both above); the other hosts copy commands as they are.
 // mini-swe-agent needs only the runtime (its bridge); OpenClaw and fx take only content, no hook runner.
 const CONTENT_ONLY = ['skills', 'instructions.md', 'LICENSE', 'NOTICE'];
 const assetsFor = host => host === 'mini-swe-agent' ? ['runtime', 'LICENSE', 'NOTICE']
-  : ['openclaw', 'fx'].includes(host) ? CONTENT_ONLY : [...ASSETS, ...(['codex', 'claude', 'qwen'].includes(host) ? [] : ['commands']),
+  : ['openclaw', 'fx'].includes(host) ? CONTENT_ONLY : [...ASSETS, ...(['codex', 'claude', 'qwen', 'gemini'].includes(host) ? [] : ['commands']),
   ...(['claude', 'opencode'].includes(host) ? ['agents'] : [])];
 async function inventory(directory, prefix = '') {
   const output = new Map();

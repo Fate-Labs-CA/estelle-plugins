@@ -9,7 +9,7 @@ import { sendBatch } from '../runtime/stream.mjs';
 import { VERSION } from '../runtime/version.mjs';
 
 const OLD = '0.0.15';
-const HOSTS = ['claude-code', 'codex', 'cursor', 'kimi', 'grok', 'qwen-code', 'opencode', 'hermes', 'pi', 'dsh'];
+const HOSTS = ['claude-code', 'codex', 'cursor', 'kimi', 'grok', 'qwen-code', 'gemini-cli', 'opencode', 'hermes', 'pi', 'dsh'];
 
 async function state(t) {
   const dir = await mkdtemp(join(tmpdir(), 'estelle-update-'));
@@ -57,12 +57,13 @@ test('every host shows the line in its own place and the commands match its inst
     const text = JSON.stringify(out);
     const line = noticeLine(host, OLD, '0.0.24');
     assert.ok(text.includes(JSON.stringify(line).slice(1, -1)) || text.includes('behind 0.0.24'), `${host}: ${text}`);
-    if (host === 'claude-code' || host === 'codex') assert.equal(out.systemMessage, line);
+    if (host === 'claude-code' || host === 'codex' || host === 'gemini-cli') assert.equal(out.systemMessage, line);
     if (host === 'cursor') assert.equal(out.user_message, line);
     if (host === 'pi') assert.equal(out.warning, line);
   }
   assert.match(noticeLine('codex', OLD, '0.0.24'), /codex plugin marketplace upgrade estelle-plugins/);
   assert.match(noticeLine('grok', OLD, '0.0.24'), /estelle-plugins@v0\.0\.24#plugins\/grok/);
+  assert.match(noticeLine('gemini-cli', OLD, '0.0.24'), /gemini extensions install .*plugins\/gemini/);
 });
 
 test('hosts with no user channel get the line through the start context, Kimi through stderr', async t => {

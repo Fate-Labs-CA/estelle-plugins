@@ -59,6 +59,21 @@ server and the hook API; OpenClaw and fx were not run. Details: [hosts/qwen.md](
 [hosts/hermes.md](hosts/hermes.md), [hosts/mini-swe-agent.md](hosts/mini-swe-agent.md), [hosts/openclaw.md](hosts/openclaw.md),
 [hosts/fx.md](hosts/fx.md).
 
+| Feature | Gemini CLI |
+|---|---|
+| Package | Extension (`gemini-extension.json`, hooks in `hooks/hooks.json`) |
+| MCP | Extension, OAuth from `/mcp auth Estelle` |
+| Skills, subagent definitions | Yes, yes (the subagents are not captured: Gemini CLI has no subagent hooks) |
+| Commands | Native TOML (`/estelle:*`) |
+| Automatic recall | `BeforeAgent` hook context |
+| Write warning | `BeforeTool`, shown to the person (cannot reach the model) |
+| Transcript capture | Gemini CLI's chat recording |
+| Checkpoints and exit save | Yes |
+
+Gemini CLI was checked by installing the released CLI, loading the extension, its commands and its agents with the CLI's
+own loaders, and running the hooks against recordings in the CLI's format. It was not run signed in. Details:
+[hosts/gemini.md](hosts/gemini.md).
+
 Rooms needs server-side host support, an authenticated owner and a session proof. Native hook
 identity and Cursor's `user_email` are not substitutes for that proof or permission to share.
 Plugins do not take over another terminal or bypass member/admin permissions.

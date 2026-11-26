@@ -30,6 +30,7 @@ async function adapter(host) {
   if (host === 'pi') return import('../adapters/pi.mjs');
   if (host === 'hermes') return import('../adapters/hermes.mjs');
   if (host === 'qwen-code') return import('../adapters/qwen.mjs');
+  if (host === 'gemini-cli') return import('../adapters/gemini.mjs');
   throw new Error('unsupported_host');
 }
 
@@ -66,7 +67,7 @@ export async function drainOne(stateDir, request) {
     await writeJson(cursorPath, { last: name });
     const path = join(stateDir, 'deferred', name);
     const item = await readJson(path, 16_000);
-    if (!['claude-code', 'codex', 'kimi', 'grok', 'cursor', 'dsh', 'opencode', 'pi', 'hermes', 'qwen-code'].includes(item.host)) throw new Error('unsupported_host');
+    if (!['claude-code', 'codex', 'kimi', 'grok', 'cursor', 'dsh', 'opencode', 'pi', 'hermes', 'qwen-code', 'gemini-cli'].includes(item.host)) throw new Error('unsupported_host');
     const repo = repository(item.payload.cwd);
     const payload = { ...item.payload, hook_event_name: 'Stop' };
     if (item.host === 'kimi') {
@@ -167,13 +168,13 @@ export async function handleHook({ host, payload, stateDir, request, update }) {
 function withUpdateNotice(host, output, line) {
   if (!line) return output;
   if (host === 'cursor') return { ...output, user_message: line };
-  if (host === 'claude-code' || host === 'codex') return { ...output, systemMessage: line };
+  if (host === 'claude-code' || host === 'codex' || host === 'gemini-cli') return { ...output, systemMessage: line };
   if (host === 'pi') return { ...output, warning: line };
   if (host === 'kimi' || host === 'grok') console.error(line); // stderr is the only place they show a person anything at this event
   return output;
 }
 
-const UI_NOTICE_HOSTS = new Set(['claude-code', 'codex', 'cursor', 'pi']);
+const UI_NOTICE_HOSTS = new Set(['claude-code', 'codex', 'cursor', 'pi', 'gemini-cli']);
 
 /** The warning added to whatever this event already answers. ⛔ It adds words and never a decision: no host is told to stop.
  *  Each host's own field, because each shows a different one. Stderr too, the only place Kimi has at this event. */
@@ -185,6 +186,8 @@ function withWarning(host, output, warning) {
   if (['dsh', 'opencode', 'pi', 'hermes'].includes(host)) return { ...output, warning };
   const earlier = output?.hookSpecificOutput?.additionalContext;
   const additionalContext = earlier ? `${earlier}\n\n${warning}` : warning;
+  // Gemini CLI's BeforeTool output cannot carry context to the model; `systemMessage` is what it shows the person.
+  if (host === 'gemini-cli') return { ...output, systemMessage: warning };
   if (host === 'grok') return { ...output, hookSpecificOutput: { ...output?.hookSpecificOutput, additionalContext } };
   return { ...output, systemMessage: warning, hookSpecificOutput: { ...output?.hookSpecificOutput, hookEventName: 'PreToolUse', additionalContext } };
 }
@@ -211,7 +214,8 @@ async function answerEvent({ host, port, n, payload, stateDir, request, notice: 
   if (recalling) await new Promise((resolve) => setImmediate(resolve));
   const actions = [];
   const edited = n.event === 'PostToolUse' && mutatingTool(n.toolName)
-    && n.raw?.tool_response?.is_error !== true && n.raw?.tool_response?.success !== false;
+    && n.raw?.tool_response?.is_error !== true && n.raw?.tool_response?.success !== false
+    && !n.raw?.tool_response?.error; // Gemini CLI: AfterTool's tool_response.error
   if (repo && (edited || ['Stop', 'SessionStart'].includes(n.event))) {
     actions.push(runAction('reindex', n, stateDir, () => queueReindex({ normalized: n, repo, stateDir, request })));
   }

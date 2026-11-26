@@ -37,7 +37,7 @@ test('one intent map reaches every host from intent-map.md, and a hand edit to t
     '`session_message`', '`estelle_room`', '`estelle_improve`', '`scan`', 'before saying you don\'t know']) {
     assert(map.includes(word), word);
   }
-  const allHosts = ['claude', 'codex', 'cursor', 'dsh', 'grok', 'kimi', 'opencode', 'pi', 'qwen', 'hermes', 'openclaw', 'fx'];
+  const allHosts = ['claude', 'codex', 'cursor', 'dsh', 'grok', 'kimi', 'opencode', 'pi', 'qwen', 'gemini', 'hermes', 'openclaw', 'fx'];
   for (const file of ['instructions.md', 'skills/estelle/SKILL.md']) {
     assert.equal((await read(file)).split(map).length, 2, `${file} carries the map exactly once`);
     for (const host of allHosts) assert((await read(`plugins/${host}/${file}`)).includes(map), `${host}/${file}`);

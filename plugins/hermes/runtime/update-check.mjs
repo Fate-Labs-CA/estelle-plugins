@@ -40,6 +40,8 @@ export function updateSteps(host, latest) {
       return `Run \`grok plugin install Fate-Labs-CA/estelle-plugins@v${latest}#plugins/grok\`, then start a fresh session.`;
     case 'qwen-code':
       return 'Pull your estelle-plugins clone, run `qwen extensions install ./estelle-plugins/plugins/qwen`, then restart Qwen Code.';
+    case 'gemini-cli':
+      return 'Pull your estelle-plugins clone, run `gemini extensions install ./estelle-plugins/plugins/gemini --consent`, then restart Gemini CLI.';
     case 'opencode':
       return 'Run `opencode plugin @fatelabs/opencode-estelle -g`, then restart OpenCode.';
     case 'hermes':

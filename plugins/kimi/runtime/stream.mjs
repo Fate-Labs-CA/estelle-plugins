@@ -20,7 +20,7 @@ const INJECTED = ['<system-reminder', '<command-', '<local-command', '<task-noti
 const CODEX_INJECTED = [...INJECTED, '<environment_context', '<user_instructions', '# AGENTS.md instructions', '<skill', '<turn_aborted', '<user_shell_command'];
 const AGENTS = { claude: 'claude-code', 'claude-code': 'claude-code', codex: 'codex', kimi: 'kimi-code', 'kimi-code': 'kimi-code',
   grok: 'grok', cursor: 'cursor', dsh: 'deepseek-harness', 'deepseek-harness': 'deepseek-harness', opencode: 'opencode', pi: 'pi',
-  hermes: 'hermes', 'qwen-code': 'qwen-code' };
+  hermes: 'hermes', 'qwen-code': 'qwen-code', 'gemini-cli': 'gemini-cli' };
 const WAITING = 'waiting_for_review/input_required';
 const string = value => typeof value === 'string' ? value : '';
 const validTime = value => typeof value === 'string' && Number.isFinite(Date.parse(value));
@@ -530,6 +530,48 @@ export function mapQwen(entry, offset, notes = {}) {
   return out;
 }
 
+const GEMINI_AGENT = 'gemini-cli';
+const HOOK_CONTEXT = /<hook_context>[\s\S]*?<\/hook_context>/g;
+// Gemini CLI's own context messages: its session context and what a hook's `additionalContext` becomes.
+export const GEMINI_INJECTED = ['<session_context', '<hook_context>', ...INJECTED];
+/** A Gemini CLI message's text parts. `content` is a string or Gemini parts; a hook's context is wrapped in `<hook_context>` and is not the person's words. */
+export function geminiParts(content) {
+  const parts = typeof content === 'string' ? [{ text: content }] : Array.isArray(content) ? content.slice(0, LIMITS.messageBlocks) : [];
+  return parts.filter(part => typeof part?.text === 'string').map(part => ({ ...part, text: part.text.replace(HOOK_CONTEXT, '').trim() }))
+    .filter(part => part.text && !GEMINI_INJECTED.some(prefix => part.text.startsWith(prefix)));
+}
+/** Gemini CLI's chat recording (`~/.gemini/tmp/<project>/chats/session-<time>-<id>.jsonl`, written by ChatRecordingService in
+ *  @google/gemini-cli 0.71.1): a metadata line, then one line per message record `{id, timestamp, type, content, ...}` with `type`
+ *  `user` | `gemini` | `info` | `error` | `warning`, and `{$set}` metadata updates. A message is appended again whenever it changes
+ *  (its tool calls finishing, its token counts), so the same id repeats; every event key is derived from the id, which the server
+ *  replays idempotently. A `gemini` message carries its tool calls with their results in `toolCalls`. */
+export function mapGemini(entry, offset, notes = {}) {
+  if (!entry || !validTime(entry.timestamp) || !string(entry.id)) return [];
+  const { timestamp: at, id } = entry;
+  if (entry.type === 'user') {
+    return messageEvents(geminiParts(entry.content).map(({ text }) => ({ type: 'text', text })), 'user', id, at, GEMINI_AGENT, notes);
+  }
+  if (entry.type !== 'gemini') return [];
+  const calls = Array.isArray(entry.toolCalls) ? entry.toolCalls.slice(0, LIMITS.messageBlocks).filter(call => string(call?.id) && string(call?.name)) : [];
+  const thoughts = Array.isArray(entry.thoughts) ? entry.thoughts.filter(item => string(item?.description).trim()) : [];
+  const blocks = [...thoughts.map(item => ({ type: 'thinking', thinking: `${string(item.subject)} ${item.description}`.trim() })),
+    ...geminiParts(entry.content).map(({ text }) => ({ type: 'text', text })),
+    ...calls.map(call => ({ type: 'tool_use', id: call.id, name: GEMINI_TOOLS[call.name] ?? call.name, input: toolInput(call) }))];
+  const out = messageEvents(blocks, 'assistant', id, at, GEMINI_AGENT, notes);
+  for (const call of calls.filter(item => ['success', 'error', 'cancelled'].includes(item.status))) {
+    const result = (Array.isArray(call.result) ? call.result : []).map(part => part?.functionResponse?.response).find(Boolean) ?? {};
+    out.push(...messageEvents([{ type: 'tool_result', tool_use_id: call.id, is_error: call.status !== 'success',
+      content: string(result.output) || string(result.error) || string(call.resultDisplay) }], 'tool', `${call.id}`, call.timestamp && validTime(call.timestamp) ? call.timestamp : at, GEMINI_AGENT, notes));
+  }
+  const tokens = entry.tokens;
+  if (tokens && out.length) out[0].payload.usage = { input: tokens.input ?? 0, output: tokens.output ?? 0, cache_read: tokens.cached ?? 0,
+    cache_write: 0, model: string(entry.model) || null };
+  return out;
+}
+// Gemini CLI's file tools, under the names the shared edit rendering knows.
+const GEMINI_TOOLS = Object.freeze({ write_file: 'Write', replace: 'Edit' });
+const toolInput = call => (call.args && typeof call.args === 'object' && !Array.isArray(call.args) ? call.args : {});
+
 export async function readJson(path, fallback, max = LIMITS.stateBytes) {
   let handle;
   try {
@@ -663,7 +705,7 @@ function collectWindow(window, host, notes, remaining, child = false) {
   let lines = 0;
   const mapper = host === 'codex' ? mapCodex : host === 'kimi-code' ? mapKimi
     : host === 'grok' ? mapGrok : host === 'cursor' ? mapCursor : host === DSH_AGENT ? mapDsh : host === PI_AGENT ? mapPi
-    : host === QWEN_AGENT ? mapQwen : mapClaude;
+    : host === QWEN_AGENT ? mapQwen : host === GEMINI_AGENT ? mapGemini : mapClaude;
   const buffer = window.buffer;
   for (let from = 0; from < buffer.length && lines < LIMITS.lines; lines++) {
     const end = buffer.indexOf(10, from) + 1;
@@ -831,6 +873,8 @@ export async function streamSession({ payload, host, repo, stateDir, request, no
       capture_scope: "Pi's own session file, every branch in file order; extension messages are skipped" } : {}),
     ...(harness === 'hermes' ? { transcript_format: 'hermes-plugin-mirror', current_format_verified: true, event_times: 'capture-time',
       capture_scope: "the turn's messages the plugin read from Hermes's post_llm_call hook; subagent sessions are not linked to their parent" } : {}),
+    ...(harness === GEMINI_AGENT ? { transcript_format: 'gemini-chat-recording', current_format_verified: true,
+      capture_scope: "Gemini CLI's own chat recording; the person's prompts, replies, thoughts, tool calls and results; subagent sessions (chats/<parent>/) are not captured" } : {}),
     ...(harness === QWEN_AGENT ? { transcript_format: 'qwen-chat-recording', current_format_verified: true,
       capture_scope: "Qwen Code's own chat recording; the person's prompts, replies, tool calls and results; system records are skipped" } : {}) };
 }
