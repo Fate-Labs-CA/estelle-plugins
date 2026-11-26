@@ -1,0 +1,9 @@
+{"sessionId":"7d3f9a2e-5b1c-4e8a-9c64-0f2b6a1d8e35","projectHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","startTime":"2026-11-25T10:00:00.000Z","lastUpdated":"2026-11-25T10:00:00.000Z","kind":"main"}
+{"id":"u-1","timestamp":"2026-11-25T10:00:01.000Z","type":"user","content":[{"text":"read the readme"},{"text":"<hook_context>we chose JSON mode</hook_context>"}]}
+{"id":"g-1","timestamp":"2026-11-25T10:00:02.000Z","type":"gemini","content":"","thoughts":[{"subject":"Plan","description":"Read the file first.","timestamp":"2026-11-25T10:00:02.000Z"}],"model":"gemini-mock","toolCalls":[{"id":"read_file_1764064801000_0","name":"read_file","args":{"file_path":"README.md"},"status":"executing","timestamp":"2026-11-25T10:00:03.000Z","displayName":"ReadFile","description":"README.md","renderOutputAsMarkdown":true}]}
+{"$set":{"lastUpdated":"2026-11-25T10:00:03.000Z"}}
+{"id":"g-1","timestamp":"2026-11-25T10:00:02.000Z","type":"gemini","content":"","thoughts":[{"subject":"Plan","description":"Read the file first.","timestamp":"2026-11-25T10:00:02.000Z"}],"model":"gemini-mock","toolCalls":[{"id":"read_file_1764064801000_0","name":"read_file","args":{"file_path":"README.md"},"status":"success","timestamp":"2026-11-25T10:00:03.000Z","displayName":"ReadFile","description":"README.md","renderOutputAsMarkdown":true,"result":[{"functionResponse":{"id":"read_file_1764064801000_0","name":"read_file","response":{"output":"hello\n"}}}],"resultDisplay":""}]}
+{"id":"i-1","timestamp":"2026-11-25T10:00:04.000Z","type":"info","content":"Request cancelled."}
+{"id":"g-2","timestamp":"2026-11-25T10:00:05.000Z","type":"gemini","content":"The readme says hello.","model":"gemini-mock"}
+{"id":"g-2","timestamp":"2026-11-25T10:00:05.000Z","type":"gemini","content":"The readme says hello.","model":"gemini-mock","tokens":{"input":100,"output":7,"cached":0,"thoughts":0,"tool":0,"total":107}}
+{"$set":{"lastUpdated":"2026-11-25T10:00:06.000Z"}}

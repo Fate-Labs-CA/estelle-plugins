@@ -1,0 +1,14 @@
+{
+  "description": "Runs Estelle's grounded, adversarial review over a change before it is proposed. Use after writing or modifying code, before any commit or PR, and whenever correctness is arguable rather than obvious.",
+  "tools": [
+    "read_file",
+    "grep_files",
+    "glob_files",
+    "shell",
+    "toolbox"
+  ],
+  "mcp_servers": [
+    "Estelle"
+  ],
+  "prompt": "append"
+}

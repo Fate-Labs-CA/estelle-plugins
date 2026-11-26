@@ -2,7 +2,7 @@
 import { open } from 'node:fs/promises';
 import { redact, scrub, stripPrivate, sanitize } from './redact.mjs';
 import { cloudExecutionIdentity } from './identity.mjs';
-import { safeSession, grokContentText } from './stream.mjs';
+import { safeSession, grokContentText, geminiParts } from './stream.mjs';
 import { readKimiHistory } from './kimi-history.mjs';
 
 export const CHECKPOINT_LIMITS = Object.freeze({
@@ -11,7 +11,7 @@ export const CHECKPOINT_LIMITS = Object.freeze({
 });
 const HOSTS = { claude: 'claude-code', 'claude-code': 'claude-code', codex: 'codex', kimi: 'kimi-code', 'kimi-code': 'kimi-code',
   grok: 'grok', cursor: 'cursor', dsh: 'deepseek-harness', 'deepseek-harness': 'deepseek-harness', opencode: 'opencode', pi: 'pi',
-  hermes: 'hermes', 'qwen-code': 'qwen-code' };
+  hermes: 'hermes', 'qwen-code': 'qwen-code', 'gemini-cli': 'gemini-cli', antigravity: 'antigravity', openclaw: 'openclaw' };
 const INJECTED = ['<environment_context', '<user_instructions', '# AGENTS.md instructions', '<skill', '<system-reminder', '<task-notification', '<command-', '<local-command', '<turn_aborted'];
 const string = value => typeof value === 'string' ? value : '';
 const trimmed = text => Array.from(text).slice(0, CHECKPOINT_LIMITS.chars).join('');
@@ -62,7 +62,7 @@ function messageOf(record, host, subagent) {
   if (!record || typeof record !== 'object') return null;
   // OpenCode's and Hermes's plugin mirrors are written in Claude Code's line shape (adapters/opencode-mirror.mjs,
   // hosts/hermes/__init__.py).
-  if (host === 'claude-code' || host === 'opencode' || host === 'hermes') {
+  if (host === 'claude-code' || host === 'opencode' || host === 'hermes' || host === 'openclaw') {
     if (!['user', 'assistant'].includes(record.type) || record.isMeta || record.isCompactSummary || (record.isSidechain && !subagent)) return null;
     return { role: record.type, ...record.message };
   }
@@ -88,6 +88,18 @@ function messageOf(record, host, subagent) {
     // Hook context Qwen Code appends to the prompt (`<qwen:user-prompt-submit-context>`) is not what the person typed.
     return role ? { role, content: parts.filter(part => typeof part?.text === 'string' && part.thought !== true && !part.text.trimStart().startsWith('<qwen:'))
       .map(part => ({ type: 'text', text: part.text })) } : null;
+  }
+  if (host === 'gemini-cli') {
+    // Gemini CLI's chat recording: `user` and `gemini` messages; `info`, `error` and metadata lines are not the conversation.
+    const role = record.type === 'user' ? 'user' : record.type === 'gemini' ? 'assistant' : null;
+    return role && typeof record.id === 'string' ? { role, recordId: record.id,
+      content: geminiParts(record.content).map(({ text }) => ({ type: 'text', text })) } : null;
+  }
+  if (host === 'antigravity') {
+    // Inferred dialect: USER_INPUT steps are the person, PLANNER_RESPONSE steps carry the model's words.
+    const text = typeof record.content === 'string' ? record.content : '';
+    if (record.source === 'USER_EXPLICIT' && record.type === 'USER_INPUT') return { role: 'user', content: text };
+    return record.source === 'MODEL' && record.type === 'PLANNER_RESPONSE' && text ? { role: 'assistant', content: text } : null;
   }
   if (host === 'pi') {
     // Pi's session file: `message` entries. Extension messages (role `custom`) are not the conversation.
@@ -144,7 +156,7 @@ function mergeChunks(messages) {
   return merged;
 }
 
-function parseWindow(buffer, host, subagent, messages, counters, context) {
+function parseWindow(buffer, host, subagent, messages, counters, context, seen) {
   let end = buffer.lastIndexOf(10);
   if (end < buffer.length - 1) counters.partial_last_line = true;
   for (; end >= 0 && counters.lines < CHECKPOINT_LIMITS.records;) {
@@ -160,6 +172,8 @@ function parseWindow(buffer, host, subagent, messages, counters, context) {
     const message = messageOf(record, host, subagent);
     if (!message) { counters.unknown_lines++; continue; }
     counters.recognized_lines++;
+    // Gemini CLI appends a message again each time it changes. Read newest first, so the first sight of an id is its final form.
+    if (message.recordId !== undefined) { if (seen.has(message.recordId)) continue; seen.add(message.recordId); }
     const kept = checkpointText(message, counters);
     if (!kept) continue;
     if (messages.length < CHECKPOINT_LIMITS.messages) messages.push(kept);
@@ -178,10 +192,11 @@ export async function readTranscriptMessages({ path, host, subagent = false }) {
     messages_truncated: 0, blocks_truncated: 0, record_limit_reached: false, partial_last_line: false };
   const context = {};
   // Reverse order makes message cap retain the most recent turns, while context keeps the latest fact.
-  for (const window of bounded.windows.toReversed()) parseWindow(window, harness, subagent, messages, counters, context);
+  const seen = new Set();
+  for (const window of bounded.windows.toReversed()) parseWindow(window, harness, subagent, messages, counters, context, seen);
   messages.reverse();
   const legacy = harness === 'kimi-code';
-  const inferred = harness === 'grok' || harness === 'cursor';
+  const inferred = harness === 'grok' || harness === 'cursor' || harness === 'antigravity';
   if (harness === 'grok') messages.splice(0, messages.length, ...withoutPrivate(mergeChunks(messages)));
   const partial = bounded.partial || legacy || inferred || counters.record_limit_reached || counters.partial_last_line || counters.turns_dropped > 0
     || counters.invalid_lines > 0 || counters.messages_truncated > 0 || counters.blocks_truncated > 0;

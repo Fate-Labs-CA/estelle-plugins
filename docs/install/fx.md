@@ -1,7 +1,7 @@
 # fx
 
 "fx" here is the coding agent CLI from Vercel Labs ([vercel-labs/fx](https://github.com/vercel-labs/fx), [fx.sh](https://fx.sh)),
-not the JSON viewer of the same name. Package: `plugins/fx`: Estelle's skills and one MCP entry. Read against fx
+not the JSON viewer of the same name. Package: `plugins/fx`: Estelle's skills, four agent profiles and one MCP entry. Read against fx
 v0.0.17; not run on a machine here.
 
 fx has MCP and skills but no plugin format and no hooks, so there is nothing to install as a package and sessions are
@@ -29,6 +29,16 @@ Skills: copy them where fx reads skills.
 git clone https://github.com/Fate-Labs-CA/estelle-plugins
 mkdir -p ~/.fx/skills && cp -R estelle-plugins/plugins/fx/skills/* ~/.fx/skills/
 ```
+
+Agent profiles: the four shared agents as fx profiles (`profile.json` and `prompt.md`, generated from `agents/`). Each
+reaches Estelle through fx's `toolbox` and the `Estelle` MCP server above, and none sets `permission_mode`.
+
+```sh
+mkdir -p ~/.fx/agents && cp -R estelle-plugins/plugins/fx/agents/* ~/.fx/agents/
+```
+
+Then ask fx: `Have a subagent in the estelle-reviewer profile review the parser change.` (`/launch estelle-reviewer` runs a
+whole instance in one.) Profiles in `~/.fx/agents` win over a repository's `.fx/agents` of the same name.
 
 ## Check it
 

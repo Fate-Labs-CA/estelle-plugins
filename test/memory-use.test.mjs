@@ -140,7 +140,7 @@ test('the memory guidance reaches every host as one authored section', async () 
   for (const word of ['<private>', '`memory_chat`', '`list_sessions`', 'repeat an investigation', 'What you write in the\n  reply is what gets remembered'.replace('\n  ', ' ')]) {
     assert.ok(map.replace(/\s+/g, ' ').includes(word.replace(/\s+/g, ' ')), word);
   }
-  for (const host of ['claude', 'codex', 'cursor', 'grok', 'kimi', 'qwen', 'opencode', 'pi', 'hermes', 'dsh']) {
+  for (const host of ['claude', 'codex', 'cursor', 'grok', 'kimi', 'qwen', 'gemini', 'opencode', 'pi', 'hermes', 'dsh']) {
     assert.ok((await readFile(join(root, 'plugins', host, 'instructions.md'), 'utf8')).includes('## Memory'), host);
   }
 });

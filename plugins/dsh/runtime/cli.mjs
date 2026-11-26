@@ -2,6 +2,7 @@
 import { existsSync } from 'node:fs';
 import { opendir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { launchCredential } from './auth.mjs';
 import { apiBase, apiClient, errorCode, MAX_JSON_BYTES, readJson, recordStatus, stateDirectory } from './io.mjs';
 import { checkKey, KEY_MESSAGES } from './key-check.mjs';
 import { VERSION } from './version.mjs';
@@ -34,6 +35,18 @@ async function status(stateDir) {
 
 async function doctor() {
   const api = apiBase();
+  // Capture-only sign-in is a separate, narrower credential; the canonical key wins when both exist.
+  const { captureHookContext } = await import('./capture-auth.mjs');
+  let capture = null;
+  let captureError;
+  try { capture = await captureHookContext(); } catch (error) { captureError = errorCode(error); }
+  if (capture) {
+    console.log(JSON.stringify({ version: VERSION, node: process.version, api,
+      credential: 'capture_scoped', capture_auth: 'configured_not_probed', mcp_auth: 'not_probed',
+      hook_execution: 'not_observed', automatic_pr_verification: 'not_available', work_metrics: 'not_available',
+      status: await status(stateDirectory(process.env, capture.partition)) }, null, 2));
+    return;
+  }
   const keyPresent = Boolean(process.env.ESTELLE_API_KEY);
   // Presence is not validity: a revoked key is present. Anything but `accepted` is not a pass.
   const keyCheck = keyPresent ? await checkKey(process.env.ESTELLE_API_KEY, { base: api, version: VERSION }) : 'not_checked_no_key';
@@ -41,7 +54,7 @@ async function doctor() {
   const codexHooks = existsSync(new URL('../.codex-plugin/plugin.json', import.meta.url))
     ? await (await import('./codex-trust.mjs')).codexHookTrust() : undefined;
   console.log(JSON.stringify({ version: VERSION, node: process.version, api,
-    credential: keyPresent ? 'environment' : 'missing', key_check: keyCheck,
+    credential: keyPresent ? 'environment' : 'missing', ...(captureError ? { capture_auth: captureError } : {}), key_check: keyCheck,
     ...(KEY_MESSAGES[keyCheck] ? { key_message: KEY_MESSAGES[keyCheck] } : {}),
     ...(codexHooks ? { codex_hooks: codexHooks } : {}),
     status: await status(stateDirectory()) }, null, 2));
@@ -57,8 +70,14 @@ if (command === 'doctor') {
   // Optional integration failures must not abort a user's turn. They remain visible in doctor.
   try {
     payload = await readInput();
+    // Antigravity's stdin does not name the event, so the hook command line does: `hook antigravity <Event>`.
+    if (host === 'antigravity' && payload && typeof payload === 'object' && !Array.isArray(payload)) payload.hook_event_name ??= process.argv[4];
     const { handleHook } = await import('./hooks.mjs');
-    const output = await handleHook({ host, payload, stateDir: stateDirectory(), request: apiClient(), update: {} });
+    const output = await handleHook({ host, payload, stateDir: stateDirectory(), request: apiClient(), update: {},
+      requestContext: async () => {
+        const { hookCredentialContext } = await import('./capture-auth.mjs');
+        return hookCredentialContext({ stateDirectory, apiClient, stored: launchCredential });
+      } });
     if (output) console.log(JSON.stringify(output));
   } catch (error) {
     if (host === 'cursor') {
@@ -107,17 +126,23 @@ if (command === 'doctor') {
     console.error(`Estelle MCP call failed: ${code}`);
     process.exitCode = 1;
   }
+} else if (command === 'mcp-headers') {
+  // Always a JSON object and exit 0: anything else would stop the host falling back to its own OAuth.
+  let headers = {};
+  try { headers = await (await import('./capture-auth.mjs')).mcpHeaders(); } catch { headers = {}; }
+  console.log(JSON.stringify(headers));
 } else if (command === 'setup') {
   try {
     const { runSetupArgs } = await import('./setup.mjs');
     const result = await runSetupArgs(process.argv.slice(3));
     console.log(JSON.stringify(result));
-    if (!['planned', 'applied', 'unchanged'].includes(result.status)) process.exitCode = 1;
+    if (!['planned', 'applied', 'unchanged', 'capture_configured', 'capture_already_configured',
+      'capture_signed_out', 'capture_not_configured'].includes(result.status)) process.exitCode = 1;
   } catch {
     console.log(JSON.stringify({ status: 'pending_setup_unavailable' }));
     process.exitCode = 1;
   }
 } else {
-  console.error('Usage: node runtime/cli.mjs hook <claude-code|codex|kimi|grok|cursor|dsh|opencode|pi|hermes|qwen-code> | doctor | mcp tools | mcp call <tool> <json> | setup <host> [--apply] [--expect SHA256]');
+  console.error('Usage: node runtime/cli.mjs hook <claude-code|codex|kimi|grok|cursor|dsh|opencode|pi|hermes|qwen-code|gemini-cli|antigravity|openclaw> | doctor | mcp tools | mcp call <tool> <json> | mcp-headers | setup <host> [--apply] [--expect SHA256]');
   process.exitCode = 1;
 }

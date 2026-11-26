@@ -1,0 +1,25 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "estelle",
+  "displayName": "Fate Labs Estelle",
+  "logo": "assets/logo.svg",
+  "version": "0.0.27",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Fate Labs",
+    "url": "https://fatelabs.ca"
+  },
+  "description": "Estelle gives Antigravity repository memory, grounded review and session capture through MCP, hooks, skills and agents.",
+  "homepage": "https://github.com/Fate-Labs-CA/estelle-plugins/blob/main/docs/install/antigravity.md",
+  "repository": "https://github.com/Fate-Labs-CA/estelle-plugins",
+  "keywords": [
+    "estelle",
+    "memory",
+    "mcp",
+    "code-review"
+  ],
+  "suggestedPrompts": [
+    "Resume where I left off with Estelle",
+    "Review my current change with Estelle"
+  ]
+}

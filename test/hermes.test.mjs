@@ -33,7 +33,8 @@ ${body}`;
 
 test('maps every Hermes hook the plugin sends onto one Estelle event', () => {
   const expected = { on_session_start: 'SessionStart', pre_llm_call: 'UserPromptSubmit', pre_tool_call: 'PreToolUse',
-    post_tool_call: 'PostToolUse', post_llm_call: 'Stop', on_session_finalize: 'SessionEnd' };
+    post_tool_call: 'PostToolUse', post_llm_call: 'Stop', on_session_finalize: 'SessionEnd',
+    subagent_start: 'SubagentStart', subagent_stop: 'SubagentStop', post_compaction: 'PreCompact' };
   assert.deepEqual([...HOOK_EVENTS].sort(), Object.keys(expected).sort());
   for (const [native, event] of Object.entries(expected)) {
     const tool = ['PreToolUse', 'PostToolUse'].includes(event) ? { tool_name: 'read_file' } : {};
@@ -63,10 +64,42 @@ print(json.dumps({"hooks": ctx.hooks, "skills": len(ctx.skills), "estelle": "est
                   "commands": sorted(ctx.commands), "answer": answer, "sent": ctx.sent}))`);
     assert.deepEqual(result.hooks, HOOK_EVENTS.slice());
     assert.ok(result.skills >= 20 && result.estelle);
-    assert.deepEqual(result.commands, ['estelle-cloud', 'estelle-code', 'estelle-handoff', 'estelle-monitor', 'estelle-resume',
+    assert.deepEqual(result.commands, ['estelle-cloud', 'estelle-code', 'estelle-handoff', 'estelle-login', 'estelle-logout', 'estelle-monitor', 'estelle-resume',
       'estelle-review', 'estelle-rooms']);
     assert.equal(result.answer, null);
     assert.match(result.sent[0], /Target \(blank means the current diff\): the auth change/);
+  });
+
+test('subagent and compaction hooks register only where the installed Hermes lists them, and send the right envelopes',
+  { skip: !python && 'python3 not installed' }, () => {
+    const result = py(`
+class Ctx:
+    def __init__(self): self.hooks = []
+    def register_hook(self, name, fn): self.hooks.append(name)
+    def register_skill(self, *a, **k): pass
+    def register_command(self, *a, **k): pass
+    def inject_message(self, *a, **k): return True
+def hooks(valid):
+    ctx = Ctx(); plugin.register(ctx, plugin.Estelle(home=__import__("pathlib").Path("/tmp"), runner=lambda *a, **k: None), valid_hooks=valid); return ctx.hooks
+old = hooks(set(plugin.BASE_HOOKS)); new = hooks(set(plugin.BASE_HOOKS) | set(plugin.NEWER_HOOKS))
+calls = []
+def runner(command, input=None, **_):
+    calls.append(json.loads(input)); return types.SimpleNamespace(stdout=b"{}")
+e = plugin.Estelle(home=__import__("pathlib").Path("/tmp"), runner=runner, cwd=lambda: "/tmp/hermes-project")
+e.subagent_start(child_session_id="child_1", parent_session_id="parent_1", child_goal="audit billing", child_role="leaf")
+e.subagent_stop(parent_session_id="parent_1", child_role="leaf", child_summary="two bugs", child_status="completed")
+e.post_compaction(session_id="parent_1")
+print(json.dumps({"old": old, "new": new, "calls": calls}))`);
+    assert.deepEqual(result.old, ['on_session_start', 'pre_llm_call', 'pre_tool_call', 'post_tool_call', 'post_llm_call', 'on_session_finalize']);
+    assert.deepEqual(result.new, HOOK_EVENTS.slice());
+    const [start, stop, compaction] = result.calls;
+    assert.equal(normalize(start).event, 'SubagentStart');
+    assert.equal(start.session_id, 'child_1');
+    assert.equal(start.parent_session_id, 'parent_1');
+    assert.equal(start.prompt, 'audit billing');
+    assert.equal(normalize(stop).event, 'SubagentStop');
+    assert.equal(stop.last_assistant_message, 'two bugs');
+    assert.equal(normalize(compaction).event, 'PreCompact');
   });
 
 test('a Hermes turn: recall and instructions reach the model, then the mirror is written and read as a Claude-shaped transcript',

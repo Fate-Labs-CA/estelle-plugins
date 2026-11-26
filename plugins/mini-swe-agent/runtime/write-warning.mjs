@@ -13,7 +13,7 @@ export const FILE_WRITE_MATCHER = `(^|[.:])(${[...FILE_WRITES].join('|')})$`;
 const REMOVED_FIELDS = new Set(['old_string', 'old_str', 'oldText', 'old_text']);
 const PATCH_START = /^\s*\*\*\* Begin Patch\b/;
 const addedPatchLines = patch => patch.split(/\r?\n/).filter(line => /^(?:\+|\*\*\* (?:Add|Update|Move|Delete))/.test(line)).join('\n');
-const FILE_FIELDS = ['file_path', 'filePath', 'path', 'target_file', 'notebook_path', 'filename', 'file'];
+const FILE_FIELDS = ['file_path', 'filePath', 'path', 'target_file', 'notebook_path', 'filename', 'file', 'TargetFile'];
 const PATCH_FILE = /^\*\*\* (?:Add|Update) File: (.+)$/m;
 const MAX_FILE_CHARS = 200;
 

@@ -1,11 +1,12 @@
 {
   "name": "estelle",
-  "version": "0.0.26",
+  "version": "0.0.27",
   "description": "Estelle MCP, memory and session hooks for coding agents.",
   "mcpServers": {
     "Estelle": {
       "httpUrl": "https://api.fatelabs.ca/mcp"
     }
   },
-  "contextFileName": "instructions.md"
+  "contextFileName": "instructions.md",
+  "agents": "agents"
 }

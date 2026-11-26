@@ -34,6 +34,11 @@ Hooks require a usable `ESTELLE_API_KEY`; a separate MCP OAuth login does not es
 identity. Captures omit media bytes and private/encrypted reasoning. Bounds, missing transcripts,
 queued uploads and unsupported formats are not complete history.
 
+Grok Build's SessionStart hook cannot inject the start text or the Room identity: docs.x.ai/build/features/hooks (read 2026-11-25) says
+stdout is ignored for passive events and documents no `additionalContext` for any hook, so this is a platform limit, not a gap in the
+plugin. The Estelle skill is the only start-of-session channel Grok has, and the adapter's `PreToolUse` and `PostToolUse` context stays
+unverified against a live session.
+
 Grok and Cursor prompt hooks cannot inject context. Recall is queued for a matching supported
 tool boundary; a reply with no tool call may receive none. Cursor stop hooks never auto-continue
 the agent. Grok and Cursor transcript readers are inferred from the hook payload contract and
@@ -46,18 +51,48 @@ can and cannot do is in [hosts/opencode.md](hosts/opencode.md) and [hosts/pi.md]
 
 | Feature | Qwen Code | Hermes Agent | mini-swe-agent | OpenClaw | fx |
 |---|---|---|---|---|---|
-| Package | Extension (`qwen-extension.json`) | Directory plugin (`plugin.yaml`) | One config file | Agent Plugins bundle | Skills and an `mcp.json` entry |
+| Package | Extension (`qwen-extension.json`) | Directory plugin (`plugin.yaml`) | One config file | Agent Plugins bundle, or the native plugin (`openclaw-native`) | Skills, four agent profiles and an `mcp.json` entry |
 | MCP | Extension, OAuth from `/mcp` | `hermes mcp add`, OAuth or key | `runtime/cli.mjs mcp` through bash, key only | `openclaw mcp add`, OAuth | `/mcp add`, OAuth or key |
 | Skills | Yes | Yes (`estelle:<skill>`) | No | Yes | Yes (copied to `~/.fx/skills`) |
-| Commands | Native (`/estelle:*`) | Plugin commands (`/estelle-*`) | No | No | No |
-| Automatic recall | Prompt hook | `pre_llm_call` context | No | No | No |
-| Transcript capture | Qwen Code's chat recording | Plugin-written mirror (capture-time stamps) | No | No | No |
-| Checkpoints and exit save | Yes | Yes | No | No | No |
+| Commands | Native (`/estelle:*`) | Plugin commands (`/estelle-*`) | No | Skill roots (native plugin) | No |
+| Automatic recall | Prompt hook | `pre_llm_call` context | No | Native plugin only (`before_prompt_build`) | No |
+| Transcript capture | Qwen Code's chat recording | Plugin-written mirror (capture-time stamps) | No | Native plugin only: plugin-written mirror, shape unverified | No |
+| Checkpoints and exit save | Yes | Yes | No | Native plugin only | No |
 
 Qwen Code, Hermes and mini-swe-agent were run end to end in testing against local stand-ins for the model, the MCP
 server and the hook API; OpenClaw and fx were not run. Details: [hosts/qwen.md](hosts/qwen.md),
 [hosts/hermes.md](hosts/hermes.md), [hosts/mini-swe-agent.md](hosts/mini-swe-agent.md), [hosts/openclaw.md](hosts/openclaw.md),
 [hosts/fx.md](hosts/fx.md).
+
+| Feature | Gemini CLI |
+|---|---|
+| Package | Extension (`gemini-extension.json`, hooks in `hooks/hooks.json`) |
+| MCP | Extension, OAuth from `/mcp auth Estelle` |
+| Skills, subagent definitions | Yes, yes (the subagents are not captured: Gemini CLI has no subagent hooks) |
+| Commands | Native TOML (`/estelle:*`) |
+| Automatic recall | `BeforeAgent` hook context |
+| Write warning | `BeforeTool`, shown to the person (cannot reach the model) |
+| Transcript capture | Gemini CLI's chat recording |
+| Checkpoints and exit save | Yes |
+
+Gemini CLI was checked by installing the released CLI, loading the extension, its commands and its agents with the CLI's
+own loaders, and running the hooks against recordings in the CLI's format. It was not run signed in. Details:
+[hosts/gemini.md](hosts/gemini.md).
+
+Google Antigravity (IDE and CLI) has its own table in [hosts/antigravity.md](hosts/antigravity.md): MCP with its own OAuth, skills, command skills,
+agents, a rule, and hooks for recall (`PreInvocation`), capture and checkpoints (`Stop`) and the write warning. It has no compaction,
+session-end or subagent event, so those parts are not possible there. It was not run in Antigravity.
+
+Session mail at a tool boundary (a message to a running session arrives at its next tool call): Claude Code, Codex,
+OpenCode and Pi, and since this change Cursor and Qwen Code (`additionalContext` at `PostToolUse`, documented by both hosts) and
+OpenClaw (queued for its next prompt build). Not on Grok (its docs say stdout is ignored for passive events), Kimi
+(`PostToolUse` stdout is not specified), Hermes 0.19 (`post_tool_call`'s return is ignored; 0.23's `transform_tool_result`
+could carry it, untested) or dsh (no tool-result hook). The server lists each host in `EXTERNAL_ORIGINS`
+(`api_session_mail.py`); add a host there only together with its plugin side.
+
+`/cloud` and `/handoff` reopen the conversation only on Claude Code and Codex: a cloud box reopens a conversation by running
+that host's own CLI on the imported file, and no other host's CLI runs there. The other hosts still save a checkpoint that the
+new cloud session starts from, which is context, not a reopen, and the server says so in its last message.
 
 Rooms needs server-side host support, an authenticated owner and a session proof. Native hook
 identity and Cursor's `user_email` are not substitutes for that proof or permission to share.

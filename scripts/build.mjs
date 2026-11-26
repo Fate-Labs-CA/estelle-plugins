@@ -3,6 +3,7 @@ import { statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { HOOK_EVENTS as CURSOR_EVENTS } from '../adapters/cursor.mjs';
+import { WRITE_TOOL_MATCHER } from '../adapters/antigravity.mjs';
 import { FILE_WRITE_MATCHER } from '../runtime/write-warning.mjs';
 
 const root = resolve(import.meta.dirname, '..');
@@ -57,8 +58,10 @@ function nativeHooks(host, variable, events) {
 }
 emit('plugins/claude/.claude-plugin/plugin.json', { ...manifest, license: 'Apache-2.0', author: { name: 'Fate Labs' },
   repository: 'https://github.com/uqeu/estelle-plugins', hooks: './hooks/hooks.json', mcpServers: './.mcp.json' });
-// URL only: Claude Code signs in with OAuth. A pinned header disables that, and an unset variable goes out literally.
-emit('plugins/claude/.mcp.json', { mcpServers: { Estelle: { type: 'http', url: server.url } } });
+// The helper prints the plugin's own sign-in, or nothing, in which case Claude Code signs in with its own OAuth as before.
+// Never a pinned header: that disables OAuth, and an unset variable goes out literally.
+emit('plugins/claude/.mcp.json', { mcpServers: { Estelle: { type: 'http', url: server.url,
+  headersHelper: 'node "${CLAUDE_PLUGIN_ROOT}/runtime/cli.mjs" mcp-headers' } } });
 emit('plugins/claude/hooks/hooks.json', nativeHooks('claude-code', 'CLAUDE_PLUGIN_ROOT', common));
 emit('plugins/codex/.codex-plugin/plugin.json', { ...manifest, skills: ['./skills', './command-skills'],
   hooks: './hooks/hooks.json', mcpServers: './.mcp.json' });
@@ -69,8 +72,21 @@ for (const entry of (await readdir(join(root, 'commands'))).sort()) {
   const source = await readFile(join(root, 'commands', entry), 'utf8');
   const [, description, body] = /^---\ndescription: (.+)\n---\n([\s\S]+)$/.exec(source) ?? [];
   if (!description) throw new Error(`Command needs one description line: ${entry}`);
-  emit(`plugins/codex/command-skills/${name}/SKILL.md`, `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\n---\n\n`
-    + body.replaceAll('$ARGUMENTS', 'what the person asked for'));
+  // OpenClaw's native plugin takes the same skill roots (its `skills` manifest list), at the same depth from `runtime/`.
+  const skill = `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\n---\n\n`
+    + body.replaceAll('$ARGUMENTS', 'what the person asked for');
+  emit(`plugins/codex/command-skills/${name}/SKILL.md`, skill);
+  emit(`plugins/openclaw-native/command-skills/${name}/SKILL.md`, skill);
+}
+// OpenClaw has no agent format a plugin can register, and treats an `agents/` root as skill content. Each shared agent is
+// a skill the main agent loads and follows itself; the Claude-only `tools` list is dropped.
+for (const entry of (await readdir(join(root, 'agents'))).sort()) {
+  const source = await readFile(join(root, 'agents', entry), 'utf8');
+  const [, front, body] = /^---\n([\s\S]*?)\n---\n([\s\S]+)$/.exec(source) ?? [];
+  const field = key => new RegExp(`^${key}: (.+)$`, 'm').exec(front ?? '')?.[1]?.trim();
+  if (!field('name') || !field('description')) throw new Error(`Agent needs name and description: ${entry}`);
+  emit(`plugins/openclaw-native/agent-skills/${field('name')}/SKILL.md`, `---\nname: ${field('name')}\ndescription: ${JSON.stringify(field('description'))}\n---\n\n`
+    + 'Follow this as the role to take on for the task, in this conversation.\n\n' + body);
 }
 // Claude Code's own command copies. Two of them run one shell command and relay its last line, so they run on the
 // small model: the session's main model re-read the whole context for every turn of that. The shared files carry
@@ -85,25 +101,25 @@ for (const entry of (await readdir(join(root, 'commands'))).sort()) {
 }
 emit('plugins/codex/.mcp.json', { mcpServers: { Estelle: server } });
 emit('plugins/codex/hooks/hooks.json', nativeHooks('codex', 'PLUGIN_ROOT', [...common, 'Interrupt']));
-const kimiManifest = { ...manifest, skills: ['./skills'], commands: ['./commands'],
+const kimiManifest = { ...manifest, skills: ['./skills'], commands: ['./commands'], agents: ['./agents'],
   sessionStart: { skill: 'estelle' },
   mcpServers: { Estelle: { transport: 'http', url: server.url, bearerTokenEnvVar: 'ESTELLE_API_KEY' } },
-  hooks: [...common.filter(event => event !== 'SubagentStart'), 'Interrupt']
+  hooks: [...common, 'Interrupt']
     .map(event => ({ event, command: command('kimi', 'KIMI_PLUGIN_ROOT'), timeout: ['SessionEnd', 'Interrupt'].includes(event) ? 3 : 20 })),
 };
 emit('plugins/kimi/kimi.plugin.json', kimiManifest);
 // GitHub archives expose only their repository root to Kimi; keep the same canonical assets.
-// An explicit empty list prevents Kimi's fallback from discovering the root's Claude-only agents.
-emit('kimi.plugin.json', { ...kimiManifest, agents: [] });
+// Both manifests name the agents explicitly (Kimi `agents` field: `./` paths inside the plugin root).
+emit('kimi.plugin.json', kimiManifest);
 emit('plugins/grok/plugin.json', { ...manifest, skills: './skills', commands: './commands',
   hooks: './hooks/hooks.json', mcpServers: './.mcp.json' });
 emit('plugins/grok/.mcp.json', { mcpServers: { Estelle: server } });
-emit('plugins/grok/hooks/hooks.json', nativeHooks('grok', 'GROK_PLUGIN_ROOT', common.filter(event => event !== 'SubagentStart')));
+emit('plugins/grok/hooks/hooks.json', nativeHooks('grok', 'GROK_PLUGIN_ROOT', common));
 emit('plugins/cursor/.cursor-plugin/plugin.json', { ...manifest, author: { name: 'Fate Labs' }, license: 'Apache-2.0',
   skills: './skills', commands: './commands', rules: './rules', hooks: './hooks/hooks.json', mcpServers: './mcp.json' });
 emit('plugins/cursor/mcp.json', { mcpServers: { Estelle: { url: server.url,
   headers: { Authorization: 'Bearer ${env:ESTELLE_API_KEY}' } } } });
-emit('plugins/cursor/hooks/hooks.json', { version: 1, hooks: Object.fromEntries(CURSOR_EVENTS.filter(event => event !== 'subagentStart').map(event => [event,
+emit('plugins/cursor/hooks/hooks.json', { version: 1, hooks: Object.fromEntries(CURSOR_EVENTS.map(event => [event,
   [{ command: command('cursor', 'CURSOR_PLUGIN_ROOT'), timeout: event === 'sessionEnd' ? 3 : 20 }]])) });
 emit('plugins/cursor/rules/estelle.mdc', '---\ndescription: Use Estelle tools for repository context and shared work\nalwaysApply: true\n---\n'
   + generated.get('instructions.md'));
@@ -187,10 +203,21 @@ if (JSON.stringify(rootPi) !== JSON.stringify(expectedRootPi)) throw new Error(`
 // from `/mcp` (a pinned Authorization header would disable that, and an unset variable is sent as literal text). Hooks are
 // Qwen Code's Claude-shaped command hooks. In an extension's hooks Qwen Code fills in `${CLAUDE_PLUGIN_ROOT}` only
 // (core/src/extension/variables.ts, substituteHookVariables); `${extensionPath}` reached the shell empty in testing.
-const QWEN_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'PreCompact', 'SessionEnd'];
+const QWEN_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SubagentStart', 'SubagentStop', 'PreCompact', 'SessionEnd'];
 emit('plugins/qwen/qwen-extension.json', { name: 'estelle', version, description,
-  mcpServers: { Estelle: { httpUrl: server.url } }, contextFileName: 'instructions.md' });
+  mcpServers: { Estelle: { httpUrl: server.url } }, contextFileName: 'instructions.md', agents: 'agents' });
 emit('plugins/qwen/hooks/hooks.json', nativeHooks('qwen-code', 'CLAUDE_PLUGIN_ROOT', QWEN_EVENTS));
+// Qwen Code subagents are Markdown with `tools` naming Qwen's own tools (sub-agents docs: read_file, grep_search, glob,
+// write_file, edit, run_shell_command; `mcp__<server>__<tool>` for MCP). The shared agents name Claude's tools, so the
+// names are translated here, and the Claude-plugin-only `mcp__plugin_estelle_*` aliases are dropped.
+const QWEN_TOOLS = { Read: 'read_file', Grep: 'grep_search', Glob: 'glob', Write: 'write_file', Edit: 'edit', Bash: 'run_shell_command' };
+const qwenTools = list => list.split(',').map(tool => tool.trim()).filter(tool => tool && !tool.startsWith('mcp__plugin_'))
+  .map(tool => QWEN_TOOLS[tool] ?? tool).join(', ');
+for (const entry of (await readdir(join(root, 'agents'))).filter(name => name.endsWith('.md')).sort()) {
+  const source = await readFile(join(root, 'agents', entry), 'utf8');
+  if (!/^tools: .+$/m.test(source)) throw new Error(`Agent needs a tools line: ${entry}`);
+  emit(`plugins/qwen/agents/${entry}`, source.replace(/^tools: (.+)$/m, (_, list) => `tools: ${qwenTools(list)}`));
+}
 // Qwen Code commands are Markdown with `{{args}}`; the runner path is where `qwen extensions install` puts the extension.
 const QWEN_CLI = '~/.qwen/extensions/estelle/runtime/cli.mjs';
 for (const entry of (await readdir(join(root, 'commands'))).sort()) {
@@ -199,13 +226,51 @@ for (const entry of (await readdir(join(root, 'commands'))).sort()) {
   emit(`plugins/qwen/commands/estelle/${entry}`, source.replaceAll('$ARGUMENTS', '{{args}}').replaceAll('<Estelle cli.mjs>', QWEN_CLI));
 }
 
+// Gemini CLI: one extension directory (`gemini extensions install`). MCP is the URL alone (`httpUrl`), so Gemini CLI's own OAuth
+// signs in from `/mcp auth Estelle` (a pinned Authorization header would disable that). Hooks are `hooks/hooks.json`, never the
+// manifest. Gemini CLI fills in `${extensionPath}` and `${/}` there, takes `timeout` in MILLISECONDS, and names its events its
+// own way (adapters/gemini.mjs renames them). BeforeTool only ever carries the write warning, so it is limited to the two
+// file-writing tools. Notification, BeforeModel, AfterModel and BeforeToolSelection carry nothing Estelle uses.
+const GEMINI_EVENTS = ['SessionStart', 'BeforeAgent', 'BeforeTool', 'AfterTool', 'AfterAgent', 'PreCompress', 'SessionEnd'];
+emit('plugins/gemini/gemini-extension.json', { name: 'estelle', version, description: `Fate Labs Estelle: ${description}`,
+  mcpServers: { Estelle: { httpUrl: server.url } }, contextFileName: 'instructions.md' });
+emit('plugins/gemini/hooks/hooks.json', { hooks: Object.fromEntries(GEMINI_EVENTS.map(event => [event, [{
+  ...(event === 'BeforeTool' ? { matcher: 'write_file|replace' } : {}),
+  hooks: [{ name: `estelle-${event}`, type: 'command', command: 'node "${extensionPath}${/}runtime${/}cli.mjs" hook gemini-cli',
+    timeout: event === 'SessionEnd' ? 3000 : 20000 }] }]])) });
+// Gemini CLI commands are TOML (`prompt`, `description`) with `{{args}}`; `commands/estelle/code.toml` becomes `/estelle:code`.
+// The runner path is where `gemini extensions install` (and `link`) puts the extension. The prompt is a TOML literal string,
+// so backslashes and quotes stay as written; one that held a triple quote or a Gemini injection token would not survive.
+const GEMINI_CLI = '$HOME/.gemini/extensions/estelle/runtime/cli.mjs';
+const TOML_LITERAL = "'" + "'" + "'";
+for (const entry of (await readdir(join(root, 'commands'))).sort()) {
+  const source = await readFile(join(root, 'commands', entry), 'utf8');
+  const [, description, body] = /^---\ndescription: (.+)\n---\n([\s\S]+)$/.exec(source) ?? [];
+  if (!description) throw new Error(`Command needs one description line: ${entry}`);
+  const prompt = body.replaceAll('$ARGUMENTS', '{{args}}').replaceAll('<Estelle cli.mjs>', GEMINI_CLI);
+  if (prompt.includes(TOML_LITERAL) || /[!@]\{/.test(prompt)) throw new Error(`Command cannot be a Gemini CLI TOML literal: ${entry}`);
+  emit(`plugins/gemini/commands/estelle/${entry.replace(/\.md$/, '.toml')}`,
+    `description = ${JSON.stringify(description)}\nprompt = ${TOML_LITERAL}\n${prompt.trimEnd()}\n${TOML_LITERAL}\n`);
+}
+// Gemini CLI subagents (`agents/*.md`, preview): the same four definitions, with Gemini CLI's own tool names. Its loader is
+// strict: `tools` is a list of Gemini tool names (MCP tools are `mcp_<server>_<tool>`), and an unknown key rejects the file.
+const GEMINI_AGENT_TOOLS = { Read: 'read_file', Grep: 'grep_search', Glob: 'glob', Bash: 'run_shell_command', Write: 'write_file', Edit: 'replace' };
+const geminiTool = tool => GEMINI_AGENT_TOOLS[tool] ?? (/^mcp__Estelle__/.test(tool) ? tool.replace(/^mcp__Estelle__/, 'mcp_Estelle_') : null);
+for (const entry of (await readdir(join(root, 'agents'))).sort()) {
+  const source = await readFile(join(root, 'agents', entry), 'utf8');
+  const [, name, description, tools, body] = /^---\nname: (.+)\ndescription: (.+)\ntools: (.+)\n---\n([\s\S]+)$/.exec(source) ?? [];
+  if (!name) throw new Error(`Agent needs name, description and tools lines: ${entry}`);
+  const mapped = [...new Set(tools.split(',').map(tool => geminiTool(tool.trim())).filter(Boolean))];
+  emit(`plugins/gemini/agents/${entry}`, `---\nname: ${name}\ndescription: ${description}\ntools:\n${mapped.map(tool => `  - ${tool}`).join('\n')}\n---\n${body}`);
+}
+
 // Hermes Agent: a directory plugin (`plugin.yaml` and an `__init__.py` with `register(ctx)`), installed with
 // `hermes plugins install Fate-Labs-CA/estelle-plugins/plugins/hermes`. The Python side is hosts/hermes/__init__.py.
 emit('plugins/hermes/plugin.yaml', `name: estelle
 version: ${version}
 description: ${description}
 author: Fate Labs
-provides_hooks: [on_session_start, pre_llm_call, pre_tool_call, post_tool_call, post_llm_call, on_session_finalize]
+provides_hooks: [on_session_start, pre_llm_call, pre_tool_call, post_tool_call, post_llm_call, on_session_finalize, subagent_start, subagent_stop, post_compaction]
 `);
 emit('plugins/hermes/__init__.py', await readFile(join(root, 'hosts', 'hermes', '__init__.py'), 'utf8'));
 
@@ -220,17 +285,86 @@ emit('plugins/openclaw/plugin.json', { $schema: 'https://agent-plugins.org/schem
   name: 'estelle', version, description: 'Estelle skills for OpenClaw. The Estelle MCP server is added with openclaw mcp add.' });
 // fx (vercel-labs/fx): no plugin format and no hooks. The package is the skills fx reads from `~/.fx/skills` and an
 // `mcp.json` entry to merge into `~/.fx/mcp.json` for key sign-in; `/mcp add Estelle <url>` signs in with OAuth instead.
+// fx agent profiles (fx.sh/docs/configure-fx/agent-profiles): `~/.fx/agents/<name>/profile.json` and `prompt.md`. The shared
+// agents name Claude Code's tools; each maps to fx's own, and every Estelle MCP tool becomes the `Estelle` server, which fx
+// reaches through `toolbox`. `prompt: append` adds the agent's instructions after fx's own system prompt.
+const FX_TOOLS = Object.freeze({ Read: 'read_file', Grep: 'grep_files', Glob: 'glob_files', Write: 'write_file',
+  Edit: 'edit_file', Bash: 'shell' });
+for (const entry of (await readdir(join(root, 'agents'))).sort()) {
+  const source = await readFile(join(root, 'agents', entry), 'utf8');
+  const [, front, body] = /^---\n([\s\S]*?)\n---\n([\s\S]+)$/.exec(source) ?? [];
+  const field = key => new RegExp(`^${key}: (.+)$`, 'm').exec(front ?? '')?.[1]?.trim();
+  const name = field('name');
+  if (!/^[a-z0-9_-]{1,64}$/.test(name ?? '') || !field('description') || !field('tools')) throw new Error(`Agent needs a profile-safe name, description and tools: ${entry}`);
+  const claudeTools = field('tools').split(',').map(tool => tool.trim()).filter(Boolean);
+  const unmapped = claudeTools.filter(tool => !FX_TOOLS[tool] && !tool.startsWith('mcp__'));
+  if (unmapped.length) throw new Error(`Agent ${name} uses tools with no fx equivalent: ${unmapped.join(', ')}`);
+  const direct = claudeTools.filter(tool => FX_TOOLS[tool]).map(tool => FX_TOOLS[tool]);
+  const mcp = claudeTools.some(tool => tool.startsWith('mcp__'));
+  emit(`plugins/fx/agents/${name}/profile.json`, { description: field('description'),
+    tools: [...new Set([...direct, ...(mcp ? ['toolbox'] : [])])], mcp_servers: mcp ? ['Estelle'] : [], prompt: 'append' });
+  emit(`plugins/fx/agents/${name}/prompt.md`, body.trim() + '\n');
+}
 emit('plugins/fx/mcp.json', { mcpServers: { Estelle: { type: 'http', url: server.url, bearer_token_env: 'ESTELLE_API_KEY' } } });
 
-const HOSTS = ['claude', 'codex', 'kimi', 'grok', 'cursor', 'dsh', 'opencode', 'pi', 'qwen', 'hermes', 'mini-swe-agent',
-  'openclaw', 'fx'];
+// Google Antigravity (IDE and `agy` CLI): one plugin directory. `agy plugin validate` rejects unknown plugin.json fields.
+// MCP is the URL alone, so Antigravity's own OAuth (CIMD or DCR, then a pasted code) signs in; a pinned header would disable
+// it. Hook commands run with the plugin root as the working directory, so paths are relative. Antigravity has no prompt,
+// compaction, session-end or subagent event: PreInvocation is the prompt, Stop is capture and checkpoint.
+const AGY_COMMAND = event => ({ type: 'command', command: `node ./runtime/cli.mjs hook antigravity ${event}`, timeout: 20 });
+emit('plugins/antigravity/plugin.json', { $schema: 'https://antigravity.google/schemas/v1/plugin.json', name: 'estelle',
+  displayName: 'Fate Labs Estelle', logo: 'assets/logo.svg', version, license: 'Apache-2.0', author: { name: 'Fate Labs', url: 'https://fatelabs.ca' },
+  description: 'Estelle gives Antigravity repository memory, grounded review and session capture through MCP, hooks, skills and agents.',
+  homepage: 'https://github.com/Fate-Labs-CA/estelle-plugins/blob/main/docs/install/antigravity.md',
+  repository: 'https://github.com/Fate-Labs-CA/estelle-plugins', keywords: ['estelle', 'memory', 'mcp', 'code-review'],
+  suggestedPrompts: ['Resume where I left off with Estelle', 'Review my current change with Estelle'] });
+emit('plugins/antigravity/mcp_config.json', { mcpServers: { Estelle: { serverUrl: server.url } } });
+emit('plugins/antigravity/hooks.json', { estelle: {
+  SessionStart: [AGY_COMMAND('SessionStart')], PreInvocation: [AGY_COMMAND('PreInvocation')],
+  PreToolUse: [{ matcher: WRITE_TOOL_MATCHER, hooks: [AGY_COMMAND('PreToolUse')] }],
+  PostToolUse: [{ matcher: '', hooks: [AGY_COMMAND('PostToolUse')] }], Stop: [AGY_COMMAND('Stop')] } });
+emit('plugins/antigravity/rules/AGENTS.md', generated.get('instructions.md'));
+// The Fate Labs mark (founder, 2026-11-25: the same logo as Eden's plugin), which plugin.json's `logo` names and the Marketplace needs.
+emit('plugins/antigravity/assets/logo.svg', await readFile(join(root, 'assets', 'logo.svg'), 'utf8'));
+// Commands are skills here (`/<skill-name>`), prefixed so they cannot shadow a person's own `/code` or `/review`. Only the
+// person invokes them. `$ARGUMENTS` has no meaning in a skill, as in Codex's conversion above.
+for (const entry of (await readdir(join(root, 'commands'))).sort()) {
+  const name = entry.replace(/\.md$/, '');
+  const [, description, body] = /^---\ndescription: (.+)\n---\n([\s\S]+)$/.exec(await readFile(join(root, 'commands', entry), 'utf8')) ?? [];
+  if (!description) throw new Error(`Command needs one description line: ${entry}`);
+  emit(`plugins/antigravity/command-skills/estelle-${name}/SKILL.md`, `---\nname: estelle-${name}\ndescription: ${JSON.stringify(description)}\n`
+    + `disable-model-invocation: true\n---\n\n${body.replaceAll('$ARGUMENTS', 'what the person asked for')}`);
+}
+// Agents: Antigravity's frontmatter has no Claude `tools` list (its tool names differ), so the agent keeps all tools.
+for (const entry of (await readdir(join(root, 'agents'))).sort()) {
+  const [, name, description, body] = /^---\nname: (.+)\ndescription: (.+)\ntools: .+\n---\n([\s\S]+)$/.exec(await readFile(join(root, 'agents', entry), 'utf8')) ?? [];
+  if (!name) throw new Error(`Agent needs name, description and tools lines: ${entry}`);
+  emit(`plugins/antigravity/agents/${entry}`, `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\nmainAgent: false\nsubagent: true\nmodel: inherit\n---\n${body}`);
+}
+
+// OpenClaw, native: `openclaw.plugin.json` plus the in-process plugin (adapters/openclaw-plugin.mjs). A directory that held
+// both this and the bundle's `plugin.json` would install as native only (OpenClaw docs/plugins/bundles.md, "Detection
+// precedence"), so the native plugin has its own directory and `plugins/openclaw` stays the skills-only bundle.
+emit('plugins/openclaw-native/openclaw.plugin.json', { id: 'estelle', name: 'Estelle', description: `${description} Hooks, recall, capture and skills.`,
+  activation: { onStartup: true }, contracts: { conversationAccess: ['read'] },
+  configSchema: { type: 'object', additionalProperties: false },
+  skills: ['./skills', './command-skills', './agent-skills'] });
+emit('plugins/openclaw-native/package.json', npmPackage('openclaw', '@fatelabs/openclaw-estelle', {
+  keywords: ['openclaw', 'openclaw-plugin', 'estelle', 'memory', 'code-review'],
+  repository: { type: 'git', url: 'git+https://github.com/Fate-Labs-CA/estelle-plugins.git', directory: 'plugins/openclaw-native' },
+  main: './adapters/openclaw-plugin.mjs', openclaw: { extensions: ['./adapters/openclaw-plugin.mjs'] },
+  exports: { '.': './adapters/openclaw-plugin.mjs', './package.json': './package.json' } }));
+
+const HOSTS = ['claude', 'codex', 'kimi', 'grok', 'cursor', 'dsh', 'opencode', 'pi', 'qwen', 'gemini', 'hermes', 'mini-swe-agent',
+  'openclaw', 'openclaw-native', 'fx', 'antigravity'];
 const ASSETS = ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE', 'NOTICE'];
 // Codex gets generated skills and Claude gets generated copies (both above); the other hosts copy commands as they are.
 // mini-swe-agent needs only the runtime (its bridge); OpenClaw and fx take only content, no hook runner.
 const CONTENT_ONLY = ['skills', 'instructions.md', 'LICENSE', 'NOTICE'];
 const assetsFor = host => host === 'mini-swe-agent' ? ['runtime', 'LICENSE', 'NOTICE']
-  : ['openclaw', 'fx'].includes(host) ? CONTENT_ONLY : [...ASSETS, ...(['codex', 'claude', 'qwen'].includes(host) ? [] : ['commands']),
-  ...(['claude', 'opencode'].includes(host) ? ['agents'] : [])];
+  : host === 'openclaw-native' ? ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE', 'NOTICE']
+  : ['openclaw', 'fx'].includes(host) ? CONTENT_ONLY : [...ASSETS, ...(['codex', 'claude', 'qwen', 'gemini', 'antigravity'].includes(host) ? [] : ['commands']),
+  ...(['claude', 'opencode', 'cursor', 'kimi'].includes(host) ? ['agents'] : [])];
 async function inventory(directory, prefix = '') {
   const output = new Map();
   for (const entry of await readdir(directory, { withFileTypes: true })) {

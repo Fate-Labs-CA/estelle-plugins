@@ -20,6 +20,19 @@ import { timelineIdentity } from './identity.mjs';
 // Hosts that name a subagent's id on its own hooks AND mirror a child transcript the server can read (Claude Code, Codex).
 export const SUPERVISED_HOSTS = new Set(['claude-code', 'codex']);
 export const SUPERVISE_BOUNDARY = { UserPromptSubmit: 'prompt', PostToolUse: 'tool', Stop: 'stop' };
+// Hosts that announce a subagent's start and stop by hook (subagent-hooks.mjs) and can put text in front of the model at a
+// parent boundary. The server says each transition ONCE, so a host is asked ONLY at a boundary whose answer it can inject:
+// Qwen Code at a prompt and a tool result (hooks.md `additionalContext`), Kimi Code at a prompt (hook stdout is appended
+// only there), Cursor at a tool result (`additional_context` on postToolUse; its prompt hook cannot inject). Grok is left
+// out: docs.x.ai documents no context channel for any hook. These hosts show no Stop-hook message, so they never ask at Stop.
+const WATCH_EVENTS = { 'qwen-code': ['UserPromptSubmit', 'PostToolUse'], kimi: ['UserPromptSubmit'], cursor: ['PostToolUse'] };
+/** The boundary this host can be told about its subagents at, for this event, or undefined. */
+export function superviseBoundaryFor(host, event) {
+  const boundary = SUPERVISE_BOUNDARY[event];
+  if (!boundary) return undefined;
+  if (SUPERVISED_HOSTS.has(host)) return boundary;
+  return WATCH_EVENTS[host]?.includes(event) ? boundary : undefined;
+}
 // A hook never waits longer than this for the server: past it the answer is silence.
 export const SUPERVISE_TIMEOUT_MS = 2_000;
 // At most one ask per this long per session at tool calls; a prompt and a stop always ask.
@@ -43,7 +56,7 @@ async function silent(promise, ms) {
 
 /** What the parent is told at this boundary: `{ text }` (joined lines, '' when nothing needs saying) or `{ skipped: true }`. */
 export async function superviseAtBoundary(n, stateDir, request, { now = Date.now(), env = process.env } = {}) {
-  const boundary = SUPERVISE_BOUNDARY[n.event];
+  const boundary = superviseBoundaryFor(n.host, n.event);
   // A subagent's own hooks carry its agent id; the question is the main conversation's, never a child's.
   if (!boundary || n.agentId || supervisionOff(env)) return { text: '', skipped: true };
   const session = timelineIdentity(n.host, n.sessionId);
