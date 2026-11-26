@@ -135,3 +135,9 @@ add a missing backend action. Rooms requires server support and this session's v
 
 For development: `npm test`, `npm run build`, `npm run check`. Generated packages contain their
 own runner and keep writable state outside installed files in `~/.estelle-plugins`.
+
+## License
+
+Source available for use with Fate Labs' services only (Eden and Estelle). You may install and run these plugins, unchanged, to connect your coding agent to Fate Labs. No copying, redistribution, resale or use with other services, and no right to the Fate Labs, Eden or Estelle names or logos. See [LICENSE](LICENSE).
+
+Copyright (c) 2026 Honour Systems Inc., doing business as Fate Labs.

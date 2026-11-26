@@ -56,7 +56,7 @@ function nativeHooks(host, variable, events) {
     ...(host === 'codex' ? { statusMessage: `Estelle: ${event}` } : {}) }],
   }]])) };
 }
-emit('plugins/claude/.claude-plugin/plugin.json', { ...manifest, license: 'Apache-2.0', author: { name: 'Fate Labs' },
+emit('plugins/claude/.claude-plugin/plugin.json', { ...manifest, license: 'SEE LICENSE IN LICENSE', author: { name: 'Fate Labs' },
   repository: 'https://github.com/uqeu/estelle-plugins', hooks: './hooks/hooks.json', mcpServers: './.mcp.json' });
 // The helper prints the plugin's own sign-in, or nothing, in which case Claude Code signs in with its own OAuth as before.
 // Never a pinned header: that disables OAuth, and an unset variable goes out literally.
@@ -115,7 +115,7 @@ emit('plugins/grok/plugin.json', { ...manifest, skills: './skills', commands: '.
   hooks: './hooks/hooks.json', mcpServers: './.mcp.json' });
 emit('plugins/grok/.mcp.json', { mcpServers: { Estelle: server } });
 emit('plugins/grok/hooks/hooks.json', nativeHooks('grok', 'GROK_PLUGIN_ROOT', common));
-emit('plugins/cursor/.cursor-plugin/plugin.json', { ...manifest, author: { name: 'Fate Labs' }, license: 'Apache-2.0',
+emit('plugins/cursor/.cursor-plugin/plugin.json', { ...manifest, author: { name: 'Fate Labs' }, license: 'SEE LICENSE IN LICENSE',
   skills: './skills', commands: './commands', rules: './rules', hooks: './hooks/hooks.json', mcpServers: './mcp.json' });
 emit('plugins/cursor/mcp.json', { mcpServers: { Estelle: { url: server.url,
   headers: { Authorization: 'Bearer ${env:ESTELLE_API_KEY}' } } } });
@@ -126,7 +126,7 @@ emit('plugins/cursor/rules/estelle.mdc', '---\ndescription: Use Estelle tools fo
 
 // A dsh plugin is an npm-shaped bundle: this manifest and one Cordis patch layer. `dsh plugin --profile <name> add` installs it.
 const DSH_PEERS = ['@deepseek-ai/dsh-llm'];
-emit('plugins/dsh/package.json', { name: 'dsh-plugin-estelle', version, description, license: 'Apache-2.0', type: 'module',
+emit('plugins/dsh/package.json', { name: 'dsh-plugin-estelle', version, description, license: 'SEE LICENSE IN LICENSE', type: 'module',
   keywords: ['dsh-plugin'], repository: { type: 'git', url: 'git+https://github.com/uqeu/estelle-plugins.git', directory: 'plugins/dsh' },
   main: 'adapters/dsh-plugin.mjs', exports: { '.': './adapters/dsh-plugin.mjs', './package.json': './package.json' },
   engines: { node: '>=24.9.0', dsh: '>=0.2.1-rc.5 <0.3.0' },
@@ -172,7 +172,7 @@ emit('plugins/dsh/cordis.patch.yml', `# Estelle for DeepSeek Harness: memory and
 
 // OpenCode and Pi load an npm-shaped package and run its JavaScript in their own process (adapters/opencode-plugin.mjs,
 // adapters/pi-extension.mjs). Both packages are published to npm under the Fate Labs scope; neither is published by this build.
-const npmPackage = (host, name, extra) => ({ name, version, description, license: 'Apache-2.0', type: 'module',
+const npmPackage = (host, name, extra) => ({ name, version, description, license: 'SEE LICENSE IN LICENSE', type: 'module',
   author: 'Fate Labs', homepage: `https://github.com/Fate-Labs-CA/estelle-plugins/blob/main/docs/install/${host}.md`,
   repository: { type: 'git', url: 'git+https://github.com/Fate-Labs-CA/estelle-plugins.git', directory: `plugins/${host}` },
   bugs: { url: 'https://github.com/Fate-Labs-CA/estelle-plugins/issues' }, engines: { node: '>=22' },
@@ -313,7 +313,7 @@ emit('plugins/fx/mcp.json', { mcpServers: { Estelle: { type: 'http', url: server
 // compaction, session-end or subagent event: PreInvocation is the prompt, Stop is capture and checkpoint.
 const AGY_COMMAND = event => ({ type: 'command', command: `node ./runtime/cli.mjs hook antigravity ${event}`, timeout: 20 });
 emit('plugins/antigravity/plugin.json', { $schema: 'https://antigravity.google/schemas/v1/plugin.json', name: 'estelle',
-  displayName: 'Fate Labs Estelle', logo: 'assets/logo.svg', version, license: 'Apache-2.0', author: { name: 'Fate Labs', url: 'https://fatelabs.ca' },
+  displayName: 'Fate Labs Estelle', logo: 'assets/logo.svg', version, license: 'SEE LICENSE IN LICENSE', author: { name: 'Fate Labs', url: 'https://fatelabs.ca' },
   description: 'Estelle gives Antigravity repository memory, grounded review and session capture through MCP, hooks, skills and agents.',
   homepage: 'https://github.com/Fate-Labs-CA/estelle-plugins/blob/main/docs/install/antigravity.md',
   repository: 'https://github.com/Fate-Labs-CA/estelle-plugins', keywords: ['estelle', 'memory', 'mcp', 'code-review'],
@@ -357,12 +357,12 @@ emit('plugins/openclaw-native/package.json', npmPackage('openclaw', '@fatelabs/o
 
 const HOSTS = ['claude', 'codex', 'kimi', 'grok', 'cursor', 'dsh', 'opencode', 'pi', 'qwen', 'gemini', 'hermes', 'mini-swe-agent',
   'openclaw', 'openclaw-native', 'fx', 'antigravity'];
-const ASSETS = ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE', 'NOTICE'];
+const ASSETS = ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE'];
 // Codex gets generated skills and Claude gets generated copies (both above); the other hosts copy commands as they are.
 // mini-swe-agent needs only the runtime (its bridge); OpenClaw and fx take only content, no hook runner.
-const CONTENT_ONLY = ['skills', 'instructions.md', 'LICENSE', 'NOTICE'];
-const assetsFor = host => host === 'mini-swe-agent' ? ['runtime', 'LICENSE', 'NOTICE']
-  : host === 'openclaw-native' ? ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE', 'NOTICE']
+const CONTENT_ONLY = ['skills', 'instructions.md', 'LICENSE'];
+const assetsFor = host => host === 'mini-swe-agent' ? ['runtime', 'LICENSE']
+  : host === 'openclaw-native' ? ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE']
   : ['openclaw', 'fx'].includes(host) ? CONTENT_ONLY : [...ASSETS, ...(['codex', 'claude', 'qwen', 'gemini', 'antigravity'].includes(host) ? [] : ['commands']),
   ...(['claude', 'opencode', 'cursor', 'kimi'].includes(host) ? ['agents'] : [])];
 async function inventory(directory, prefix = '') {

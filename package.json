@@ -3,7 +3,7 @@
   "version": "0.0.27",
   "private": true,
   "type": "module",
-  "license": "Apache-2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "engines": {
     "node": ">=22"
   },
