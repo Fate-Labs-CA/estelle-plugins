@@ -20,7 +20,7 @@ const INJECTED = ['<system-reminder', '<command-', '<local-command', '<task-noti
 const CODEX_INJECTED = [...INJECTED, '<environment_context', '<user_instructions', '# AGENTS.md instructions', '<skill', '<turn_aborted', '<user_shell_command'];
 const AGENTS = { claude: 'claude-code', 'claude-code': 'claude-code', codex: 'codex', kimi: 'kimi-code', 'kimi-code': 'kimi-code',
   grok: 'grok', cursor: 'cursor', dsh: 'deepseek-harness', 'deepseek-harness': 'deepseek-harness', opencode: 'opencode', pi: 'pi',
-  hermes: 'hermes', 'qwen-code': 'qwen-code' };
+  hermes: 'hermes', 'qwen-code': 'qwen-code', openclaw: 'openclaw' };
 const WAITING = 'waiting_for_review/input_required';
 const string = value => typeof value === 'string' ? value : '';
 const validTime = value => typeof value === 'string' && Number.isFinite(Date.parse(value));
@@ -753,7 +753,7 @@ export async function streamSession({ payload, host, repo, stateDir, request, no
   const notes = { repository: repo, ...(sub ? { sidechain: true } : {}) };
   // Grok and Cursor transcript lines carry no verified timestamps; capture time stamps their events.
   if (harness === 'grok' || harness === 'cursor') notes.observedAt = new Date().toISOString();
-  if (harness === 'opencode' || harness === 'hermes') notes.harness = harness;
+  if (['opencode', 'hermes', 'openclaw'].includes(harness)) notes.harness = harness;
   // Kimi 2.6.0 records assistant and tool turns only as loop events; the first window that shows either vocabulary decides.
   if (harness === 'kimi-code' && typeof state.kimi_loop_turns === 'boolean') notes.kimiLoopTurns = state.kimi_loop_turns;
   let events = [];
@@ -831,6 +831,8 @@ export async function streamSession({ payload, host, repo, stateDir, request, no
       capture_scope: "Pi's own session file, every branch in file order; extension messages are skipped" } : {}),
     ...(harness === 'hermes' ? { transcript_format: 'hermes-plugin-mirror', current_format_verified: true, event_times: 'capture-time',
       capture_scope: "the turn's messages the plugin read from Hermes's post_llm_call hook; subagent sessions are not linked to their parent" } : {}),
+    ...(harness === 'openclaw' ? { transcript_format: 'openclaw-plugin-mirror', current_format_verified: false, event_times: 'capture-time',
+      capture_scope: "the turn's messages the plugin read from OpenClaw's agent_end hook (message shape inferred from the docs, not yet seen live); subagents are not linked to their parent" } : {}),
     ...(harness === QWEN_AGENT ? { transcript_format: 'qwen-chat-recording', current_format_verified: true,
       capture_scope: "Qwen Code's own chat recording; the person's prompts, replies, tool calls and results; system records are skipped" } : {}) };
 }

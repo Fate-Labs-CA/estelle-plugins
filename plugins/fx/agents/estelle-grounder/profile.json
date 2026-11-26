@@ -1,0 +1,13 @@
+{
+  "description": "Checks every claim about THIS codebase against Estelle's real indexed graph before it is stated. Use when a symbol, signature, file path or \"does X exist\" claim is about to be asserted, or when an agent's output cites code you have not read this session.",
+  "tools": [
+    "read_file",
+    "grep_files",
+    "glob_files",
+    "toolbox"
+  ],
+  "mcp_servers": [
+    "Estelle"
+  ],
+  "prompt": "append"
+}

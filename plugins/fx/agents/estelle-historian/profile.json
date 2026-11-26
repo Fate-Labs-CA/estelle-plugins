@@ -1,0 +1,12 @@
+{
+  "description": "Recovers what this team already decided before you re-litigate it. Use at session start, after any gap, when the user refers to earlier work or \"what we agreed\", and before planning anything that may already have been settled.",
+  "tools": [
+    "read_file",
+    "grep_files",
+    "toolbox"
+  ],
+  "mcp_servers": [
+    "Estelle"
+  ],
+  "prompt": "append"
+}

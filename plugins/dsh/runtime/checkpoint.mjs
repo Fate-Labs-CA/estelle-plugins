@@ -11,7 +11,7 @@ export const CHECKPOINT_LIMITS = Object.freeze({
 });
 const HOSTS = { claude: 'claude-code', 'claude-code': 'claude-code', codex: 'codex', kimi: 'kimi-code', 'kimi-code': 'kimi-code',
   grok: 'grok', cursor: 'cursor', dsh: 'deepseek-harness', 'deepseek-harness': 'deepseek-harness', opencode: 'opencode', pi: 'pi',
-  hermes: 'hermes', 'qwen-code': 'qwen-code' };
+  hermes: 'hermes', 'qwen-code': 'qwen-code', openclaw: 'openclaw' };
 const INJECTED = ['<environment_context', '<user_instructions', '# AGENTS.md instructions', '<skill', '<system-reminder', '<task-notification', '<command-', '<local-command', '<turn_aborted'];
 const string = value => typeof value === 'string' ? value : '';
 const trimmed = text => Array.from(text).slice(0, CHECKPOINT_LIMITS.chars).join('');
@@ -62,7 +62,7 @@ function messageOf(record, host, subagent) {
   if (!record || typeof record !== 'object') return null;
   // OpenCode's and Hermes's plugin mirrors are written in Claude Code's line shape (adapters/opencode-mirror.mjs,
   // hosts/hermes/__init__.py).
-  if (host === 'claude-code' || host === 'opencode' || host === 'hermes') {
+  if (host === 'claude-code' || host === 'opencode' || host === 'hermes' || host === 'openclaw') {
     if (!['user', 'assistant'].includes(record.type) || record.isMeta || record.isCompactSummary || (record.isSidechain && !subagent)) return null;
     return { role: record.type, ...record.message };
   }

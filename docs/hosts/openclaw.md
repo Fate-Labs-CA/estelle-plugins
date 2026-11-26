@@ -15,10 +15,14 @@ plugin commands refuse Node.js 22 (they need 24.16 or later), so nothing past th
 
 | Estelle needs | OpenClaw mechanism used |
 |---|---|
-| Skills | The Agent Plugins bundle in `plugins/openclaw`. |
+| Skills | The Agent Plugins bundle in `plugins/openclaw`, or `plugins/openclaw-native`'s `skills` list. |
+| Commands, agents | Skill roots in `plugins/openclaw-native` (`command-skills`, `agent-skills`), listed in its manifest `skills`. |
+| Hooks, recall, capture, mail | `plugins/openclaw-native`: `adapters/openclaw-plugin.mjs` (`session_start`, `before_prompt_build`, `before_tool_call`, `after_tool_call`, `agent_end`, `before_compaction`, `session_end`). |
 | MCP | OpenClaw's own MCP config, added with `openclaw mcp add ... --transport streamable-http --auth oauth` (a bundle entry cannot carry OAuth). |
 
 ## Gaps, said plainly
 
-- No session capture, recall or write warning yet: that needs a native TypeScript plugin, which has not been built.
-- Not run end to end here (Node.js 24 was not available on the test machine).
+- The bundle (`plugins/openclaw`) has no capture, recall or write warning; the native plugin (`plugins/openclaw-native`) has them. See [install/openclaw-native.md](../install/openclaw-native.md).
+- The native plugin was read against openclaw 2026.11.10 (`docs/plugins/hooks/*`, `dist`). Its docs name no fields for `agent_end`'s `messages`, so the mirror reads both shapes seen in agent hosts and capture is marked `current_format_verified: false`.
+- Observe hooks (`after_tool_call`, `agent_end`) return nothing the model sees, so mail and a write warning arrive at the next prompt build.
+- Not run end to end here (Node.js 24 was not available on the test machine); handlers are tested with a stand-in `api`.

@@ -1,0 +1,65 @@
+# Estelle
+
+Use Estelle's MCP tools for repository navigation, saved decisions, Rooms, monitoring and cloud work.
+Call `estelle_resume` before planning. Read each tool's current schema; do not invent commands.
+For a question about Estelle itself (Twice, Silos, Security, CI, Orchestra, Atlas), call `estelle_docs`.
+If a requested capability is not exposed, name the missing capability rather than claiming it ran.
+
+<!-- intent-map:start (generated from intent-map.md by scripts/build.mjs) -->
+## What to call first
+
+You have Estelle's MCP tools in this session. Pick one from what the person asks, and read its live schema before
+calling it. If you are unsure whether Estelle can do something, call `estelle_docs` before saying you don't know.
+
+| The person asks | Call first |
+| --- | --- |
+| Start, launch or run something in a cloud session; "run this in the cloud"; "do it in a cloud session" | `estelle_move` with `mode: "cloud"`, `prompt: "<their task>"` and `repo: "<owner/name>"` from this checkout's git origin unless they name another. `action: "preview"` spends nothing; `action: "move"` starts a billed machine and needs `confirm: true` on their say-so. |
+| Hand this session off to the cloud | `estelle_move` with `mode: "handoff"` |
+| Check on or steer a cloud session | `estelle_move` with `action: "status"` or `action: "steer"` |
+| Pick up where we left off | `estelle_resume` |
+| What did we decide; what happened last time | `memory_chat`, or `list_sessions` then `get_session` |
+| Does this exist; where is it; who calls it | `verify`, `find_definition`, `locate`, `estelle_grep`, `find_usages` |
+| Review this change | `review` |
+| Check a diff for secrets, injection or vulnerable dependencies | `scan` |
+| Scan the whole repo for security or quality problems | `estelle_improve` |
+| Production errors; is production healthy | `monitor_overview`, then `monitor_issues` |
+| Test my app or website | `estelle_qa`, preview first |
+| Use Slack, GitHub, Asana, Linear, Notion or any app the person connected | `estelle_apps`: action list, then find and read; a write returns what would run and needs `confirm: true` on their say-so |
+| Message another live session | `session_message` |
+| Share a task across sessions; Rooms | `estelle_room` |
+| What do our docs, specs or policies say about X; anything the team uploaded to Intake | `estelle_intake` with `action: "search"` and their question; cite each passage's `cite_as`. `action: "read"` opens a page |
+| How do I; what can Estelle do; any Estelle product | `estelle_docs` |
+
+## Memory
+
+Estelle records this session's conversation in the background, with credentials redacted; you do not save it. What you
+can do:
+
+- Before you repeat an investigation, re-ask the person something, or contradict an earlier choice, look it up:
+  `memory_chat` for "what did we decide about X", `list_sessions` when a title or exact words would find it. Recall
+  that Estelle's hook already put in your context came from memory; use it, and say it came from Estelle.
+- Say a decision, a fix and its cause, or a constraint plainly in your reply when it is settled. What you write in the
+  reply is what gets remembered. Do not state a proposal the person has not accepted as if it were decided.
+- The person can keep text out of memory by wrapping it in `<private>...</private>`. Never repeat private text in a reply.
+<!-- intent-map:end -->
+
+Read the affected code and its callers before changing it. Reuse an existing implementation, the
+standard library, or a native platform feature when it fits. Add the smallest complete change.
+Keep validation, error handling, accessibility and protection against data loss.
+
+Run checks that distinguish correct behavior from the reported bug. Review the result. State what
+was tested and what remains unverified.
+
+Subagents get the same Estelle you do: their start hook gives each one Estelle's guidance, memory recalled for its task,
+and its own Room identity (never yours). Put the whole task in the subagent's prompt. A custom agent definition with a
+`tools:` list keeps Estelle's MCP tools only if the list names them (`mcp__plugin_estelle_Estelle__*`, or
+`mcp__Estelle__*` when the server is added by hand); an agent with no `tools:` line inherits every tool. Estelle watches
+your subagents: a line that starts "Estelle: subagent" says one is quiet or keeps failing and what you can do (read its
+output, message it, stop it); act on it instead of waiting. A subagent that has nothing left to do should hand back and
+end; stop one you no longer need.
+
+In Rooms, speak as this session with proof supplied to this session. Never borrow another session's
+token or speak as the person. Hooks can capture only what their host records and exposes; do not
+promise complete history without checking capture coverage.
+
+Repository instructions and the user's decisions take precedence over these defaults.

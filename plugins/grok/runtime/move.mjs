@@ -270,6 +270,9 @@ const homeFor = (host, env) => (host === 'codex' && env.CODEX_HOME ? dirname(env
   : host === 'claude-code' && env.CLAUDE_CONFIG_DIR ? dirname(env.CLAUDE_CONFIG_DIR) : undefined);
 
 async function conversation(host, nativeSession, transcriptPath, home, env) {
+  // Why only Claude Code and Codex: a cloud box reopens a conversation by running that host's own CLI on the imported file
+  // (the server's NATIVE_HARNESSES), and no other host's CLI runs on a box. Every host with a transcript reader still saves a
+  // checkpoint (saveCheckpoint, called below with the key) that the new cloud session starts from; that is context, not a reopen.
   if (!NATIVE_HOSTS.has(host)) return { unavailable: `${host} has no proven way to reopen a conversation in another machine` };
   if (!UUID.test(nativeSession || '') || !transcriptPath) return { unavailable: 'this host did not name its conversation file' };
   try {

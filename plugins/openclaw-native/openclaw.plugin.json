@@ -1,0 +1,22 @@
+{
+  "id": "estelle",
+  "name": "Estelle",
+  "description": "Estelle MCP, memory and session hooks for coding agents. Hooks, recall, capture and skills.",
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "conversationAccess": [
+      "read"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false
+  },
+  "skills": [
+    "./skills",
+    "./command-skills",
+    "./agent-skills"
+  ]
+}

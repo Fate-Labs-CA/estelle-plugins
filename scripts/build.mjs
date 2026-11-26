@@ -69,8 +69,21 @@ for (const entry of (await readdir(join(root, 'commands'))).sort()) {
   const source = await readFile(join(root, 'commands', entry), 'utf8');
   const [, description, body] = /^---\ndescription: (.+)\n---\n([\s\S]+)$/.exec(source) ?? [];
   if (!description) throw new Error(`Command needs one description line: ${entry}`);
-  emit(`plugins/codex/command-skills/${name}/SKILL.md`, `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\n---\n\n`
-    + body.replaceAll('$ARGUMENTS', 'what the person asked for'));
+  // OpenClaw's native plugin takes the same skill roots (its `skills` manifest list), at the same depth from `runtime/`.
+  const skill = `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\n---\n\n`
+    + body.replaceAll('$ARGUMENTS', 'what the person asked for');
+  emit(`plugins/codex/command-skills/${name}/SKILL.md`, skill);
+  emit(`plugins/openclaw-native/command-skills/${name}/SKILL.md`, skill);
+}
+// OpenClaw has no agent format a plugin can register, and treats an `agents/` root as skill content. Each shared agent is
+// a skill the main agent loads and follows itself; the Claude-only `tools` list is dropped.
+for (const entry of (await readdir(join(root, 'agents'))).sort()) {
+  const source = await readFile(join(root, 'agents', entry), 'utf8');
+  const [, front, body] = /^---\n([\s\S]*?)\n---\n([\s\S]+)$/.exec(source) ?? [];
+  const field = key => new RegExp(`^${key}: (.+)$`, 'm').exec(front ?? '')?.[1]?.trim();
+  if (!field('name') || !field('description')) throw new Error(`Agent needs name and description: ${entry}`);
+  emit(`plugins/openclaw-native/agent-skills/${field('name')}/SKILL.md`, `---\nname: ${field('name')}\ndescription: ${JSON.stringify(field('description'))}\n---\n\n`
+    + 'Follow this as the role to take on for the task, in this conversation.\n\n' + body);
 }
 // Claude Code's own command copies. Two of them run one shell command and relay its last line, so they run on the
 // small model: the session's main model re-read the whole context for every turn of that. The shared files carry
@@ -220,15 +233,49 @@ emit('plugins/openclaw/plugin.json', { $schema: 'https://agent-plugins.org/schem
   name: 'estelle', version, description: 'Estelle skills for OpenClaw. The Estelle MCP server is added with openclaw mcp add.' });
 // fx (vercel-labs/fx): no plugin format and no hooks. The package is the skills fx reads from `~/.fx/skills` and an
 // `mcp.json` entry to merge into `~/.fx/mcp.json` for key sign-in; `/mcp add Estelle <url>` signs in with OAuth instead.
+// fx agent profiles (fx.sh/docs/configure-fx/agent-profiles): `~/.fx/agents/<name>/profile.json` and `prompt.md`. The shared
+// agents name Claude Code's tools; each maps to fx's own, and every Estelle MCP tool becomes the `Estelle` server, which fx
+// reaches through `toolbox`. `prompt: append` adds the agent's instructions after fx's own system prompt.
+const FX_TOOLS = Object.freeze({ Read: 'read_file', Grep: 'grep_files', Glob: 'glob_files', Write: 'write_file',
+  Edit: 'edit_file', Bash: 'shell' });
+for (const entry of (await readdir(join(root, 'agents'))).sort()) {
+  const source = await readFile(join(root, 'agents', entry), 'utf8');
+  const [, front, body] = /^---\n([\s\S]*?)\n---\n([\s\S]+)$/.exec(source) ?? [];
+  const field = key => new RegExp(`^${key}: (.+)$`, 'm').exec(front ?? '')?.[1]?.trim();
+  const name = field('name');
+  if (!/^[a-z0-9_-]{1,64}$/.test(name ?? '') || !field('description') || !field('tools')) throw new Error(`Agent needs a profile-safe name, description and tools: ${entry}`);
+  const claudeTools = field('tools').split(',').map(tool => tool.trim()).filter(Boolean);
+  const unmapped = claudeTools.filter(tool => !FX_TOOLS[tool] && !tool.startsWith('mcp__'));
+  if (unmapped.length) throw new Error(`Agent ${name} uses tools with no fx equivalent: ${unmapped.join(', ')}`);
+  const direct = claudeTools.filter(tool => FX_TOOLS[tool]).map(tool => FX_TOOLS[tool]);
+  const mcp = claudeTools.some(tool => tool.startsWith('mcp__'));
+  emit(`plugins/fx/agents/${name}/profile.json`, { description: field('description'),
+    tools: [...new Set([...direct, ...(mcp ? ['toolbox'] : [])])], mcp_servers: mcp ? ['Estelle'] : [], prompt: 'append' });
+  emit(`plugins/fx/agents/${name}/prompt.md`, body.trim() + '\n');
+}
 emit('plugins/fx/mcp.json', { mcpServers: { Estelle: { type: 'http', url: server.url, bearer_token_env: 'ESTELLE_API_KEY' } } });
 
+// OpenClaw, native: `openclaw.plugin.json` plus the in-process plugin (adapters/openclaw-plugin.mjs). A directory that held
+// both this and the bundle's `plugin.json` would install as native only (OpenClaw docs/plugins/bundles.md, "Detection
+// precedence"), so the native plugin has its own directory and `plugins/openclaw` stays the skills-only bundle.
+emit('plugins/openclaw-native/openclaw.plugin.json', { id: 'estelle', name: 'Estelle', description: `${description} Hooks, recall, capture and skills.`,
+  activation: { onStartup: true }, contracts: { conversationAccess: ['read'] },
+  configSchema: { type: 'object', additionalProperties: false },
+  skills: ['./skills', './command-skills', './agent-skills'] });
+emit('plugins/openclaw-native/package.json', npmPackage('openclaw', '@fatelabs/openclaw-estelle', {
+  keywords: ['openclaw', 'openclaw-plugin', 'estelle', 'memory', 'code-review'],
+  repository: { type: 'git', url: 'git+https://github.com/Fate-Labs-CA/estelle-plugins.git', directory: 'plugins/openclaw-native' },
+  main: './adapters/openclaw-plugin.mjs', openclaw: { extensions: ['./adapters/openclaw-plugin.mjs'] },
+  exports: { '.': './adapters/openclaw-plugin.mjs', './package.json': './package.json' } }));
+
 const HOSTS = ['claude', 'codex', 'kimi', 'grok', 'cursor', 'dsh', 'opencode', 'pi', 'qwen', 'hermes', 'mini-swe-agent',
-  'openclaw', 'fx'];
+  'openclaw', 'openclaw-native', 'fx'];
 const ASSETS = ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE', 'NOTICE'];
 // Codex gets generated skills and Claude gets generated copies (both above); the other hosts copy commands as they are.
 // mini-swe-agent needs only the runtime (its bridge); OpenClaw and fx take only content, no hook runner.
 const CONTENT_ONLY = ['skills', 'instructions.md', 'LICENSE', 'NOTICE'];
 const assetsFor = host => host === 'mini-swe-agent' ? ['runtime', 'LICENSE', 'NOTICE']
+  : host === 'openclaw-native' ? ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE', 'NOTICE']
   : ['openclaw', 'fx'].includes(host) ? CONTENT_ONLY : [...ASSETS, ...(['codex', 'claude', 'qwen'].includes(host) ? [] : ['commands']),
   ...(['claude', 'opencode'].includes(host) ? ['agents'] : [])];
 async function inventory(directory, prefix = '') {

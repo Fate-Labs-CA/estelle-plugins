@@ -44,6 +44,8 @@ export function updateSteps(host, latest) {
       return 'Run `opencode plugin @fatelabs/opencode-estelle -g`, then restart OpenCode.';
     case 'hermes':
       return 'Run `hermes plugins install Fate-Labs-CA/estelle-plugins/plugins/hermes --enable`, then restart Hermes.';
+    case 'openclaw':
+      return 'Run `openclaw plugins install --link ./estelle-plugins/plugins/openclaw-native --force` from a fresh clone, then restart the OpenClaw gateway.';
     case 'pi':
       return 'Run `pi install npm:@fatelabs/pi-estelle`, then restart Pi or run /reload.';
     default:

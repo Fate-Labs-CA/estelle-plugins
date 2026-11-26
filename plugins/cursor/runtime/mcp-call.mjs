@@ -3,11 +3,14 @@
 // to the same server every other host uses, with the same ESTELLE_API_KEY, and never prints the key.
 import { apiBase } from './io.mjs';
 import { VERSION } from './version.mjs';
+import { scrub } from './redact.mjs';
 
 const PROTOCOL = '2025-06-18';
 const CALL_TIMEOUT_MS = 180_000;
 const MAX_RESPONSE_BYTES = 8_000_000;
 const MAX_ARGUMENT_BYTES = 200_000;
+const MAX_SCRUB_DEPTH = 24;
+const MAX_SCRUB_NODES = 20_000;
 const TOOL_NAME = /^[A-Za-z0-9_.-]{1,128}$/;
 
 export function mcpUrl(env = process.env) {
@@ -74,6 +77,22 @@ export function mcpSession({ env = process.env, fetchImpl = fetch } = {}) {
   };
 }
 
+/** The tool arguments with every string passed through `scrub` (runtime/redact.mjs): <private> spans become `[private]` and
+ *  credential shapes are redacted, as for every hook host. This host has no hooks, so this bridge is the one place its
+ *  model's words leave the machine. Strings only: field names and numbers pass, and no value is dropped for its key's name
+ *  (a room write's own `session_token` must reach the server). Past the walk bounds it refuses rather than send unscanned. */
+export function scrubArguments(value) {
+  let nodes = 0;
+  const walk = (item, depth) => {
+    if (++nodes > MAX_SCRUB_NODES || depth > MAX_SCRUB_DEPTH) throw new Error('arguments_size');
+    if (typeof item === 'string') return scrub(item);
+    if (Array.isArray(item)) return item.map(entry => walk(entry, depth + 1));
+    if (item && typeof item === 'object') return Object.fromEntries(Object.entries(item).map(([key, entry]) => [scrub(key), walk(entry, depth + 1)]));
+    return item;
+  };
+  return walk(value, 0);
+}
+
 /** The printed answer of a tool call: its text blocks, then any structured content. */
 export function resultText(result) {
   const text = (result?.content ?? []).filter(block => block?.type === 'text').map(block => block.text).join('\n');
@@ -93,5 +112,5 @@ export async function runMcpCommand(argv, options = {}) {
   let args;
   try { args = raw ? JSON.parse(raw) : {}; } catch { throw new Error('arguments_json'); }
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('arguments_json');
-  return resultText(await client.call(name, args));
+  return resultText(await client.call(name, scrubArguments(args)));
 }
