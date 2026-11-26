@@ -8,6 +8,9 @@
   "commands": [
     "./commands"
   ],
+  "agents": [
+    "./agents"
+  ],
   "sessionStart": {
     "skill": "estelle"
   },
@@ -40,6 +43,11 @@
       "timeout": 20
     },
     {
+      "event": "SubagentStart",
+      "command": "node \"${KIMI_PLUGIN_ROOT}/runtime/cli.mjs\" hook kimi",
+      "timeout": 20
+    },
+    {
       "event": "SubagentStop",
       "command": "node \"${KIMI_PLUGIN_ROOT}/runtime/cli.mjs\" hook kimi",
       "timeout": 20
@@ -64,6 +72,5 @@
       "command": "node \"${KIMI_PLUGIN_ROOT}/runtime/cli.mjs\" hook kimi",
       "timeout": 3
     }
-  ],
-  "agents": []
+  ]
 }

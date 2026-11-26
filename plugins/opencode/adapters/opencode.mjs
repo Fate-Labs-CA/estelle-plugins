@@ -8,6 +8,8 @@ export const { HOOK_EVENTS, normalize, formatContext } = envelopeAdapter({
   events: Object.freeze({
     'session.created': 'SessionStart', 'session.seen': 'SessionStart', 'chat.message': 'UserPromptSubmit',
     'tool.execute.before': 'PreToolUse', 'tool.execute.after': 'PostToolUse', 'session.idle': 'Stop',
+    // ours: a CHILD session going idle (the task call it ran for is finished). The parent's idle stays `session.idle`.
+    'subagent.idle': 'SubagentStop',
     'experimental.session.compacting': 'PreCompact', 'session.deleted': 'SessionEnd',
   }),
   // OpenCode's built-in file tools: write {filePath, content}, edit {filePath, oldString, newString}, apply_patch {patchText}.

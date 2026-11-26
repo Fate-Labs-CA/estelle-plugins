@@ -14,7 +14,7 @@ import { beginContext, saveContext, takeContext } from './queued-context.mjs';
 import { updateNotice } from './update-check.mjs';
 import { freshInvocation } from './antigravity-turn.mjs';
 import { MAILBOX_HOSTS, pullAtBoundary, sessionIdentity } from './mailbox.mjs';
-import { SUBAGENT_TEXT, SUPERVISED_HOSTS, SUPERVISE_BOUNDARY, subagentIdentity, subagentTask, superviseAtBoundary } from './supervise.mjs';
+import { SUBAGENT_TEXT, SUPERVISED_HOSTS, superviseBoundaryFor, subagentIdentity, subagentTask, superviseAtBoundary } from './supervise.mjs';
 
 const CHECKPOINT_EVENTS = new Set(['Stop', 'SubagentStop', 'PreCompact', 'Interrupt']);
 const STREAM_EVENTS = new Set(['UserPromptSubmit', 'PostToolUse', 'Stop', 'SubagentStart', 'SubagentStop', 'PreCompact', 'Interrupt']);
@@ -245,7 +245,7 @@ async function answerEvent({ host, port, n, payload, stateDir, request, notice: 
     return task ? recall(n, repo, request, { prompt: task, session: subagentIdentity(n) }) : { text: '', skipped: true };
   }) : undefined;
   // What this parent's subagents need it to know (one cheap ask, bounded, silent on failure).
-  const watch = SUPERVISED_HOSTS.has(host) && SUPERVISE_BOUNDARY[n.event] && !n.agentId
+  const watch = superviseBoundaryFor(host, n.event) && !n.agentId
     ? runAction('supervise', n, stateDir, () => superviseAtBoundary(n, stateDir, request)) : undefined;
   const boundary = !mailbox ? '' : n.event === 'SessionStart' ? 'start'
     : n.event === 'PostToolUse' && !n.agentId ? 'tool' : '';
@@ -278,7 +278,7 @@ async function answerEvent({ host, port, n, payload, stateDir, request, notice: 
     if (queued) {
       await recordStatus(stateDir, { host, event: n.event, mode: 'context',
         ...(queued.degraded ? { status: 'partial', code: 'recall_degraded', pending: false } : { status: 'emitted' }) });
-      return port.formatContext(queued.text, n.event);
+      return port.formatContext(notice ? `${queued.text}\n\n${notice}` : queued.text, n.event);
     }
   }
   if (context?.text) return port.formatContext(notice ? `${context.text}\n\n${notice}` : context.text, n.event);

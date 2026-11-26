@@ -8,12 +8,12 @@ import { tmpdir } from 'node:os';
 const root = resolve(import.meta.dirname, '..');
 const json = async file => JSON.parse(await readFile(join(root, file), 'utf8'));
 
-test('the GitHub archive root exposes the same Kimi package without implicit Claude agents', async () => {
+test('the GitHub archive root exposes the same Kimi package, naming its agents explicitly', async () => {
   const manifest = await json('kimi.plugin.json');
   const nested = await json('plugins/kimi/kimi.plugin.json');
-  const { agents, ...shared } = manifest;
-  assert.deepEqual(agents, []);
-  assert.deepEqual(shared, nested);
+  assert.deepEqual(manifest.agents, ['./agents']);
+  assert.deepEqual(manifest, nested);
+  await access(join(root, 'agents'));
   assert.equal(manifest.version, (await json('package.json')).version);
   assert.deepEqual(manifest.skills, ['./skills']);
   assert.deepEqual(manifest.commands, ['./commands']);

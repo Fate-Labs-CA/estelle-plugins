@@ -24,7 +24,7 @@ async function scratch(t) {
 
 test('maps every OpenCode hook the plugin sends onto one Estelle event', () => {
   const expected = { 'session.created': 'SessionStart', 'session.seen': 'SessionStart', 'chat.message': 'UserPromptSubmit',
-    'tool.execute.before': 'PreToolUse', 'tool.execute.after': 'PostToolUse', 'session.idle': 'Stop',
+    'tool.execute.before': 'PreToolUse', 'tool.execute.after': 'PostToolUse', 'session.idle': 'Stop', 'subagent.idle': 'SubagentStop',
     'experimental.session.compacting': 'PreCompact', 'session.deleted': 'SessionEnd' };
   assert.deepEqual([...HOOK_EVENTS].sort(), Object.keys(expected).sort());
   for (const [native, event] of Object.entries(expected)) {
@@ -266,12 +266,16 @@ test('WIRED: a linked OpenCode child streams under its root as a subagent; UNWIR
   await hooks.event({ event: { type: 'session.created', properties: { info: { id: 'ses_root' } } } });
   await hooks.event({ event: { type: 'session.created', properties: { info: { id: 'ses_child', parentID: 'ses_root' } } } });
   await hooks.event({ event: { type: 'session.idle', properties: { sessionID: 'ses_child' } } });
-  const idle = calls.find(call => call.payload.hook_event_name === 'session.idle').payload;
+  const idle = calls.find(call => call.payload.hook_event_name === 'subagent.idle').payload;
+  assert.equal(normalize(idle).event, 'SubagentStop');
+  assert.equal(normalize(idle).agentId, 'ses_child');
+  assert.equal(idle.parent_session_id, 'ses_root', 'linked to its parent');
+  assert.ok(!calls.some(call => call.payload.session_id === 'ses_child' && call.payload.hook_event_name === 'session.idle'), 'a child no longer runs the parent-style Stop');
   assert.equal(idle.parent_call_id, 'toolu_task_1');
   assert.equal(idle.root_session_id, 'ses_root');
   const sent = [];
   const request = async (route, body) => { sent.push(body); return {}; };
-  await streamSession({ payload: { ...idle, hook_event_name: 'Stop' }, host: 'opencode', repo: 'fixture/repo', stateDir, request });
+  await streamSession({ payload: { ...idle, hook_event_name: 'SubagentStop' }, host: 'opencode', repo: 'fixture/repo', stateDir, request });
   const child = 'opencode-ses_root/agent-toolu_task_1';
   assert.deepEqual(sent.map(body => body.session_id), [child]);
   const events = sent[0].events;

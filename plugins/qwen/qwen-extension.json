@@ -7,5 +7,6 @@
       "httpUrl": "https://api.fatelabs.ca/mcp"
     }
   },
-  "contextFileName": "instructions.md"
+  "contextFileName": "instructions.md",
+  "agents": "agents"
 }

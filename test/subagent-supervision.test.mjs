@@ -104,10 +104,10 @@ test('a subagent never asks the question, and the kill switch stops it for the p
   assert.ok(!JSON.stringify(off ?? {}).includes(LINE));
 });
 
-test('only Claude Code and Codex ask: a host with no model-context channel at these boundaries is not asked about', async t => {
+test('a host with no documented model-context channel (Grok) is not asked about its subagents', async t => {
   const f = await fixture(t);
   const s = server({ lines: [LINE] });
-  await handleHook({ host: 'qwen-code', payload: { hook_event_name: 'UserPromptSubmit', session_id: 'q1', cwd: f.root, prompt: 'x' },
+  await handleHook({ host: 'grok', payload: { hookEventName: 'UserPromptSubmit', sessionId: 'g1', cwd: f.root, prompt: 'x' },
     stateDir: f.stateDir, request: s.request });
   assert.ok(s.calls.length > 0, 'control: the hook ran and made requests');
   assert.equal(s.asks().length, 0);
@@ -166,4 +166,29 @@ test('the task comes from the hook when it carries one, and a main-agent Session
   const id = s.calls.find(c => c.body?.action === 'identity').body.session_id;
   assert.equal(id, timelineIdentity('claude-code', 'parent-1'), 'the main agent is not a subagent');
   assert.ok(!out.hookSpecificOutput.additionalContext.includes('You are a subagent'));
+});
+
+// Hosts that announce subagents by hook are told what their children need the parent to know, but only at a boundary where
+// the host can inject the answer: the server says each transition once, so asking where the text would be dropped loses it.
+const watchRun = (f, s, host, payload) => handleHook({ host, payload: { cwd: f.root, transcript_path: null, ...payload }, stateDir: f.stateDir, request: s.request });
+
+test('WIRED: Qwen Code is told at a prompt and a tool result, Kimi at a prompt, Cursor at a tool result; UNWIRED: Grok and the stops never ask', async t => {
+  const f = await fixture(t);
+  const s = server({ lines: [LINE] });
+  const qPrompt = await watchRun(f, s, 'qwen-code', { session_id: 'q-1', hook_event_name: 'UserPromptSubmit', prompt: 'go' });
+  assert.ok(qPrompt.hookSpecificOutput.additionalContext.includes(LINE));
+  const qTool = await watchRun(f, s, 'qwen-code', { session_id: 'q-1', hook_event_name: 'PostToolUse', tool_name: 'read_file', tool_input: {}, tool_response: {} });
+  assert.ok(qTool.hookSpecificOutput.additionalContext.includes(LINE));
+  const kPrompt = await watchRun(f, s, 'kimi', { session_id: 'k-1', hook_event_name: 'UserPromptSubmit', prompt: 'go' });
+  assert.ok(kPrompt.message.includes(LINE));
+  const kTool = await watchRun(f, s, 'kimi', { session_id: 'k-1', hook_event_name: 'PostToolUse', tool_name: 'Shell', tool_input: {}, tool_response: {} });
+  const cTool = await watchRun(f, s, 'cursor', { conversation_id: 'c-1', workspace_roots: [f.root], hook_event_name: 'postToolUse', tool_name: 'Read', tool_input: {}, tool_output: '{}', tool_use_id: 'u1' });
+  assert.ok(cTool.additional_context.includes(LINE));
+  const before = s.asks().length;
+  assert.equal(before, 4, 'qwen x2, kimi prompt, cursor tool: kimi tool and every other boundary did not ask');
+  await watchRun(f, s, 'cursor', { conversation_id: 'c-1', workspace_roots: [f.root], hook_event_name: 'beforeSubmitPrompt', prompt: 'go' });
+  await watchRun(f, s, 'qwen-code', { session_id: 'q-1', hook_event_name: 'Stop' });
+  await watchRun(f, s, 'grok', { sessionId: 'g-1', hookEventName: 'UserPromptSubmit', prompt: 'go' });
+  assert.equal(s.asks().length, before);
+  assert.ok(!JSON.stringify(kTool ?? {}).includes(LINE));
 });
