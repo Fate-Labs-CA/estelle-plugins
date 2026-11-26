@@ -725,7 +725,8 @@ function boundaryEvents({ hook, timeline, offset, last, started, incomplete, sub
     const at = new Date(Math.max(Date.now(), validTime(last) ? Date.parse(last) : 0)).toISOString();
     return { events: [lifecycle(`${timeline}:prompt:${offset}`, at, 'running', 'input_received')], ended };
   }
-  if (incomplete || !last || !['Stop', 'SessionEnd'].includes(hook)) return { events: [], ended };
+  // A linked subagent's own SubagentStop (OpenCode: its session went idle) ends it like its Stop; any other SubagentStop is not a stop of this timeline.
+  if (incomplete || !last || !(['Stop', 'SessionEnd'].includes(hook) || (sub && hook === 'SubagentStop'))) return { events: [], ended };
   if (sub) return ended ? { events: [], ended } : { events: [lifecycle(`${timeline}:end:${offset}`, last, 'ended', 'completed')], ended: true };
   const end = hook === 'SessionEnd';
   return { events: [lifecycle(`${timeline}:${end ? 'end' : 'stop'}:${offset}`, last, end ? 'ended' : 'waiting_for_review', end ? 'completed' : 'input_required')], ended };

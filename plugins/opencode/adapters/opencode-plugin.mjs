@@ -92,7 +92,9 @@ export function createHooks({ directory, client, env = process.env, run = runHoo
     session.pending = false;
     session.stopping = (async () => {
       await mirror(sessionID, true);
-      await run(HOST, envelope('session.idle', sessionID), { env });
+      // A linked child session's idle is its end, posted as SubagentStop with its parent and the spawning call; a child whose
+      // task call was not found stays its own session and keeps the plain Stop.
+      await run(HOST, envelope(state(sessionID).link ? 'subagent.idle' : 'session.idle', sessionID), { env });
     })();
     return session.stopping;
   }

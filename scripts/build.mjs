@@ -85,25 +85,25 @@ for (const entry of (await readdir(join(root, 'commands'))).sort()) {
 }
 emit('plugins/codex/.mcp.json', { mcpServers: { Estelle: server } });
 emit('plugins/codex/hooks/hooks.json', nativeHooks('codex', 'PLUGIN_ROOT', [...common, 'Interrupt']));
-const kimiManifest = { ...manifest, skills: ['./skills'], commands: ['./commands'],
+const kimiManifest = { ...manifest, skills: ['./skills'], commands: ['./commands'], agents: ['./agents'],
   sessionStart: { skill: 'estelle' },
   mcpServers: { Estelle: { transport: 'http', url: server.url, bearerTokenEnvVar: 'ESTELLE_API_KEY' } },
-  hooks: [...common.filter(event => event !== 'SubagentStart'), 'Interrupt']
+  hooks: [...common, 'Interrupt']
     .map(event => ({ event, command: command('kimi', 'KIMI_PLUGIN_ROOT'), timeout: ['SessionEnd', 'Interrupt'].includes(event) ? 3 : 20 })),
 };
 emit('plugins/kimi/kimi.plugin.json', kimiManifest);
 // GitHub archives expose only their repository root to Kimi; keep the same canonical assets.
-// An explicit empty list prevents Kimi's fallback from discovering the root's Claude-only agents.
-emit('kimi.plugin.json', { ...kimiManifest, agents: [] });
+// Both manifests name the agents explicitly (Kimi `agents` field: `./` paths inside the plugin root).
+emit('kimi.plugin.json', kimiManifest);
 emit('plugins/grok/plugin.json', { ...manifest, skills: './skills', commands: './commands',
   hooks: './hooks/hooks.json', mcpServers: './.mcp.json' });
 emit('plugins/grok/.mcp.json', { mcpServers: { Estelle: server } });
-emit('plugins/grok/hooks/hooks.json', nativeHooks('grok', 'GROK_PLUGIN_ROOT', common.filter(event => event !== 'SubagentStart')));
+emit('plugins/grok/hooks/hooks.json', nativeHooks('grok', 'GROK_PLUGIN_ROOT', common));
 emit('plugins/cursor/.cursor-plugin/plugin.json', { ...manifest, author: { name: 'Fate Labs' }, license: 'Apache-2.0',
   skills: './skills', commands: './commands', rules: './rules', hooks: './hooks/hooks.json', mcpServers: './mcp.json' });
 emit('plugins/cursor/mcp.json', { mcpServers: { Estelle: { url: server.url,
   headers: { Authorization: 'Bearer ${env:ESTELLE_API_KEY}' } } } });
-emit('plugins/cursor/hooks/hooks.json', { version: 1, hooks: Object.fromEntries(CURSOR_EVENTS.filter(event => event !== 'subagentStart').map(event => [event,
+emit('plugins/cursor/hooks/hooks.json', { version: 1, hooks: Object.fromEntries(CURSOR_EVENTS.map(event => [event,
   [{ command: command('cursor', 'CURSOR_PLUGIN_ROOT'), timeout: event === 'sessionEnd' ? 3 : 20 }]])) });
 emit('plugins/cursor/rules/estelle.mdc', '---\ndescription: Use Estelle tools for repository context and shared work\nalwaysApply: true\n---\n'
   + generated.get('instructions.md'));
@@ -187,10 +187,21 @@ if (JSON.stringify(rootPi) !== JSON.stringify(expectedRootPi)) throw new Error(`
 // from `/mcp` (a pinned Authorization header would disable that, and an unset variable is sent as literal text). Hooks are
 // Qwen Code's Claude-shaped command hooks. In an extension's hooks Qwen Code fills in `${CLAUDE_PLUGIN_ROOT}` only
 // (core/src/extension/variables.ts, substituteHookVariables); `${extensionPath}` reached the shell empty in testing.
-const QWEN_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'PreCompact', 'SessionEnd'];
+const QWEN_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SubagentStart', 'SubagentStop', 'PreCompact', 'SessionEnd'];
 emit('plugins/qwen/qwen-extension.json', { name: 'estelle', version, description,
-  mcpServers: { Estelle: { httpUrl: server.url } }, contextFileName: 'instructions.md' });
+  mcpServers: { Estelle: { httpUrl: server.url } }, contextFileName: 'instructions.md', agents: 'agents' });
 emit('plugins/qwen/hooks/hooks.json', nativeHooks('qwen-code', 'CLAUDE_PLUGIN_ROOT', QWEN_EVENTS));
+// Qwen Code subagents are Markdown with `tools` naming Qwen's own tools (sub-agents docs: read_file, grep_search, glob,
+// write_file, edit, run_shell_command; `mcp__<server>__<tool>` for MCP). The shared agents name Claude's tools, so the
+// names are translated here, and the Claude-plugin-only `mcp__plugin_estelle_*` aliases are dropped.
+const QWEN_TOOLS = { Read: 'read_file', Grep: 'grep_search', Glob: 'glob', Write: 'write_file', Edit: 'edit', Bash: 'run_shell_command' };
+const qwenTools = list => list.split(',').map(tool => tool.trim()).filter(tool => tool && !tool.startsWith('mcp__plugin_'))
+  .map(tool => QWEN_TOOLS[tool] ?? tool).join(', ');
+for (const entry of (await readdir(join(root, 'agents'))).filter(name => name.endsWith('.md')).sort()) {
+  const source = await readFile(join(root, 'agents', entry), 'utf8');
+  if (!/^tools: .+$/m.test(source)) throw new Error(`Agent needs a tools line: ${entry}`);
+  emit(`plugins/qwen/agents/${entry}`, source.replace(/^tools: (.+)$/m, (_, list) => `tools: ${qwenTools(list)}`));
+}
 // Qwen Code commands are Markdown with `{{args}}`; the runner path is where `qwen extensions install` puts the extension.
 const QWEN_CLI = '~/.qwen/extensions/estelle/runtime/cli.mjs';
 for (const entry of (await readdir(join(root, 'commands'))).sort()) {
@@ -205,7 +216,7 @@ emit('plugins/hermes/plugin.yaml', `name: estelle
 version: ${version}
 description: ${description}
 author: Fate Labs
-provides_hooks: [on_session_start, pre_llm_call, pre_tool_call, post_tool_call, post_llm_call, on_session_finalize]
+provides_hooks: [on_session_start, pre_llm_call, pre_tool_call, post_tool_call, post_llm_call, on_session_finalize, subagent_start, subagent_stop, post_compaction]
 `);
 emit('plugins/hermes/__init__.py', await readFile(join(root, 'hosts', 'hermes', '__init__.py'), 'utf8'));
 
@@ -230,7 +241,7 @@ const ASSETS = ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE', '
 const CONTENT_ONLY = ['skills', 'instructions.md', 'LICENSE', 'NOTICE'];
 const assetsFor = host => host === 'mini-swe-agent' ? ['runtime', 'LICENSE', 'NOTICE']
   : ['openclaw', 'fx'].includes(host) ? CONTENT_ONLY : [...ASSETS, ...(['codex', 'claude', 'qwen'].includes(host) ? [] : ['commands']),
-  ...(['claude', 'opencode'].includes(host) ? ['agents'] : [])];
+  ...(['claude', 'opencode', 'cursor', 'kimi'].includes(host) ? ['agents'] : [])];
 async function inventory(directory, prefix = '') {
   const output = new Map();
   for (const entry of await readdir(directory, { withFileTypes: true })) {

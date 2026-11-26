@@ -49,5 +49,8 @@ Kill switch (plugin and server): `ESTELLE_SUBAGENT_SUPERVISION=0`.
 |---|---|---|---|---|
 | Claude Code | child transcript | `SubagentStop` with `agent_id`, the child's own final reply, `SubagentHandback`; server abandon after 2 h | yes | yes |
 | Codex | child rollout | `task_complete`, `turn_aborted`; server abandon after 2 h | yes | start text and identity; memory only if the hook carries the task |
-| Cursor, Grok Build, Qwen Code, Kimi Code | start and stop only (their steps are not captured) | `subagentStop`; server abandon after 2 h | no (no model-context channel at these boundaries) | no |
-| OpenCode, Pi, Hermes, dsh | no subagent hook | n/a | n/a | n/a |
+| Cursor, Grok Build, Qwen Code, Kimi Code | start and stop only (their steps are not captured) | `subagentStop`; server abandon after 2 h | Qwen Code (prompt, tool result), Kimi Code (prompt) and Cursor (tool result), where the host can inject; the server must list the host. Grok: no, its docs name no context channel | no |
+| OpenCode | the child session, linked to its task call | its session going idle, posted as `SubagentStop` | no | no |
+| Hermes (newer than 0.19.0) | its own session; `subagent_start`, `subagent_stop` and `post_compaction` registered where Hermes lists them | n/a | n/a | n/a |
+| Pi | no subagents by design | n/a | n/a | n/a |
+| dsh | not captured: the docs name no subagent or compaction event, so none is wired | n/a | n/a | n/a |

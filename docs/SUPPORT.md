@@ -34,6 +34,11 @@ Hooks require a usable `ESTELLE_API_KEY`; a separate MCP OAuth login does not es
 identity. Captures omit media bytes and private/encrypted reasoning. Bounds, missing transcripts,
 queued uploads and unsupported formats are not complete history.
 
+Grok Build's SessionStart hook cannot inject the start text or the Room identity: docs.x.ai/build/features/hooks (read 2026-11-25) says
+stdout is ignored for passive events and documents no `additionalContext` for any hook, so this is a platform limit, not a gap in the
+plugin. The Estelle skill is the only start-of-session channel Grok has, and the adapter's `PreToolUse` and `PostToolUse` context stays
+unverified against a live session.
+
 Grok and Cursor prompt hooks cannot inject context. Recall is queued for a matching supported
 tool boundary; a reply with no tool call may receive none. Cursor stop hooks never auto-continue
 the agent. Grok and Cursor transcript readers are inferred from the hook payload contract and

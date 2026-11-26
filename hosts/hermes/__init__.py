@@ -275,6 +275,25 @@ class Estelle:
             return
         self._hook("post_llm_call", session_id, parent=parent_session_id)
 
+    def subagent_start(self, child_session_id: Any = None, parent_session_id: Any = None, child_goal: Any = None,
+                       child_role: Any = None, **_: Any) -> None:
+        """A delegated child is about to run (Hermes newer than 0.19.0). Observer only: the task is the child's goal."""
+        goal = child_goal if isinstance(child_goal, str) else ""
+        self._hook("subagent_start", child_session_id, parent=parent_session_id, prompt=goal,
+                   agent_type=child_role if isinstance(child_role, str) else None)
+
+    def subagent_stop(self, parent_session_id: Any = None, child_role: Any = None, child_summary: Any = None,
+                      child_status: Any = None, **_: Any) -> None:
+        """A delegated child finished. Hermes names no child id here, so this is posted on the parent's session."""
+        self._hook("subagent_stop", parent_session_id,
+                   agent_type=child_role if isinstance(child_role, str) else None,
+                   last_assistant_message=child_summary if isinstance(child_summary, str) else None,
+                   status=child_status if isinstance(child_status, str) else None)
+
+    def post_compaction(self, session_id: Any = None, **_: Any) -> None:
+        """A compaction was committed (Hermes newer than 0.19.0; it has no pre-compaction hook): checkpoint the session."""
+        self._hook("post_compaction", session_id)
+
     def on_session_finalize(self, session_id: Any = None, **_: Any) -> None:
         self._hook("on_session_finalize", session_id, END_TIMEOUT_S)
 
@@ -300,10 +319,26 @@ def _session_cwd(ctx: Any) -> Callable[[], str]:
     return cwd
 
 
-def register(ctx: Any, estelle: Estelle | None = None) -> Estelle:
+BASE_HOOKS = ("on_session_start", "pre_llm_call", "pre_tool_call", "post_tool_call", "post_llm_call", "on_session_finalize")
+# In the v0.23.3 hook catalog, not in 0.19.0: registered only where the installed Hermes lists them.
+NEWER_HOOKS = ("subagent_start", "subagent_stop", "post_compaction")
+
+
+def supported_hooks(valid: Any = None) -> tuple[str, ...]:
+    """Every hook this plugin wants that the installed Hermes accepts. ``valid`` is Hermes's ``VALID_HOOKS``; when it cannot
+    be read (outside Hermes) all of them are offered, since a name an older Hermes does not list only draws a warning."""
+    if valid is None:
+        try:
+            from hermes_cli.plugins import VALID_HOOKS as valid
+        except (ImportError, AttributeError):
+            return BASE_HOOKS + NEWER_HOOKS
+    return BASE_HOOKS + tuple(name for name in NEWER_HOOKS if name in valid)
+
+
+def register(ctx: Any, estelle: Estelle | None = None, valid_hooks: Any = None) -> Estelle:
     """Hermes calls this once per process with its PluginContext."""
     plugin = estelle or Estelle(_hermes_home(), cwd=_session_cwd(ctx))
-    for name in ("on_session_start", "pre_llm_call", "pre_tool_call", "post_tool_call", "post_llm_call", "on_session_finalize"):
+    for name in supported_hooks(valid_hooks):
         ctx.register_hook(name, getattr(plugin, name))
     for skill in read_skills():
         try:

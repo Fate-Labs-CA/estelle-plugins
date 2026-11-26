@@ -104,7 +104,7 @@ test('the Qwen Code extension: OAuth-ready MCP, hooks on the path Qwen Code fill
   assert.deepEqual(manifest.mcpServers, { Estelle: { httpUrl: 'https://api.fatelabs.ca/mcp' } });
   assert.equal(manifest.contextFileName, 'instructions.md');
   const hooks = (await json('plugins/qwen/hooks/hooks.json')).hooks;
-  assert.deepEqual(Object.keys(hooks).sort(), ['PostToolUse', 'PreCompact', 'PreToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'UserPromptSubmit']);
+  assert.deepEqual(Object.keys(hooks).sort(), ['PostToolUse', 'PreCompact', 'PreToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit']);
   for (const rows of Object.values(hooks)) {
     // Qwen Code substitutes only ${CLAUDE_PLUGIN_ROOT} in an extension's hooks (core/src/extension/variables.ts).
     assert.equal(rows[0].hooks[0].command, 'node "${CLAUDE_PLUGIN_ROOT}/runtime/cli.mjs" hook qwen-code');

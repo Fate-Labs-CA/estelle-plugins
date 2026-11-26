@@ -44,6 +44,17 @@
         ]
       }
     ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${GROK_PLUGIN_ROOT}/runtime/cli.mjs\" hook grok",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
     "SubagentStop": [
       {
         "hooks": [
