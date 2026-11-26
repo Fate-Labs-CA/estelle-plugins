@@ -2,7 +2,7 @@
 const HARNESSES = { claude: 'claude-code', 'claude-code': 'claude-code', codex: 'codex',
   kimi: 'kimi-code', 'kimi-code': 'kimi-code', grok: 'grok', cursor: 'cursor',
   dsh: 'deepseek-harness', 'deepseek-harness': 'deepseek-harness', opencode: 'opencode', pi: 'pi',
-  hermes: 'hermes', 'qwen-code': 'qwen-code', 'gemini-cli': 'gemini-cli' };
+  hermes: 'hermes', 'qwen-code': 'qwen-code', 'gemini-cli': 'gemini-cli', antigravity: 'antigravity' };
 export function canonicalHost(host) {
   const value = HARNESSES[host];
   if (!value) throw new Error('unsupported_host');

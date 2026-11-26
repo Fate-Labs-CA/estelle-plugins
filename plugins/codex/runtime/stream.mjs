@@ -20,7 +20,7 @@ const INJECTED = ['<system-reminder', '<command-', '<local-command', '<task-noti
 const CODEX_INJECTED = [...INJECTED, '<environment_context', '<user_instructions', '# AGENTS.md instructions', '<skill', '<turn_aborted', '<user_shell_command'];
 const AGENTS = { claude: 'claude-code', 'claude-code': 'claude-code', codex: 'codex', kimi: 'kimi-code', 'kimi-code': 'kimi-code',
   grok: 'grok', cursor: 'cursor', dsh: 'deepseek-harness', 'deepseek-harness': 'deepseek-harness', opencode: 'opencode', pi: 'pi',
-  hermes: 'hermes', 'qwen-code': 'qwen-code', 'gemini-cli': 'gemini-cli' };
+  hermes: 'hermes', 'qwen-code': 'qwen-code', 'gemini-cli': 'gemini-cli', antigravity: 'antigravity' };
 const WAITING = 'waiting_for_review/input_required';
 const string = value => typeof value === 'string' ? value : '';
 const validTime = value => typeof value === 'string' && Number.isFinite(Date.parse(value));
@@ -496,6 +496,32 @@ export function mapPi(entry, offset, notes = {}) {
   return out;
 }
 
+const ANTIGRAVITY_AGENT = 'antigravity';
+/** Antigravity's per-conversation transcript (`~/.gemini/antigravity-cli/brain/<conversation>/.system_generated/logs/transcript.jsonl`,
+ *  `transcript_full.jsonl` beside it untruncated). One step per line: `{step_index, source, type, status, created_at?, content?,
+ *  tool_calls?}`. The layout is read from a third-party write-up, not a real recording, so `current_format_verified` is false.
+ *  `source` USER_EXPLICIT is the person; MODEL `PLANNER_RESPONSE` is a reply with tool calls; other MODEL steps are tool output. */
+export function mapAntigravity(step, offset, notes = {}) {
+  if (!step || typeof step !== 'object' || Array.isArray(step) || !Number.isSafeInteger(step.step_index)) return [];
+  const at = validTime(step.created_at) ? step.created_at : validTime(notes.observedAt) ? notes.observedAt : null;
+  if (!at) return [];
+  const id = `ag${step.step_index}`;
+  const content = string(step.content);
+  if (step.source === 'USER_EXPLICIT' && step.type === 'USER_INPUT') {
+    return messageEvents(content.trim() ? [{ type: 'text', text: content }] : [], 'user', id, at, ANTIGRAVITY_AGENT, notes);
+  }
+  if (step.source !== 'MODEL') return [];
+  if (step.type !== 'PLANNER_RESPONSE') {
+    return step.status === 'DONE' && content.trim()
+      ? [event(id, 'tool_result', agent(ANTIGRAVITY_AGENT), at, { call_id: null, ok: true, output: cap(content) })] : [];
+  }
+  const calls = Array.isArray(step.tool_calls) ? step.tool_calls.slice(0, LIMITS.messageBlocks) : [];
+  const blocks = [...(content.trim() ? [{ type: 'text', text: content }] : []),
+    ...calls.filter(call => call && typeof call === 'object').map(call => ({ type: 'tool_use', id: null, name: string(call.name),
+      input: call.args && typeof call.args === 'object' ? call.args : {} }))];
+  return messageEvents(blocks, 'assistant', id, at, ANTIGRAVITY_AGENT, notes);
+}
+
 const QWEN_AGENT = 'qwen-code';
 // Hook context Qwen Code appends to the person's prompt as its own part, e.g. `<qwen:user-prompt-submit-context>`.
 export const QWEN_INJECTED = ['<qwen:', ...INJECTED];
@@ -705,7 +731,7 @@ function collectWindow(window, host, notes, remaining, child = false) {
   let lines = 0;
   const mapper = host === 'codex' ? mapCodex : host === 'kimi-code' ? mapKimi
     : host === 'grok' ? mapGrok : host === 'cursor' ? mapCursor : host === DSH_AGENT ? mapDsh : host === PI_AGENT ? mapPi
-    : host === QWEN_AGENT ? mapQwen : host === GEMINI_AGENT ? mapGemini : mapClaude;
+    : host === QWEN_AGENT ? mapQwen : host === GEMINI_AGENT ? mapGemini : host === ANTIGRAVITY_AGENT ? mapAntigravity : mapClaude;
   const buffer = window.buffer;
   for (let from = 0; from < buffer.length && lines < LIMITS.lines; lines++) {
     const end = buffer.indexOf(10, from) + 1;
@@ -794,7 +820,7 @@ export async function streamSession({ payload, host, repo, stateDir, request, no
   // A linked OpenCode child is its own timeline under the root, as a Claude Code subagent is; its user turn is the brief.
   const notes = { repository: repo, ...(sub ? { sidechain: true } : {}) };
   // Grok and Cursor transcript lines carry no verified timestamps; capture time stamps their events.
-  if (harness === 'grok' || harness === 'cursor') notes.observedAt = new Date().toISOString();
+  if (harness === 'grok' || harness === 'cursor' || harness === ANTIGRAVITY_AGENT) notes.observedAt = new Date().toISOString();
   if (harness === 'opencode' || harness === 'hermes') notes.harness = harness;
   // Kimi 2.6.0 records assistant and tool turns only as loop events; the first window that shows either vocabulary decides.
   if (harness === 'kimi-code' && typeof state.kimi_loop_turns === 'boolean') notes.kimiLoopTurns = state.kimi_loop_turns;
@@ -875,6 +901,8 @@ export async function streamSession({ payload, host, repo, stateDir, request, no
       capture_scope: "the turn's messages the plugin read from Hermes's post_llm_call hook; subagent sessions are not linked to their parent" } : {}),
     ...(harness === GEMINI_AGENT ? { transcript_format: 'gemini-chat-recording', current_format_verified: true,
       capture_scope: "Gemini CLI's own chat recording; the person's prompts, replies, thoughts, tool calls and results; subagent sessions (chats/<parent>/) are not captured" } : {}),
+    ...(harness === ANTIGRAVITY_AGENT ? { transcript_format: 'antigravity-transcript-jsonl-inferred', current_format_verified: false,
+      capture_scope: "hook transcriptPath (brain/<conversation>/.system_generated/logs/transcript.jsonl): the person's prompts, planner replies, tool calls and step outputs; the layout is from third-party observation, not a recording" } : {}),
     ...(harness === QWEN_AGENT ? { transcript_format: 'qwen-chat-recording', current_format_verified: true,
       capture_scope: "Qwen Code's own chat recording; the person's prompts, replies, tool calls and results; system records are skipped" } : {}) };
 }

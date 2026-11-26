@@ -3,6 +3,7 @@ import { statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { HOOK_EVENTS as CURSOR_EVENTS } from '../adapters/cursor.mjs';
+import { WRITE_TOOL_MATCHER } from '../adapters/antigravity.mjs';
 import { FILE_WRITE_MATCHER } from '../runtime/write-warning.mjs';
 
 const root = resolve(import.meta.dirname, '..');
@@ -260,14 +261,47 @@ emit('plugins/openclaw/plugin.json', { $schema: 'https://agent-plugins.org/schem
 // `mcp.json` entry to merge into `~/.fx/mcp.json` for key sign-in; `/mcp add Estelle <url>` signs in with OAuth instead.
 emit('plugins/fx/mcp.json', { mcpServers: { Estelle: { type: 'http', url: server.url, bearer_token_env: 'ESTELLE_API_KEY' } } });
 
+// Google Antigravity (IDE and `agy` CLI): one plugin directory. `agy plugin validate` rejects unknown plugin.json fields.
+// MCP is the URL alone, so Antigravity's own OAuth (CIMD or DCR, then a pasted code) signs in; a pinned header would disable
+// it. Hook commands run with the plugin root as the working directory, so paths are relative. Antigravity has no prompt,
+// compaction, session-end or subagent event: PreInvocation is the prompt, Stop is capture and checkpoint.
+const AGY_COMMAND = event => ({ type: 'command', command: `node ./runtime/cli.mjs hook antigravity ${event}`, timeout: 20 });
+emit('plugins/antigravity/plugin.json', { $schema: 'https://antigravity.google/schemas/v1/plugin.json', name: 'estelle',
+  displayName: 'Estelle', version, license: 'Apache-2.0', author: { name: 'Fate Labs', url: 'https://fatelabs.ca' },
+  description: 'Estelle gives Antigravity repository memory, grounded review and session capture through MCP, hooks, skills and agents.',
+  homepage: 'https://github.com/Fate-Labs-CA/estelle-plugins/blob/main/docs/install/antigravity.md',
+  repository: 'https://github.com/Fate-Labs-CA/estelle-plugins', keywords: ['estelle', 'memory', 'mcp', 'code-review'],
+  suggestedPrompts: ['Resume where I left off with Estelle', 'Review my current change with Estelle'] });
+emit('plugins/antigravity/mcp_config.json', { mcpServers: { Estelle: { serverUrl: server.url } } });
+emit('plugins/antigravity/hooks.json', { estelle: {
+  SessionStart: [AGY_COMMAND('SessionStart')], PreInvocation: [AGY_COMMAND('PreInvocation')],
+  PreToolUse: [{ matcher: WRITE_TOOL_MATCHER, hooks: [AGY_COMMAND('PreToolUse')] }],
+  PostToolUse: [{ matcher: '', hooks: [AGY_COMMAND('PostToolUse')] }], Stop: [AGY_COMMAND('Stop')] } });
+emit('plugins/antigravity/rules/AGENTS.md', generated.get('instructions.md'));
+// Commands are skills here (`/<skill-name>`), prefixed so they cannot shadow a person's own `/code` or `/review`. Only the
+// person invokes them. `$ARGUMENTS` has no meaning in a skill, as in Codex's conversion above.
+for (const entry of (await readdir(join(root, 'commands'))).sort()) {
+  const name = entry.replace(/\.md$/, '');
+  const [, description, body] = /^---\ndescription: (.+)\n---\n([\s\S]+)$/.exec(await readFile(join(root, 'commands', entry), 'utf8')) ?? [];
+  if (!description) throw new Error(`Command needs one description line: ${entry}`);
+  emit(`plugins/antigravity/command-skills/estelle-${name}/SKILL.md`, `---\nname: estelle-${name}\ndescription: ${JSON.stringify(description)}\n`
+    + `disable-model-invocation: true\n---\n\n${body.replaceAll('$ARGUMENTS', 'what the person asked for')}`);
+}
+// Agents: Antigravity's frontmatter has no Claude `tools` list (its tool names differ), so the agent keeps all tools.
+for (const entry of (await readdir(join(root, 'agents'))).sort()) {
+  const [, name, description, body] = /^---\nname: (.+)\ndescription: (.+)\ntools: .+\n---\n([\s\S]+)$/.exec(await readFile(join(root, 'agents', entry), 'utf8')) ?? [];
+  if (!name) throw new Error(`Agent needs name, description and tools lines: ${entry}`);
+  emit(`plugins/antigravity/agents/${entry}`, `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\nmainAgent: false\nsubagent: true\nmodel: inherit\n---\n${body}`);
+}
+
 const HOSTS = ['claude', 'codex', 'kimi', 'grok', 'cursor', 'dsh', 'opencode', 'pi', 'qwen', 'gemini', 'hermes', 'mini-swe-agent',
-  'openclaw', 'fx'];
+  'openclaw', 'fx', 'antigravity'];
 const ASSETS = ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE', 'NOTICE'];
 // Codex gets generated skills and Claude gets generated copies (both above); the other hosts copy commands as they are.
 // mini-swe-agent needs only the runtime (its bridge); OpenClaw and fx take only content, no hook runner.
 const CONTENT_ONLY = ['skills', 'instructions.md', 'LICENSE', 'NOTICE'];
 const assetsFor = host => host === 'mini-swe-agent' ? ['runtime', 'LICENSE', 'NOTICE']
-  : ['openclaw', 'fx'].includes(host) ? CONTENT_ONLY : [...ASSETS, ...(['codex', 'claude', 'qwen', 'gemini'].includes(host) ? [] : ['commands']),
+  : ['openclaw', 'fx'].includes(host) ? CONTENT_ONLY : [...ASSETS, ...(['codex', 'claude', 'qwen', 'gemini', 'antigravity'].includes(host) ? [] : ['commands']),
   ...(['claude', 'opencode'].includes(host) ? ['agents'] : [])];
 async function inventory(directory, prefix = '') {
   const output = new Map();

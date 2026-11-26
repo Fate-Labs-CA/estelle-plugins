@@ -42,6 +42,8 @@ export function updateSteps(host, latest) {
       return 'Pull your estelle-plugins clone, run `qwen extensions install ./estelle-plugins/plugins/qwen`, then restart Qwen Code.';
     case 'gemini-cli':
       return 'Pull your estelle-plugins clone, run `gemini extensions install ./estelle-plugins/plugins/gemini --consent`, then restart Gemini CLI.';
+    case 'antigravity':
+      return 'Run `agy plugin install https://github.com/Fate-Labs-CA/estelle-plugins` again (or pull your clone and install plugins/antigravity), then start a fresh session.';
     case 'opencode':
       return 'Run `opencode plugin @fatelabs/opencode-estelle -g`, then restart OpenCode.';
     case 'hermes':

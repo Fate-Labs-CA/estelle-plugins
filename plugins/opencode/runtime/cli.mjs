@@ -57,6 +57,8 @@ if (command === 'doctor') {
   // Optional integration failures must not abort a user's turn. They remain visible in doctor.
   try {
     payload = await readInput();
+    // Antigravity's stdin does not name the event, so the hook command line does: `hook antigravity <Event>`.
+    if (host === 'antigravity' && payload && typeof payload === 'object' && !Array.isArray(payload)) payload.hook_event_name ??= process.argv[4];
     const { handleHook } = await import('./hooks.mjs');
     const output = await handleHook({ host, payload, stateDir: stateDirectory(), request: apiClient(), update: {} });
     if (output) console.log(JSON.stringify(output));
@@ -118,6 +120,6 @@ if (command === 'doctor') {
     process.exitCode = 1;
   }
 } else {
-  console.error('Usage: node runtime/cli.mjs hook <claude-code|codex|kimi|grok|cursor|dsh|opencode|pi|hermes|qwen-code|gemini-cli> | doctor | mcp tools | mcp call <tool> <json> | setup <host> [--apply] [--expect SHA256]');
+  console.error('Usage: node runtime/cli.mjs hook <claude-code|codex|kimi|grok|cursor|dsh|opencode|pi|hermes|qwen-code|gemini-cli|antigravity> | doctor | mcp tools | mcp call <tool> <json> | setup <host> [--apply] [--expect SHA256]');
   process.exitCode = 1;
 }
