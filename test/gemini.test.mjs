@@ -177,7 +177,8 @@ test('the Gemini CLI extension: OAuth-ready MCP, hooks on the variables Gemini C
     const text = await readFile(join(root, 'plugins', 'gemini', 'commands', 'estelle', file), 'utf8');
     assert.match(text, /^description = ".+"\nprompt = '''\n/);
     assert.doesNotMatch(text, /\$ARGUMENTS|<Estelle cli\.mjs>/);
-    assert.match(text, /\{\{args\}\}/);
+    const source = await readFile(join(root, 'commands', file.replace('.toml', '.md')), 'utf8');
+    if (source.includes('$ARGUMENTS')) assert.match(text, /\{\{args\}\}/);
   }
   for (const file of await readdir(join(root, 'plugins', 'gemini', 'agents'))) {
     const text = await readFile(join(root, 'plugins', 'gemini', 'agents', file), 'utf8');

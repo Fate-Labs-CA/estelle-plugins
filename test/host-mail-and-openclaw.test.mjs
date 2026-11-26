@@ -186,7 +186,7 @@ test('the OpenClaw runner path works end to end: identity is asked for and the m
   assert.ok(mailCalls(spy).every(call => call.body.session_id === 'openclaw-sess-e2e'));
 });
 
-test('the native OpenClaw package carries the manifest, the entry, the 26 skills, the 7 commands and the 4 agents as skill roots', async () => {
+test('the native OpenClaw package carries the manifest, the entry, the 26 skills, the 9 commands and the 4 agents as skill roots', async () => {
   const manifest = await json('plugins/openclaw-native/openclaw.plugin.json');
   assert.equal(manifest.id, 'estelle');
   assert.deepEqual(manifest.skills, ['./skills', './command-skills', './agent-skills']);
@@ -195,7 +195,7 @@ test('the native OpenClaw package carries the manifest, the entry, the 26 skills
   const pkg = await json('plugins/openclaw-native/package.json');
   assert.deepEqual(pkg.openclaw.extensions, ['./adapters/openclaw-plugin.mjs']);
   const count = async dir => (await readdir(join(root, 'plugins/openclaw-native', dir))).length;
-  assert.deepEqual([await count('skills'), await count('command-skills'), await count('agent-skills')], [26, 7, 4]);
+  assert.deepEqual([await count('skills'), await count('command-skills'), await count('agent-skills')], [26, 9, 4]);
   const skill = await readFile(join(root, 'plugins/openclaw-native/agent-skills/estelle-reviewer/SKILL.md'), 'utf8');
   assert.match(skill, /^---\nname: estelle-reviewer\ndescription: ".+"\n---\n/);
   assert.doesNotMatch(skill, /^tools:/m, 'the Claude-only tool list is not carried');

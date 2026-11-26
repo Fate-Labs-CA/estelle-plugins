@@ -161,7 +161,7 @@ test('the Antigravity plugin follows the documented schema: manifest, MCP, hooks
     const description = /^description: (.+)$/m.exec(text)?.[1];
     assert.ok(description && description.length <= 1024 + 2);
   }
-  assert.deepEqual((await readdir(join(dir, 'command-skills'))).sort(), ['cloud', 'code', 'handoff', 'monitor', 'resume', 'review', 'rooms'].map(n => `estelle-${n}`));
+  assert.deepEqual((await readdir(join(dir, 'command-skills'))).sort(), ['cloud', 'code', 'handoff', 'login', 'logout', 'monitor', 'resume', 'review', 'rooms'].map(n => `estelle-${n}`));
   const agents = await readdir(join(dir, 'agents'));
   assert.equal(agents.length, (await readdir(join(root, 'agents'))).length);
   for (const file of agents) assert.match(await readFile(join(dir, 'agents', file), 'utf8'), /^---\nname: .+\ndescription: ".+"\nmainAgent: false\nsubagent: true\nmodel: inherit\n---\n/);

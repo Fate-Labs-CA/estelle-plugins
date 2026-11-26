@@ -58,8 +58,10 @@ function nativeHooks(host, variable, events) {
 }
 emit('plugins/claude/.claude-plugin/plugin.json', { ...manifest, license: 'Apache-2.0', author: { name: 'Fate Labs' },
   repository: 'https://github.com/uqeu/estelle-plugins', hooks: './hooks/hooks.json', mcpServers: './.mcp.json' });
-// URL only: Claude Code signs in with OAuth. A pinned header disables that, and an unset variable goes out literally.
-emit('plugins/claude/.mcp.json', { mcpServers: { Estelle: { type: 'http', url: server.url } } });
+// The helper prints the plugin's own sign-in, or nothing, in which case Claude Code signs in with its own OAuth as before.
+// Never a pinned header: that disables OAuth, and an unset variable goes out literally.
+emit('plugins/claude/.mcp.json', { mcpServers: { Estelle: { type: 'http', url: server.url,
+  headersHelper: 'node "${CLAUDE_PLUGIN_ROOT}/runtime/cli.mjs" mcp-headers' } } });
 emit('plugins/claude/hooks/hooks.json', nativeHooks('claude-code', 'CLAUDE_PLUGIN_ROOT', common));
 emit('plugins/codex/.codex-plugin/plugin.json', { ...manifest, skills: ['./skills', './command-skills'],
   hooks: './hooks/hooks.json', mcpServers: './.mcp.json' });
@@ -230,7 +232,7 @@ for (const entry of (await readdir(join(root, 'commands'))).sort()) {
 // own way (adapters/gemini.mjs renames them). BeforeTool only ever carries the write warning, so it is limited to the two
 // file-writing tools. Notification, BeforeModel, AfterModel and BeforeToolSelection carry nothing Estelle uses.
 const GEMINI_EVENTS = ['SessionStart', 'BeforeAgent', 'BeforeTool', 'AfterTool', 'AfterAgent', 'PreCompress', 'SessionEnd'];
-emit('plugins/gemini/gemini-extension.json', { name: 'estelle', version, description,
+emit('plugins/gemini/gemini-extension.json', { name: 'estelle', version, description: `Fate Labs Estelle: ${description}`,
   mcpServers: { Estelle: { httpUrl: server.url } }, contextFileName: 'instructions.md' });
 emit('plugins/gemini/hooks/hooks.json', { hooks: Object.fromEntries(GEMINI_EVENTS.map(event => [event, [{
   ...(event === 'BeforeTool' ? { matcher: 'write_file|replace' } : {}),
@@ -311,7 +313,7 @@ emit('plugins/fx/mcp.json', { mcpServers: { Estelle: { type: 'http', url: server
 // compaction, session-end or subagent event: PreInvocation is the prompt, Stop is capture and checkpoint.
 const AGY_COMMAND = event => ({ type: 'command', command: `node ./runtime/cli.mjs hook antigravity ${event}`, timeout: 20 });
 emit('plugins/antigravity/plugin.json', { $schema: 'https://antigravity.google/schemas/v1/plugin.json', name: 'estelle',
-  displayName: 'Estelle', version, license: 'Apache-2.0', author: { name: 'Fate Labs', url: 'https://fatelabs.ca' },
+  displayName: 'Fate Labs Estelle', logo: 'assets/logo.svg', version, license: 'Apache-2.0', author: { name: 'Fate Labs', url: 'https://fatelabs.ca' },
   description: 'Estelle gives Antigravity repository memory, grounded review and session capture through MCP, hooks, skills and agents.',
   homepage: 'https://github.com/Fate-Labs-CA/estelle-plugins/blob/main/docs/install/antigravity.md',
   repository: 'https://github.com/Fate-Labs-CA/estelle-plugins', keywords: ['estelle', 'memory', 'mcp', 'code-review'],
@@ -322,6 +324,8 @@ emit('plugins/antigravity/hooks.json', { estelle: {
   PreToolUse: [{ matcher: WRITE_TOOL_MATCHER, hooks: [AGY_COMMAND('PreToolUse')] }],
   PostToolUse: [{ matcher: '', hooks: [AGY_COMMAND('PostToolUse')] }], Stop: [AGY_COMMAND('Stop')] } });
 emit('plugins/antigravity/rules/AGENTS.md', generated.get('instructions.md'));
+// The Fate Labs mark (founder, 2026-11-25: the same logo as Eden's plugin), which plugin.json's `logo` names and the Marketplace needs.
+emit('plugins/antigravity/assets/logo.svg', await readFile(join(root, 'assets', 'logo.svg'), 'utf8'));
 // Commands are skills here (`/<skill-name>`), prefixed so they cannot shadow a person's own `/code` or `/review`. Only the
 // person invokes them. `$ARGUMENTS` has no meaning in a skill, as in Codex's conversion above.
 for (const entry of (await readdir(join(root, 'commands'))).sort()) {

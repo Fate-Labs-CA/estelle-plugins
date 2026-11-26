@@ -1,7 +1,8 @@
 {
   "$schema": "https://antigravity.google/schemas/v1/plugin.json",
   "name": "estelle",
-  "displayName": "Estelle",
+  "displayName": "Fate Labs Estelle",
+  "logo": "assets/logo.svg",
   "version": "0.0.26",
   "license": "Apache-2.0",
   "author": {

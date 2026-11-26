@@ -26,3 +26,7 @@ These hosts do not update Estelle for you. Update Estelle from the Customize pag
 ```text
 Use the current source: read https://github.com/Fate-Labs-CA/estelle-plugins at its latest main (or install the published npm package where one exists), never a cached or older local copy of the repository. Install or update Estelle for Cursor from https://github.com/Fate-Labs-CA/estelle-plugins using plugins/cursor. Follow docs/install/cursor.md and docs/migration/from-cli.md. Use native approval and a fresh session; preserve unrelated settings and active sessions. Do not manually edit configuration; automated cleanup of an old install is not available for this host, so report it as pending. Keep hooks and MCP on the same environment key; never request or display credentials. Report package, authenticated MCP and observed hooks separately, including trust/reload and any pending step. The setup check does not prove hook execution. No paid installation tests.
 ```
+
+## Optional: sign in to MCP with the host's OAuth (opt-in)
+
+The package ships the `ESTELLE_API_KEY` header, so tools keep working for key users. To try browser sign-in for the tools instead, add the Estelle server yourself with only the URL `https://api.fatelabs.ca/mcp` and no header, and sign in through the host. This is not proven against Estelle's authorization server on this host. Session recording signs in separately with the login command; see [capture-auth](../capture-auth.md).
