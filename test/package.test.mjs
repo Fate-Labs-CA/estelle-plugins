@@ -69,7 +69,7 @@ test('every host keeps its own manifest paths inside the installed package', asy
 });
 
 test('every host folder has separate native discovery and exclude development notes or cross-host manifests', async () => {
-  const hosts = ['claude', 'codex', 'cursor', 'dsh', 'fx', 'grok', 'hermes', 'kimi', 'mini-swe-agent', 'openclaw', 'opencode', 'pi', 'qwen'];
+  const hosts = ['antigravity', 'claude', 'codex', 'cursor', 'dsh', 'fx', 'grok', 'hermes', 'kimi', 'mini-swe-agent', 'openclaw', 'opencode', 'pi', 'qwen'];
   assert.deepEqual((await readdir(join(root, 'plugins'))).sort(), hosts);
   for (const [file, host] of [['.claude-plugin/marketplace.json', 'claude'],
     ['.agents/plugins/marketplace.json', 'codex'], ['.cursor-plugin/marketplace.json', 'cursor']]) {
@@ -77,11 +77,11 @@ test('every host folder has separate native discovery and exclude development no
   }
   const manifestPaths = { claude: '.claude-plugin', codex: '.codex-plugin', cursor: '.cursor-plugin',
     dsh: 'cordis.patch.yml', grok: 'plugin.json', kimi: 'kimi.plugin.json', opencode: 'adapters/opencode-plugin.mjs',
-    pi: 'adapters/pi-extension.mjs', qwen: 'qwen-extension.json', hermes: 'plugin.yaml', 'mini-swe-agent': 'estelle.yaml' };
+    pi: 'adapters/pi-extension.mjs', qwen: 'qwen-extension.json', hermes: 'plugin.yaml', 'mini-swe-agent': 'estelle.yaml', antigravity: 'mcp_config.json' };
   for (const host of hosts) {
     const files = await readdir(join(root, 'plugins', host));
     for (const forbidden of ['docs', 'test', 'CONTEXT.md', 'DECISIONS.md', ...Object.entries(manifestPaths)
-      .filter(([other, path]) => other !== host && !(host === 'openclaw' && path === 'plugin.json')).map(([, path]) => path)]) {
+      .filter(([other, path]) => other !== host && !(['openclaw', 'antigravity'].includes(host) && path === 'plugin.json')).map(([, path]) => path)]) {
       assert(!files.includes(forbidden), `${host}: ${forbidden}`);
     }
     await access(join(root, 'docs', 'install', `${host}.md`));

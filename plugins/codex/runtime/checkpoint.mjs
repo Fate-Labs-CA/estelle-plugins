@@ -11,7 +11,7 @@ export const CHECKPOINT_LIMITS = Object.freeze({
 });
 const HOSTS = { claude: 'claude-code', 'claude-code': 'claude-code', codex: 'codex', kimi: 'kimi-code', 'kimi-code': 'kimi-code',
   grok: 'grok', cursor: 'cursor', dsh: 'deepseek-harness', 'deepseek-harness': 'deepseek-harness', opencode: 'opencode', pi: 'pi',
-  hermes: 'hermes', 'qwen-code': 'qwen-code' };
+  hermes: 'hermes', 'qwen-code': 'qwen-code', antigravity: 'antigravity' };
 const INJECTED = ['<environment_context', '<user_instructions', '# AGENTS.md instructions', '<skill', '<system-reminder', '<task-notification', '<command-', '<local-command', '<turn_aborted'];
 const string = value => typeof value === 'string' ? value : '';
 const trimmed = text => Array.from(text).slice(0, CHECKPOINT_LIMITS.chars).join('');
@@ -88,6 +88,12 @@ function messageOf(record, host, subagent) {
     // Hook context Qwen Code appends to the prompt (`<qwen:user-prompt-submit-context>`) is not what the person typed.
     return role ? { role, content: parts.filter(part => typeof part?.text === 'string' && part.thought !== true && !part.text.trimStart().startsWith('<qwen:'))
       .map(part => ({ type: 'text', text: part.text })) } : null;
+  }
+  if (host === 'antigravity') {
+    // Inferred dialect: USER_INPUT steps are the person, PLANNER_RESPONSE steps carry the model's words.
+    const text = typeof record.content === 'string' ? record.content : '';
+    if (record.source === 'USER_EXPLICIT' && record.type === 'USER_INPUT') return { role: 'user', content: text };
+    return record.source === 'MODEL' && record.type === 'PLANNER_RESPONSE' && text ? { role: 'assistant', content: text } : null;
   }
   if (host === 'pi') {
     // Pi's session file: `message` entries. Extension messages (role `custom`) are not the conversation.
@@ -181,7 +187,7 @@ export async function readTranscriptMessages({ path, host, subagent = false }) {
   for (const window of bounded.windows.toReversed()) parseWindow(window, harness, subagent, messages, counters, context);
   messages.reverse();
   const legacy = harness === 'kimi-code';
-  const inferred = harness === 'grok' || harness === 'cursor';
+  const inferred = harness === 'grok' || harness === 'cursor' || harness === 'antigravity';
   if (harness === 'grok') messages.splice(0, messages.length, ...withoutPrivate(mergeChunks(messages)));
   const partial = bounded.partial || legacy || inferred || counters.record_limit_reached || counters.partial_last_line || counters.turns_dropped > 0
     || counters.invalid_lines > 0 || counters.messages_truncated > 0 || counters.blocks_truncated > 0;

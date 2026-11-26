@@ -59,6 +59,10 @@ server and the hook API; OpenClaw and fx were not run. Details: [hosts/qwen.md](
 [hosts/hermes.md](hosts/hermes.md), [hosts/mini-swe-agent.md](hosts/mini-swe-agent.md), [hosts/openclaw.md](hosts/openclaw.md),
 [hosts/fx.md](hosts/fx.md).
 
+Google Antigravity (IDE and CLI) has its own table in [hosts/antigravity.md](hosts/antigravity.md): MCP with its own OAuth, skills, command skills,
+agents, a rule, and hooks for recall (`PreInvocation`), capture and checkpoints (`Stop`) and the write warning. It has no compaction,
+session-end or subagent event, so those parts are not possible there. It was not run in Antigravity.
+
 Rooms needs server-side host support, an authenticated owner and a session proof. Native hook
 identity and Cursor's `user_email` are not substitutes for that proof or permission to share.
 Plugins do not take over another terminal or bypass member/admin permissions.

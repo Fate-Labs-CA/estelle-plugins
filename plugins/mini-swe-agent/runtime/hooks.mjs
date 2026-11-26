@@ -12,6 +12,7 @@ import { timelineIdentity } from './identity.mjs';
 import { mutatingTool, writeWarning } from './write-warning.mjs';
 import { beginContext, saveContext, takeContext } from './queued-context.mjs';
 import { updateNotice } from './update-check.mjs';
+import { freshInvocation } from './antigravity-turn.mjs';
 import { MAILBOX_HOSTS, pullAtBoundary, sessionIdentity } from './mailbox.mjs';
 import { SUBAGENT_TEXT, SUPERVISED_HOSTS, SUPERVISE_BOUNDARY, subagentIdentity, subagentTask, superviseAtBoundary } from './supervise.mjs';
 
@@ -30,6 +31,7 @@ async function adapter(host) {
   if (host === 'pi') return import('../adapters/pi.mjs');
   if (host === 'hermes') return import('../adapters/hermes.mjs');
   if (host === 'qwen-code') return import('../adapters/qwen.mjs');
+  if (host === 'antigravity') return import('../adapters/antigravity.mjs');
   throw new Error('unsupported_host');
 }
 
@@ -66,7 +68,7 @@ export async function drainOne(stateDir, request) {
     await writeJson(cursorPath, { last: name });
     const path = join(stateDir, 'deferred', name);
     const item = await readJson(path, 16_000);
-    if (!['claude-code', 'codex', 'kimi', 'grok', 'cursor', 'dsh', 'opencode', 'pi', 'hermes', 'qwen-code'].includes(item.host)) throw new Error('unsupported_host');
+    if (!['claude-code', 'codex', 'kimi', 'grok', 'cursor', 'dsh', 'opencode', 'pi', 'hermes', 'qwen-code', 'antigravity'].includes(item.host)) throw new Error('unsupported_host');
     const repo = repository(item.payload.cwd);
     const payload = { ...item.payload, hook_event_name: 'Stop' };
     if (item.host === 'kimi') {
@@ -180,6 +182,8 @@ const UI_NOTICE_HOSTS = new Set(['claude-code', 'codex', 'cursor', 'pi']);
 function withWarning(host, output, warning) {
   console.error(warning);
   if (host === 'kimi') return output;
+  // Antigravity's PreToolUse answer is a decision. `allow` is the one that leaves its own permission flow alone.
+  if (host === 'antigravity') return { ...output, decision: 'allow', reason: warning };
   if (host === 'cursor') return { ...output, user_message: warning, agent_message: warning };
   // dsh, OpenCode, Pi and Hermes run Estelle from their own in-process plugin, which shows `warning` in the host's own way.
   if (['dsh', 'opencode', 'pi', 'hermes'].includes(host)) return { ...output, warning };
@@ -201,6 +205,8 @@ async function answerEvent({ host, port, n, payload, stateDir, request, notice: 
     await deferSession(n, stateDir);
     return null;
   }
+  // PreInvocation can fire again inside one turn; one prompt gets one recall and one capture pass.
+  if (host === 'antigravity' && n.event === 'UserPromptSubmit' && !await freshInvocation(stateDir, n)) return defaultOutput();
   if (host === 'kimi' && port.getTranscriptPath) n.transcriptPath = await port.getTranscriptPath(n);
   const streamPayload = { ...payload, session_id: n.sessionId, cwd: n.cwd,
     hook_event_name: n.event, transcript_path: n.transcriptPath || null };
@@ -252,7 +258,7 @@ async function answerEvent({ host, port, n, payload, stateDir, request, notice: 
     .filter(text => typeof text === 'string' && text.trim()).join('\n\n');
   // A Stop hook cannot add model context without blocking the stop; the person sees this line, and the next prompt's
   // check names whatever is still running.
-  if (n.event === 'Stop' && notice) return { systemMessage: notice };
+  if (n.event === 'Stop' && notice) return host === 'antigravity' ? defaultOutput() : { systemMessage: notice };
   if (context?.failed) return port.formatContext(`Estelle recall was not obtained (${context.code}). Use its MCP tools directly; this is not an empty search result.${notice ? `\n\n${notice}` : ''}`, n.event) ?? defaultOutput();
   if (context?.text && queuedContext) {
     const saved = await saveContext(grokContextPath, n.turnId, contextRequest, context.text, context.degraded);
