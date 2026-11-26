@@ -9,7 +9,7 @@
     "./commands"
   ],
   "agents": [
-    "./agents"
+    "./kimi-agents"
   ],
   "sessionStart": {
     "skill": "estelle"

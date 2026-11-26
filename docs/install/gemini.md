@@ -4,8 +4,8 @@ Package: the repository root (`gemini-extension.json`) and, for clone-based inst
 the `PATH` of the Gemini CLI process, and, for hooks, either `/estelle:login` once or `ESTELLE_API_KEY` in that process's environment. Written against
 Gemini CLI 0.71.1.
 
-One extension adds the Estelle MCP server, the `/estelle:*` commands, the skills, Estelle's instructions (as the extension's
-context file) and the session hooks. The four Estelle subagents come with the `plugins/gemini` install only (see below).
+One extension adds the Estelle MCP server, the `/estelle:*` commands, the skills, the four Estelle subagents, Estelle's instructions (as the extension's
+context file) and the session hooks.
 
 ## Who pays for the model
 
@@ -27,9 +27,8 @@ gemini extensions install https://github.com/Fate-Labs-CA/estelle-plugins
 
 Gemini CLI has no subdirectory option, so it reads the repository root, where `gemini-extension.json`, `hooks/hooks.json` and
 `commands/estelle/*.toml` sit beside the shared sources (`commands/*.md`, `skills/`, `runtime/`, `instructions.md`), which
-Gemini CLI ignores or reads as they are. Root `agents/` holds Claude-format subagents that Gemini CLI cannot parse, so a root
-install loads no subagents and Gemini CLI logs one non-fatal warning per agent file when it loads the extension. For the
-subagents, install from a clone instead:
+Gemini CLI ignores or reads as they are. Root `agents/` holds the four Estelle subagents in Gemini's format (generated; the shared
+sources are in `agent-sources/`), so this one command loads all of them. You can instead install from a clone:
 
 ```sh
 git clone https://github.com/Fate-Labs-CA/estelle-plugins

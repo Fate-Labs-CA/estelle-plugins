@@ -82,8 +82,8 @@ for (const entry of (await commandFiles()).sort()) {
 }
 // OpenClaw has no agent format a plugin can register, and treats an `agents/` root as skill content. Each shared agent is
 // a skill the main agent loads and follows itself; the Claude-only `tools` list is dropped.
-for (const entry of (await readdir(join(root, 'agents'))).sort()) {
-  const source = await readFile(join(root, 'agents', entry), 'utf8');
+for (const entry of (await readdir(join(root, 'agent-sources'))).sort()) {
+  const source = await readFile(join(root, 'agent-sources', entry), 'utf8');
   const [, front, body] = /^---\n([\s\S]*?)\n---\n([\s\S]+)$/.exec(source) ?? [];
   const field = key => new RegExp(`^${key}: (.+)$`, 'm').exec(front ?? '')?.[1]?.trim();
   if (!field('name') || !field('description')) throw new Error(`Agent needs name and description: ${entry}`);
@@ -103,7 +103,8 @@ for (const entry of (await commandFiles()).sort()) {
 }
 emit('plugins/codex/.mcp.json', { mcpServers: { Estelle: server } });
 emit('plugins/codex/hooks/hooks.json', nativeHooks('codex', 'PLUGIN_ROOT', [...common, 'Interrupt']));
-const kimiManifest = { ...manifest, skills: ['./skills'], commands: ['./commands'], agents: ['./agents'],
+for (const entry of (await readdir(join(root, 'agent-sources'))).sort()) emit(`kimi-agents/${entry}`, await readFile(join(root, 'agent-sources', entry), 'utf8'));
+const kimiManifest = { ...manifest, skills: ['./skills'], commands: ['./commands'], agents: ['./kimi-agents'],
   sessionStart: { skill: 'estelle' },
   mcpServers: { Estelle: { transport: 'http', url: server.url, bearerTokenEnvVar: 'ESTELLE_API_KEY' } },
   hooks: [...common, 'Interrupt']
@@ -215,8 +216,8 @@ emit('plugins/qwen/hooks/hooks.json', nativeHooks('qwen-code', 'CLAUDE_PLUGIN_RO
 const QWEN_TOOLS = { Read: 'read_file', Grep: 'grep_search', Glob: 'glob', Write: 'write_file', Edit: 'edit', Bash: 'run_shell_command' };
 const qwenTools = list => list.split(',').map(tool => tool.trim()).filter(tool => tool && !tool.startsWith('mcp__plugin_'))
   .map(tool => QWEN_TOOLS[tool] ?? tool).join(', ');
-for (const entry of (await readdir(join(root, 'agents'))).filter(name => name.endsWith('.md')).sort()) {
-  const source = await readFile(join(root, 'agents', entry), 'utf8');
+for (const entry of (await readdir(join(root, 'agent-sources'))).filter(name => name.endsWith('.md')).sort()) {
+  const source = await readFile(join(root, 'agent-sources', entry), 'utf8');
   if (!/^tools: .+$/m.test(source)) throw new Error(`Agent needs a tools line: ${entry}`);
   emit(`plugins/qwen/agents/${entry}`, source.replace(/^tools: (.+)$/m, (_, list) => `tools: ${qwenTools(list)}`));
 }
@@ -264,12 +265,12 @@ for (const entry of (await commandFiles()).sort()) {
 // strict: `tools` is a list of Gemini tool names (MCP tools are `mcp_<server>_<tool>`), and an unknown key rejects the file.
 const GEMINI_AGENT_TOOLS = { Read: 'read_file', Grep: 'grep_search', Glob: 'glob', Bash: 'run_shell_command', Write: 'write_file', Edit: 'replace' };
 const geminiTool = tool => GEMINI_AGENT_TOOLS[tool] ?? (/^mcp__Estelle__/.test(tool) ? tool.replace(/^mcp__Estelle__/, 'mcp_Estelle_') : null);
-for (const entry of (await readdir(join(root, 'agents'))).sort()) {
-  const source = await readFile(join(root, 'agents', entry), 'utf8');
+for (const entry of (await readdir(join(root, 'agent-sources'))).sort()) {
+  const source = await readFile(join(root, 'agent-sources', entry), 'utf8');
   const [, name, description, tools, body] = /^---\nname: (.+)\ndescription: (.+)\ntools: (.+)\n---\n([\s\S]+)$/.exec(source) ?? [];
   if (!name) throw new Error(`Agent needs name, description and tools lines: ${entry}`);
   const mapped = [...new Set(tools.split(',').map(tool => geminiTool(tool.trim())).filter(Boolean))];
-  emit(`plugins/gemini/agents/${entry}`, `---\nname: ${name}\ndescription: ${description}\ntools:\n${mapped.map(tool => `  - ${tool}`).join('\n')}\n---\n${body}`);
+  for (const base of GEMINI_ROOTS) emit(`${base}agents/${entry}`, `---\nname: ${name}\ndescription: ${description}\ntools:\n${mapped.map(tool => `  - ${tool}`).join('\n')}\n---\n${body}`);
 }
 
 // Hermes Agent: a directory plugin (`plugin.yaml` and an `__init__.py` with `register(ctx)`), installed with
@@ -298,8 +299,8 @@ emit('plugins/openclaw/plugin.json', { $schema: 'https://agent-plugins.org/schem
 // reaches through `toolbox`. `prompt: append` adds the agent's instructions after fx's own system prompt.
 const FX_TOOLS = Object.freeze({ Read: 'read_file', Grep: 'grep_files', Glob: 'glob_files', Write: 'write_file',
   Edit: 'edit_file', Bash: 'shell' });
-for (const entry of (await readdir(join(root, 'agents'))).sort()) {
-  const source = await readFile(join(root, 'agents', entry), 'utf8');
+for (const entry of (await readdir(join(root, 'agent-sources'))).sort()) {
+  const source = await readFile(join(root, 'agent-sources', entry), 'utf8');
   const [, front, body] = /^---\n([\s\S]*?)\n---\n([\s\S]+)$/.exec(source) ?? [];
   const field = key => new RegExp(`^${key}: (.+)$`, 'm').exec(front ?? '')?.[1]?.trim();
   const name = field('name');
@@ -344,8 +345,8 @@ for (const entry of (await commandFiles()).sort()) {
     + `disable-model-invocation: true\n---\n\n${body.replaceAll('$ARGUMENTS', 'what the person asked for')}`);
 }
 // Agents: Antigravity's frontmatter has no Claude `tools` list (its tool names differ), so the agent keeps all tools.
-for (const entry of (await readdir(join(root, 'agents'))).sort()) {
-  const [, name, description, body] = /^---\nname: (.+)\ndescription: (.+)\ntools: .+\n---\n([\s\S]+)$/.exec(await readFile(join(root, 'agents', entry), 'utf8')) ?? [];
+for (const entry of (await readdir(join(root, 'agent-sources'))).sort()) {
+  const [, name, description, body] = /^---\nname: (.+)\ndescription: (.+)\ntools: .+\n---\n([\s\S]+)$/.exec(await readFile(join(root, 'agent-sources', entry), 'utf8')) ?? [];
   if (!name) throw new Error(`Agent needs name, description and tools lines: ${entry}`);
   emit(`plugins/antigravity/agents/${entry}`, `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\nmainAgent: false\nsubagent: true\nmodel: inherit\n---\n${body}`);
 }
@@ -372,7 +373,9 @@ const CONTENT_ONLY = ['skills', 'instructions.md', 'LICENSE'];
 const assetsFor = host => host === 'mini-swe-agent' ? ['runtime', 'LICENSE']
   : host === 'openclaw-native' ? ['runtime', 'adapters', 'skills', 'instructions.md', 'LICENSE']
   : ['openclaw', 'fx'].includes(host) ? CONTENT_ONLY : [...ASSETS, ...(['codex', 'claude', 'qwen', 'gemini', 'antigravity'].includes(host) ? [] : ['commands']),
-  ...(['claude', 'opencode', 'cursor', 'kimi'].includes(host) ? ['agents'] : [])];
+  ...(['claude', 'opencode', 'cursor'].includes(host) ? ['agents'] : []), ...(host === 'kimi' ? ['kimi-agents'] : [])];
+// Root `agents/` is Gemini's (GitHub-root install reads it) and root `kimi-agents/` is Kimi's; the shared sources live in `agent-sources/`.
+const sourceOf = asset => (asset === 'agents' ? 'agent-sources' : asset);
 async function inventory(directory, prefix = '') {
   const output = new Map();
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -403,7 +406,7 @@ for (const [file, content] of generated) {
   }
 }
 for (const host of HOSTS) for (const asset of assetsFor(host)) {
-  const original = join(root, asset), target = join(root, 'plugins', host, asset);
+  const original = join(root, sourceOf(asset)), target = join(root, 'plugins', host, asset);
   if (!check) { await cp(original, target, { recursive: true, filter: source => source !== join(root, 'commands', 'estelle') }); continue; }
   if (JSON.stringify([...(await digest(original))].sort()) !== JSON.stringify([...(await digest(target))].sort())) {
     throw new Error(`Bundle differs: ${host}/${asset}`);

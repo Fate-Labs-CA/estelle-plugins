@@ -31,7 +31,7 @@ function unknownTools(text) {
 async function surfaceFiles() {
   const skills = (await readdir(join(root, 'skills'))).map(name => `skills/${name}/SKILL.md`);
   const commands = (await readdir(join(root, 'commands'))).filter(name => name.endsWith('.md')).map(name => `commands/${name}`);
-  const agents = (await readdir(join(root, 'agents'))).map(name => `agents/${name}`);
+  const agents = (await readdir(join(root, 'agent-sources'))).map(name => `agent-sources/${name}`);
   return [...skills, ...commands, ...agents, 'instructions.md'];
 }
 
@@ -107,10 +107,10 @@ test('the slash menu shows the commands: every skill stays available to the mode
 });
 
 test('agents can reach Estelle whichever way it was installed', async () => {
-  const agents = await readdir(join(root, 'agents'));
+  const agents = await readdir(join(root, 'agent-sources'));
   assert.equal(agents.length, 4);
   for (const name of agents) {
-    const line = (await read(`agents/${name}`)).split('\n').find(row => row.startsWith('tools: '));
+    const line = (await read(`agent-sources/${name}`)).split('\n').find(row => row.startsWith('tools: '));
     const listed = line.slice('tools: '.length).split(', ');
     const plugin = listed.filter(tool => tool.startsWith('mcp__plugin_estelle_Estelle__'));
     assert(plugin.length > 0, `${name} names no tool a plugin install has`);

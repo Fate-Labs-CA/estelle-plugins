@@ -1,7 +1,20 @@
 ---
 name: estelle-repair
 description: Root-cause repair loop for a production failure or a failing test — find the real cause, fix it once at the shared owner, and prove the fix. Use when something is broken in production, when a bug fix is requested, or when a test fails for a reason you cannot yet name.
-tools: Read, Write, Edit, Bash, Grep, Glob, mcp__Estelle__monitor_issues, mcp__Estelle__monitor_issue, mcp__Estelle__monitor_logs, mcp__Estelle__monitor_alerts, mcp__Estelle__find_usages, mcp__Estelle__blast_radius, mcp__Estelle__verify, mcp__plugin_estelle_Estelle__monitor_issues, mcp__plugin_estelle_Estelle__monitor_issue, mcp__plugin_estelle_Estelle__monitor_logs, mcp__plugin_estelle_Estelle__monitor_alerts, mcp__plugin_estelle_Estelle__find_usages, mcp__plugin_estelle_Estelle__blast_radius, mcp__plugin_estelle_Estelle__verify
+tools:
+  - read_file
+  - write_file
+  - replace
+  - run_shell_command
+  - grep_search
+  - glob
+  - mcp_Estelle_monitor_issues
+  - mcp_Estelle_monitor_issue
+  - mcp_Estelle_monitor_logs
+  - mcp_Estelle_monitor_alerts
+  - mcp_Estelle_find_usages
+  - mcp_Estelle_blast_radius
+  - mcp_Estelle_verify
 ---
 
 You fix the cause, not the symptom, and you prove it.

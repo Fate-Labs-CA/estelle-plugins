@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access, cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, cp, readdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { join, relative, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -11,9 +11,12 @@ const json = async file => JSON.parse(await readFile(join(root, file), 'utf8'));
 test('the GitHub archive root exposes the same Kimi package, naming its agents explicitly', async () => {
   const manifest = await json('kimi.plugin.json');
   const nested = await json('plugins/kimi/kimi.plugin.json');
-  assert.deepEqual(manifest.agents, ['./agents']);
+  assert.deepEqual(manifest.agents, ['./kimi-agents']);
   assert.deepEqual(manifest, nested);
-  await access(join(root, 'agents'));
+  await access(join(root, 'kimi-agents'));
+  for (const file of await readdir(join(root, 'agent-sources'))) {
+    assert.equal(await readFile(join(root, 'kimi-agents', file), 'utf8'), await readFile(join(root, 'agent-sources', file), 'utf8'), file);
+  }
   assert.equal(manifest.version, (await json('package.json')).version);
   assert.deepEqual(manifest.skills, ['./skills']);
   assert.deepEqual(manifest.commands, ['./commands']);

@@ -193,6 +193,13 @@ test('the repository root is an installable Gemini CLI extension identical to pl
   const same = async path => assert.equal(await readFile(join(root, path), 'utf8'), await readFile(join(root, 'plugins', 'gemini', path), 'utf8'), path);
   await same('gemini-extension.json');
   await same('hooks/hooks.json');
+  const agents = (await readdir(join(root, 'agents'))).sort();
+  assert.deepEqual(agents, (await readdir(join(root, 'agent-sources'))).sort());
+  assert.equal(agents.length, 4);
+  for (const file of agents) {
+    await same(`agents/${file}`);
+    assert.match(await readFile(join(root, 'agents', file), 'utf8'), /^---\nname: estelle-[a-z]+\ndescription: .+\ntools:\n  - /);
+  }
   const manifest = await json('gemini-extension.json');
   assert.deepEqual(manifest.mcpServers, { Estelle: { httpUrl: 'https://api.fatelabs.ca/mcp' } });
   assert.equal(manifest.name, 'estelle');
