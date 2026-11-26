@@ -2,7 +2,7 @@
 
 Package: `plugins/dsh`. DeepSeek Harness is a developer preview that states it will make breaking changes. This package
 is tested against `@deepseek-ai/dsh@0.2.1-rc.5` and `0.2.2-rc.1`. It needs Node.js 24.9 or newer (dsh's own requirement), `pnpm` on your
-`PATH` for `dsh plugin`, and `ESTELLE_API_KEY` in the host environment.
+`PATH` for `dsh plugin`, and `ESTELLE_API_KEY` in the host environment for MCP. Hooks use `/estelle-login` once or the key, which wins.
 
 ```sh
 git clone --depth 1 https://github.com/Fate-Labs-CA/estelle-plugins

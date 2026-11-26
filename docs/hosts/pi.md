@@ -80,7 +80,7 @@ Optional `pi.image` or `pi.video` fields add a preview; a `CHANGELOG.md` with `#
 after an update.
 
 `plugins/pi/package.json` is ready for that: name `@fatelabs/pi-estelle`, keywords including `pi-package`, the `pi`
-manifest, `publishConfig.access: public`, Apache-2.0, repository and homepage links, and the install page as README.
+manifest, `publishConfig.access: public`, the Fate Labs Plugin License (`SEE LICENSE IN LICENSE`), repository and homepage links, and the install page as README.
 
 0.0.18 is published (`npm view @fatelabs/pi-estelle time` shows it on 2026-11-19), and it was installed from npm
 with `pi install npm:@fatelabs/pi-estelle` in a scratch home and run in RPC mode against a real model. At

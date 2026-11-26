@@ -1,7 +1,7 @@
 # Qwen Code
 
 Package: `plugins/qwen`, a Qwen Code extension. Requires Qwen Code 0.28 or later (`@qwen-code/qwen-code`), Node.js 22 on
-the `PATH` of the Qwen Code process, and `ESTELLE_API_KEY` in that process's environment for hooks. Written and tested
+the `PATH` of the Qwen Code process, and, for hooks, either `/estelle:login` once or `ESTELLE_API_KEY` in that process's environment. Written and tested
 against Qwen Code 0.28.0.
 
 One extension adds the Estelle MCP server, the `/estelle:*` commands, the skills, Estelle's instructions (as the
@@ -21,8 +21,9 @@ Restart Qwen Code. `qwen extensions list` shows `estelle` with its commands, ski
 ## Sign in
 
 MCP signs in with Qwen Code's own OAuth: run `/mcp` in a session and sign in to **Estelle** in your browser. No key is
-needed for this. Hooks cannot use that sign-in; they need `ESTELLE_API_KEY` in the environment Qwen Code starts from.
-Without it, MCP works and the hooks capture nothing.
+needed for this. Hooks have their own sign-in: run `/estelle:login` once and approve the browser page (it runs
+`node runtime/cli.mjs setup qwen-code --login`). `ESTELLE_API_KEY` in the environment Qwen Code starts from overrides it.
+Credential order for hooks: `ESTELLE_API_KEY`, then the plugin sign-in, then the key the Estelle CLI stored. Without either, MCP works and the first turn says Estelle is not recording.
 
 On a machine with no browser, add the server with your key instead of signing in:
 
@@ -34,7 +35,7 @@ qwen mcp add --transport http -H "Authorization: Bearer $ESTELLE_API_KEY" Estell
 
 - `qwen mcp list` shows `Estelle` as `Connected` once you have signed in.
 - In a session, type `/estelle:` and the seven commands are offered.
-- After a turn with `ESTELLE_API_KEY` set, the session appears on your Estelle Sessions page.
+- After `/estelle:login` (or with `ESTELLE_API_KEY` set) and one turn, the session appears on your Estelle Sessions page.
 
 Project hooks need Qwen Code's one-time approval, and a headless `qwen -p` run never asks for it. This extension's
 hooks are user-level, so that does not apply to them.
