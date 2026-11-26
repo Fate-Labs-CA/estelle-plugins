@@ -14,7 +14,8 @@ const commands = async () => Promise.all((await readdir(join(root, 'commands')))
 test('every shared command reads as plain sentences when $ARGUMENTS is empty', async () => {
   const rows = await commands();
   assert(rows.length >= 7, 'the command set shrank; this check would pass over nothing');
-  for (const [name, text] of rows) {
+  // The sign-in pair takes no argument by design: they are fixed one-line commands, so there is nothing to blank.
+  for (const [name, text] of rows.filter(([name]) => !/^log(?:in|out)\.md$/.test(name))) {
     assert(text.includes('$ARGUMENTS'), `${name} takes no argument; this check covers nothing in it`);
     const empty = text.replaceAll('$ARGUMENTS', '');
     assert.doesNotMatch(empty, /\s[.,]|\b(?:for|to|Review)\s*$/m, `${name} reads wrong with no argument:\n${empty}`);

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { checkKey } from '../runtime/key-check.mjs';
@@ -115,4 +115,22 @@ test('doctor that could not reach the server does not call the key good or bad',
   assert.equal(result.code, 1);
   assert.equal(result.json.key_check, 'server_unavailable');
   assert.match(result.json.key_message, /says nothing about the key/);
+});
+
+test('doctor with a capture grant and a foreign API URL names the capture problem and still checks the key state', async t => {
+  if (process.platform === 'win32') return;
+  const home = await mkdtemp(join(tmpdir(), 'estelle-doctor-capture-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const directory = join(home, '.estelle-plugins', 'capture-auth');
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  await chmod(join(home, '.estelle-plugins'), 0o700);
+  await writeFile(join(directory, 'credential.json'), JSON.stringify({ schema: 1, issuer: 'https://api.fatelabs.ca',
+    client_id: 'https://api.fatelabs.ca/oauth/clients/plugin', resource: 'https://api.fatelabs.ca/mcp',
+    scope: 'estelle:mcp estelle:capture offline_access', access_token: 'synthetic-access-token', refresh_token: 'synthetic-refresh-token',
+    expires_at: 4102444800, partition: 'a'.repeat(32), state: 'active' }), { mode: 0o600 });
+  const result = await doctor(t, { HOME: home }, (request, response) => response.end());
+  assert.equal(result.json.capture_auth, 'capture_origin');
+  assert.equal(result.json.key_check, 'not_checked_no_key');
+  assert.equal(result.code, 1);
+  assert(!result.output.includes('synthetic-'));
 });

@@ -92,8 +92,8 @@ async function packageReady(bundleRoot,native) {
   const [manifest,mcp]=docs;
   if(manifest.name!=='estelle'||manifest.version!==VERSION||manifest.mcpServers!=='./.mcp.json')return false;
   const server=mcp.mcpServers?.Estelle;
-  if(!object(server)||Object.keys(server).sort().join(',')!=='bearer_token_env_var,url'
-    ||server.url!==BASE+'/mcp'||server.bearer_token_env_var!=='ESTELLE_API_KEY')return false;
+  // URL only: Codex signs in to the server with its own MCP OAuth, and a pinned bearer variable would stop that.
+  if(!object(server)||Object.keys(server).join(',')!=='url'||server.url!==BASE+'/mcp')return false;
   const listing=await native('plugin');if(listing.ok!==true||Buffer.byteLength(listing.text)>CAP)return false;
   const items=JSON.parse(listing.text).installed;if(!Array.isArray(items)||items.length>64)return false;
   const own=items.filter(x=>x?.pluginId==='estelle@estelle-plugins');
@@ -164,6 +164,13 @@ async function migrateCodex({home,env,native,expect,apply}) {
 }
 
 export async function runSetupArgs(args) {
+ if(args.length===2&&['--login','--logout'].includes(args[1])){
+  const {runCaptureSetup}=await import('./capture-auth.mjs');
+  const controller=new AbortController(),stop=()=>controller.abort();
+  process.once('SIGINT',stop);process.once('SIGTERM',stop);
+  try{return await runCaptureSetup({host:args[0],logout:args[1]==='--logout'},{signal:controller.signal});}
+  finally{process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);}
+ }
  const [host,...flags]=args;let apply=false,expect;
  for(let i=0;i<flags.length;i++){
   if(flags[i]==='--apply'&&!apply)apply=true;

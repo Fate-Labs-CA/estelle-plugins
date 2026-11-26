@@ -57,8 +57,10 @@ function nativeHooks(host, variable, events) {
 }
 emit('plugins/claude/.claude-plugin/plugin.json', { ...manifest, license: 'Apache-2.0', author: { name: 'Fate Labs' },
   repository: 'https://github.com/uqeu/estelle-plugins', hooks: './hooks/hooks.json', mcpServers: './.mcp.json' });
-// URL only: Claude Code signs in with OAuth. A pinned header disables that, and an unset variable goes out literally.
-emit('plugins/claude/.mcp.json', { mcpServers: { Estelle: { type: 'http', url: server.url } } });
+// The helper prints the plugin's own sign-in, or nothing, in which case Claude Code signs in with its own OAuth as before.
+// Never a pinned header: that disables OAuth, and an unset variable goes out literally.
+emit('plugins/claude/.mcp.json', { mcpServers: { Estelle: { type: 'http', url: server.url,
+  headersHelper: 'node "${CLAUDE_PLUGIN_ROOT}/runtime/cli.mjs" mcp-headers' } } });
 emit('plugins/claude/hooks/hooks.json', nativeHooks('claude-code', 'CLAUDE_PLUGIN_ROOT', common));
 emit('plugins/codex/.codex-plugin/plugin.json', { ...manifest, skills: ['./skills', './command-skills'],
   hooks: './hooks/hooks.json', mcpServers: './.mcp.json' });
@@ -83,7 +85,10 @@ for (const entry of (await readdir(join(root, 'commands'))).sort()) {
   if (model && !/^---\ndescription: .+\n---\n/.test(source)) throw new Error(`Command needs one description line: ${entry}`);
   emit(`plugins/claude/commands/${entry}`, model ? source.replace(/\n---\n/, `\nmodel: ${model}\n---\n`) : source);
 }
-emit('plugins/codex/.mcp.json', { mcpServers: { Estelle: server } });
+// Codex, Grok and Cursor document MCP OAuth for a remote server that is only a URL (Codex: `auth` defaults to oauth and
+// `codex mcp login`; Grok: "OAuth handled automatically"; Cursor: OAuth with PKCE). A pinned bearer header or an unset
+// `${env:...}` variable would stop that, so these ship the URL alone. Hooks use the plugin sign-in or ESTELLE_API_KEY.
+emit('plugins/codex/.mcp.json', { mcpServers: { Estelle: { url: server.url } } });
 emit('plugins/codex/hooks/hooks.json', nativeHooks('codex', 'PLUGIN_ROOT', [...common, 'Interrupt']));
 const kimiManifest = { ...manifest, skills: ['./skills'], commands: ['./commands'],
   sessionStart: { skill: 'estelle' },
@@ -97,12 +102,11 @@ emit('plugins/kimi/kimi.plugin.json', kimiManifest);
 emit('kimi.plugin.json', { ...kimiManifest, agents: [] });
 emit('plugins/grok/plugin.json', { ...manifest, skills: './skills', commands: './commands',
   hooks: './hooks/hooks.json', mcpServers: './.mcp.json' });
-emit('plugins/grok/.mcp.json', { mcpServers: { Estelle: server } });
+emit('plugins/grok/.mcp.json', { mcpServers: { Estelle: { url: server.url } } });
 emit('plugins/grok/hooks/hooks.json', nativeHooks('grok', 'GROK_PLUGIN_ROOT', common.filter(event => event !== 'SubagentStart')));
 emit('plugins/cursor/.cursor-plugin/plugin.json', { ...manifest, author: { name: 'Fate Labs' }, license: 'Apache-2.0',
   skills: './skills', commands: './commands', rules: './rules', hooks: './hooks/hooks.json', mcpServers: './mcp.json' });
-emit('plugins/cursor/mcp.json', { mcpServers: { Estelle: { url: server.url,
-  headers: { Authorization: 'Bearer ${env:ESTELLE_API_KEY}' } } } });
+emit('plugins/cursor/mcp.json', { mcpServers: { Estelle: { url: server.url } } });
 emit('plugins/cursor/hooks/hooks.json', { version: 1, hooks: Object.fromEntries(CURSOR_EVENTS.filter(event => event !== 'subagentStart').map(event => [event,
   [{ command: command('cursor', 'CURSOR_PLUGIN_ROOT'), timeout: event === 'sessionEnd' ? 3 : 20 }]])) });
 emit('plugins/cursor/rules/estelle.mdc', '---\ndescription: Use Estelle tools for repository context and shared work\nalwaysApply: true\n---\n'

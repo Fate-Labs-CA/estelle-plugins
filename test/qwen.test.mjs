@@ -115,7 +115,7 @@ test('the Qwen Code extension: OAuth-ready MCP, hooks on the path Qwen Code fill
     const text = await readFile(join(root, 'plugins', 'qwen', 'commands', 'estelle', file), 'utf8');
     assert.match(text, /^---\ndescription: .+\n---\n/);
     assert.doesNotMatch(text, /\$ARGUMENTS|<Estelle cli\.mjs>/);
-    assert.match(text, /\{\{args\}\}/);
+    if (!/^log(?:in|out)\.md$/.test(file)) assert.match(text, /\{\{args\}\}/);
   }
   await readFile(join(root, 'plugins', 'qwen', 'runtime', 'cli.mjs'));
   await readFile(join(root, 'plugins', 'qwen', 'skills', 'estelle', 'SKILL.md'));

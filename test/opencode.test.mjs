@@ -68,7 +68,7 @@ test('context goes to the start, the prompt and the tool result, and nowhere els
 test('the config hook adds Estelle without replacing what the person configured', async () => {
   const commands = await readCommands(root);
   const agents = await readAgents(root);
-  assert.deepEqual(commands.map(item => item.name), ['cloud', 'code', 'handoff', 'monitor', 'resume', 'review', 'rooms']);
+  assert.deepEqual(commands.map(item => item.name), ['cloud', 'code', 'handoff', 'login', 'logout', 'monitor', 'resume', 'review', 'rooms']);
   assert.deepEqual(agents.map(item => item.name), ['estelle-grounder', 'estelle-historian', 'estelle-repair', 'estelle-reviewer']);
   const keyed = estelleConfig({}, { commands, agents, root, env: { ESTELLE_API_KEY: 'est_fixture' } });
   assert.deepEqual(keyed.mcp.Estelle, { type: 'remote', url: 'https://api.fatelabs.ca/mcp', enabled: true,
@@ -76,7 +76,7 @@ test('the config hook adds Estelle without replacing what the person configured'
   // No key: no header, so OpenCode's own MCP OAuth can sign in.
   assert.deepEqual(estelleConfig({}, { commands, agents, root, env: {} }).mcp.Estelle,
     { type: 'remote', url: 'https://api.fatelabs.ca/mcp', enabled: true });
-  assert.equal(Object.keys(keyed.command).length, 7);
+  assert.equal(Object.keys(keyed.command).length, 9);
   const cloud = keyed.command['estelle:cloud'];
   assert.match(cloud.template, /\$ARGUMENTS/);
   assert.ok(cloud.template.includes(`node "${join(root, 'runtime', 'cli.mjs')}" move cloud`), 'the runner path is exact');

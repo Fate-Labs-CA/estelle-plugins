@@ -63,7 +63,7 @@ print(json.dumps({"hooks": ctx.hooks, "skills": len(ctx.skills), "estelle": "est
                   "commands": sorted(ctx.commands), "answer": answer, "sent": ctx.sent}))`);
     assert.deepEqual(result.hooks, HOOK_EVENTS.slice());
     assert.ok(result.skills >= 20 && result.estelle);
-    assert.deepEqual(result.commands, ['estelle-cloud', 'estelle-code', 'estelle-handoff', 'estelle-monitor', 'estelle-resume',
+    assert.deepEqual(result.commands, ['estelle-cloud', 'estelle-code', 'estelle-handoff', 'estelle-login', 'estelle-logout', 'estelle-monitor', 'estelle-resume',
       'estelle-review', 'estelle-rooms']);
     assert.equal(result.answer, null);
     assert.match(result.sent[0], /Target \(blank means the current diff\): the auth change/);

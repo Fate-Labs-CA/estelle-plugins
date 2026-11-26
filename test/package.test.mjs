@@ -63,9 +63,11 @@ test('every host keeps its own manifest paths inside the installed package', asy
   const codex = await json('plugins/codex/.mcp.json');
   const claude = await json('plugins/claude/.mcp.json');
   const grok = await json('plugins/grok/.mcp.json');
-  assert.equal(codex.mcpServers.Estelle.bearer_token_env_var, 'ESTELLE_API_KEY');
-  assert.equal(grok.mcpServers.Estelle.bearer_token_env_var, 'ESTELLE_API_KEY');
-  assert.deepEqual(claude.mcpServers.Estelle, { type: 'http', url: 'https://api.fatelabs.ca/mcp' });
+  // URL only: Codex and Grok sign in to MCP with their own OAuth, which a pinned bearer variable would stop.
+  assert.deepEqual(codex.mcpServers.Estelle, { url: 'https://api.fatelabs.ca/mcp' });
+  assert.deepEqual(grok.mcpServers.Estelle, { url: 'https://api.fatelabs.ca/mcp' });
+  assert.deepEqual(claude.mcpServers.Estelle, { type: 'http', url: 'https://api.fatelabs.ca/mcp',
+    headersHelper: 'node "${CLAUDE_PLUGIN_ROOT}/runtime/cli.mjs" mcp-headers' });
 });
 
 test('every host folder has separate native discovery and exclude development notes or cross-host manifests', async () => {
@@ -115,8 +117,7 @@ test('Cursor manifests use its strict native fields, flat hooks and per-user env
     assert.equal(row.command, 'node "${CURSOR_PLUGIN_ROOT}/runtime/cli.mjs" hook cursor');
     assert.equal(row.timeout, event === 'sessionEnd' ? 3 : 20);
   }
-  assert.equal((await json('plugins/cursor/mcp.json')).mcpServers.Estelle.headers.Authorization,
-    'Bearer ${env:ESTELLE_API_KEY}');
+  assert.deepEqual((await json('plugins/cursor/mcp.json')).mcpServers.Estelle, { url: 'https://api.fatelabs.ca/mcp' });
 });
 
 test('generated artifact check detects a changed runner rather than trusting a source-only pass', async t => {
