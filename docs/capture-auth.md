@@ -56,12 +56,12 @@ Run `/estelle:login` (Codex: `$estelle:login`, Hermes: `/estelle-login`) once. H
 | Host | MCP sign-in | Source |
 |---|---|---|
 | Claude Code | the same sign-in, through `headersHelper`; falls back to `/mcp` OAuth | plugin |
-| Codex | URL-only entry; Codex's own OAuth (`codex mcp login`) | docs: `auth` defaults to `oauth` |
-| Cursor | URL-only entry; Cursor's own OAuth (Connect) | docs: OAuth with PKCE |
-| Grok Build | URL-only entry; Grok's own OAuth (`/mcps`) | docs: "OAuth handled automatically" |
+| Codex | key header as shipped; URL-only OAuth is opt-in (`codex mcp login`) | docs: `auth` defaults to `oauth`, but a bearer variable is tried first |
+| Cursor | key header as shipped; URL-only OAuth is opt-in (Connect) | docs: OAuth with PKCE |
+| Grok Build | key header as shipped; URL-only OAuth is opt-in (`/mcps`) | docs: "OAuth handled automatically"; an unset `${VAR}` is sent literally |
 | OpenCode, Pi | URL-only unless `ESTELLE_API_KEY` is set; host OAuth (`opencode mcp auth`, `/mcp login`) | docs |
 | Qwen Code | URL-only; host OAuth (`/mcp`) | docs |
 | Kimi Code | still `ESTELLE_API_KEY` (a plugin manifest field for OAuth is not documented) | none |
 | DeepSeek Harness, Hermes | unchanged: key, or `hermes mcp add --auth oauth` | none |
 
-Codex, Cursor and Grok no longer ship a key header, because a pinned header or an unset variable stops host OAuth. If you want a key there, add the header in your own host config.
+Codex, Cursor and Grok keep shipping the key header, so existing key users are unchanged. No host documents "OAuth when no key is set, header when it is" for a plugin file, and nothing has proven these hosts' OAuth accepts Estelle's authorization server. To try URL-only OAuth, add the server yourself without the header (see each host's install page).

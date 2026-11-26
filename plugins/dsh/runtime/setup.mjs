@@ -92,8 +92,8 @@ async function packageReady(bundleRoot,native) {
   const [manifest,mcp]=docs;
   if(manifest.name!=='estelle'||manifest.version!==VERSION||manifest.mcpServers!=='./.mcp.json')return false;
   const server=mcp.mcpServers?.Estelle;
-  // URL only: Codex signs in to the server with its own MCP OAuth, and a pinned bearer variable would stop that.
-  if(!object(server)||Object.keys(server).join(',')!=='url'||server.url!==BASE+'/mcp')return false;
+  if(!object(server)||Object.keys(server).sort().join(',')!=='bearer_token_env_var,url'
+    ||server.url!==BASE+'/mcp'||server.bearer_token_env_var!=='ESTELLE_API_KEY')return false;
   const listing=await native('plugin');if(listing.ok!==true||Buffer.byteLength(listing.text)>CAP)return false;
   const items=JSON.parse(listing.text).installed;if(!Array.isArray(items)||items.length>64)return false;
   const own=items.filter(x=>x?.pluginId==='estelle@estelle-plugins');

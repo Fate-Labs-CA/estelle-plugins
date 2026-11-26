@@ -85,10 +85,7 @@ for (const entry of (await readdir(join(root, 'commands'))).sort()) {
   if (model && !/^---\ndescription: .+\n---\n/.test(source)) throw new Error(`Command needs one description line: ${entry}`);
   emit(`plugins/claude/commands/${entry}`, model ? source.replace(/\n---\n/, `\nmodel: ${model}\n---\n`) : source);
 }
-// Codex, Grok and Cursor document MCP OAuth for a remote server that is only a URL (Codex: `auth` defaults to oauth and
-// `codex mcp login`; Grok: "OAuth handled automatically"; Cursor: OAuth with PKCE). A pinned bearer header or an unset
-// `${env:...}` variable would stop that, so these ship the URL alone. Hooks use the plugin sign-in or ESTELLE_API_KEY.
-emit('plugins/codex/.mcp.json', { mcpServers: { Estelle: { url: server.url } } });
+emit('plugins/codex/.mcp.json', { mcpServers: { Estelle: server } });
 emit('plugins/codex/hooks/hooks.json', nativeHooks('codex', 'PLUGIN_ROOT', [...common, 'Interrupt']));
 const kimiManifest = { ...manifest, skills: ['./skills'], commands: ['./commands'],
   sessionStart: { skill: 'estelle' },
@@ -102,11 +99,12 @@ emit('plugins/kimi/kimi.plugin.json', kimiManifest);
 emit('kimi.plugin.json', { ...kimiManifest, agents: [] });
 emit('plugins/grok/plugin.json', { ...manifest, skills: './skills', commands: './commands',
   hooks: './hooks/hooks.json', mcpServers: './.mcp.json' });
-emit('plugins/grok/.mcp.json', { mcpServers: { Estelle: { url: server.url } } });
+emit('plugins/grok/.mcp.json', { mcpServers: { Estelle: server } });
 emit('plugins/grok/hooks/hooks.json', nativeHooks('grok', 'GROK_PLUGIN_ROOT', common.filter(event => event !== 'SubagentStart')));
 emit('plugins/cursor/.cursor-plugin/plugin.json', { ...manifest, author: { name: 'Fate Labs' }, license: 'Apache-2.0',
   skills: './skills', commands: './commands', rules: './rules', hooks: './hooks/hooks.json', mcpServers: './mcp.json' });
-emit('plugins/cursor/mcp.json', { mcpServers: { Estelle: { url: server.url } } });
+emit('plugins/cursor/mcp.json', { mcpServers: { Estelle: { url: server.url,
+  headers: { Authorization: 'Bearer ${env:ESTELLE_API_KEY}' } } } });
 emit('plugins/cursor/hooks/hooks.json', { version: 1, hooks: Object.fromEntries(CURSOR_EVENTS.filter(event => event !== 'subagentStart').map(event => [event,
   [{ command: command('cursor', 'CURSOR_PLUGIN_ROOT'), timeout: event === 'sessionEnd' ? 3 : 20 }]])) });
 emit('plugins/cursor/rules/estelle.mdc', '---\ndescription: Use Estelle tools for repository context and shared work\nalwaysApply: true\n---\n'
