@@ -5,7 +5,7 @@ mini-swe-agent, OpenClaw and fx. Each host has its own package
 under `plugins/`. They connect to `https://api.fatelabs.ca/mcp`.
 
 Install your coding host first, with external Node.js 22+. Run `/estelle:login` once (`$estelle:login` on Codex,
-`/estelle-login` on Hermes and Antigravity, `/estelle-login` on OpenClaw) to sign in through your browser: that one sign-in
+`/estelle-login` on Hermes and Antigravity) to sign in through your browser: that one sign-in
 covers hook recall, checkpoints, mail and session capture on every hook host, and on Claude Code it also connects the tools.
 `ESTELLE_API_KEY` is the override: set, it wins. Credential order for hooks: `ESTELLE_API_KEY`, then the plugin sign-in,
 then the key the Estelle CLI stored. MCP still differs by host: Codex, Cursor, Grok and Kimi ship the key header (URL-only

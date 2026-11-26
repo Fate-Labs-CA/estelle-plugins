@@ -21,7 +21,7 @@ openclaw mcp add Estelle --url https://api.fatelabs.ca/mcp --transport streamabl
 openclaw mcp login Estelle
 ```
 
-Then sign the hooks in once with `/estelle-login` (it runs `node runtime/cli.mjs setup openclaw --login`). `ESTELLE_API_KEY` in the gateway's environment overrides it. Credential order for hooks: `ESTELLE_API_KEY`, then the plugin sign-in, then the key the Estelle CLI stored. The `openclaw mcp login` sign-in covers the tools only. Neither sign-in has been run against a live gateway.
+Then sign the hooks in once with `/estelle:login` (it runs `node runtime/cli.mjs setup openclaw --login`). `ESTELLE_API_KEY` in the gateway's environment overrides it. Credential order for hooks: `ESTELLE_API_KEY`, then the plugin sign-in, then the key the Estelle CLI stored. The `openclaw mcp login` sign-in covers the tools only. Neither sign-in has been run against a live gateway.
 
 Prompt and capture hooks need conversation access. The manifest declares `contracts.conversationAccess: ["read"]`; if
 OpenClaw asks for approval, give it, or set this in `openclaw.json` (under `hooks`, not under the plugin's `config`):
