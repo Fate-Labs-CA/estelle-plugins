@@ -39,8 +39,8 @@ A lock left by a dead process clears after 11 minutes, longer than any real sign
 
 ## Limits
 
-- **What the sign-in feeds depends on the host** (table below). Claude Code is the only host where it feeds MCP too, through `headersHelper`. On the others it records sessions, and the tools sign in through the host's own MCP OAuth.
-- **Recording only.** A hook signed in this way uploads session events. Per-prompt memory recall, checkpoints, mail and reindexing still need `ESTELLE_API_KEY`, because the sign-in is accepted at the session-event door and nowhere else. The tools themselves, memory search included, work over MCP.
+- **What the sign-in feeds depends on the host** (table below). Claude Code is the only host where it feeds MCP too, through `headersHelper`. On the others it runs the hooks, and the tools sign in through the host's own MCP OAuth.
+- **Hooks run on the sign-in alone** (needs a server that opens these doors, estelle `feat/plugin-signin`). The token is accepted for session events, per-prompt recall (`/search`), checkpoints, reindex, and mail's hook actions (identity, deliver, supervise), always as your own account. It is refused on every other route, including settings, billing and the other mail actions. Against an older server those routes answer 401 and recall says it was not obtained.
 - **Windows** is not supported yet, and the command says so.
 - **A machine with no browser:** the command prints the address, but the sign-in returns to this machine's loopback address, so a browser elsewhere cannot finish it. Use a key.
 - **After signing in, tools may not connect until you reconnect.** Run `/mcp` and reconnect Estelle, or restart.

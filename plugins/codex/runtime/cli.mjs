@@ -73,19 +73,8 @@ if (command === 'doctor') {
     const { handleHook } = await import('./hooks.mjs');
     const output = await handleHook({ host, payload, stateDir: stateDirectory(), request: apiClient(), update: {},
       requestContext: async () => {
-        const { captureHookContext } = await import('./capture-auth.mjs');
-        const capture = await captureHookContext();
-        if (capture) return { ...capture, stateDir: stateDirectory(process.env, capture.partition) };
-        if (!process.env.ESTELLE_API_KEY) {
-          // A key the Estelle CLI stored (`estelle login`, ~/.estelle/auth.json, owner-only) works for hooks too, with no variable.
-          const stored = await launchCredential({}).catch(() => null);
-          if (stored) {
-            const env = { ...process.env, ESTELLE_API_KEY: stored };
-            return { stateDir: stateDirectory(env), request: apiClient({ env }), captureOnly: false };
-          }
-        }
-        // No key and no stored sign-in: say so once at session start, on every host that can sign in.
-        return !process.env.ESTELLE_API_KEY && process.platform !== 'win32' ? { signedOut: true } : null;
+        const { hookCredentialContext } = await import('./capture-auth.mjs');
+        return hookCredentialContext({ stateDirectory, apiClient, stored: launchCredential });
       } });
     if (output) console.log(JSON.stringify(output));
   } catch (error) {

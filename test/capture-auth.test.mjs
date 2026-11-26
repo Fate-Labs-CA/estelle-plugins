@@ -101,7 +101,7 @@ test('canonical environment bypasses private capture owner; capture cannot send 
  assert.equal(reads,0);if(await unsupportedWindows())return;
  const {owner}=await seeded(t),port=remote([{receipts:[]}]);
  const context=await captureHookContext({env:{},owner,...port});
- for(const path of ['/mcp','/work','/search','/checkpoint','/reindex','/settings/suite','/oauth/token','/oauth/revoke'])await assert.rejects(context.request(path,{}),/capture_route/);
+ for(const path of ['/mcp','/work','/settings/suite','/settings','/oauth/token','/oauth/revoke','/subscribe','/session/capture','/sessions/move','/ade'])await assert.rejects(context.request(path,{}),/capture_route/);
  assert.equal(port.calls.length,0);await context.request('/session/events',{events:[]});
  assert.equal(port.calls[0].options.headers['X-Estelle-Capture-Only'],'1');
  assert.equal(port.calls[0].options.headers.Authorization,'Bearer synthetic-access-token');
@@ -246,7 +246,7 @@ test('a refresh in flight is not a stopped sign-in, and one nobody holds is',asy
  const {owner}=await seeded(t,0);
  await owner.locked(async state=>{
   await state.save({...state.record,state:'refresh_pending'});
-  assert.equal((await captureHookContext({env:{},owner})).captureOnly,true);
+  assert.equal((await captureHookContext({env:{},owner})).captureOnly,false);
  });
  await assert.rejects(captureHookContext({env:{},owner}),/capture_pending/);
 });
@@ -389,4 +389,17 @@ test('every hook host can sign in once, and the sign-in names no host it cannot 
  }
  assert.equal((await runCaptureSetup({host:'mini-swe-agent'},{owner:{locked:async()=>{throw Error('no');}}})).status,
   process.platform==='win32'?'pending_unsupported_platform':'pending_unsupported_host');
+});
+
+test('the sign-in reaches every hook route with the same bearer, and only session events carry the capture-only header',async t=>{
+ if(await unsupportedWindows())return;
+ const {owner}=await seeded(t),port=remote([{receipts:[]},{ok:true},{ok:true},{ok:true},{ok:true}]);
+ const context=await captureHookContext({env:{},owner,...port});
+ for(const path of ['/session/events','/search','/checkpoint','/reindex','/session/mail'])await context.request(path,{});
+ assert.deepEqual(port.calls.map(call=>call.url.pathname??String(call.url).replace(/^https:\/\/[^/]+/,'')),
+  ['/session/events','/search','/checkpoint','/reindex','/session/mail']);
+ for(const call of port.calls){
+  assert.equal(call.options.headers.Authorization,'Bearer synthetic-access-token');
+  assert.equal(call.options.headers['X-Estelle-Capture-Only'],call.options.path==='/session/events'||String(call.url).endsWith('/session/events')?'1':undefined);
+ }
 });

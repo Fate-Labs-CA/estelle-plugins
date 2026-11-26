@@ -10,14 +10,16 @@ const LOGIN_MS=CAPTURE_AUTH.loginMs, REQUEST_MS=8000, REFRESH_MIN_MS=REQUEST_MS,
 // Claude Code gives headersHelper 10 seconds. Past this it is killed, which would look like a lost reply.
 const HEADERS_MS=9500;
 const MAX_EVENTS=2000000;
+// The doors the plugin's own hooks call. The server opens exactly these to the plugin sign-in and refuses it everywhere else.
+const HOOK_ROUTES=new Set(['/session/events','/search','/checkpoint','/reindex','/session/mail']);
 const hosts=new Set(['codex','claude','claude-code','cursor','kimi','grok','dsh','qwen','qwen-code','opencode','pi','hermes']);
 const equal=(a,b)=>typeof a==='string'&&typeof b==='string'&&Buffer.byteLength(a)===Buffer.byteLength(b)
  &&timingSafeEqual(Buffer.from(a),Buffer.from(b));
 const remaining=deadline=>{const value=Math.min(REQUEST_MS,deadline-Date.now());if(value<=0)throw Error('capture_deadline');return value;};
 
 function transport(path,body,headers,deadline,{request=httpsRequest,signal}={}) {
- if(!['/oauth/token','/oauth/revoke','/session/events'].includes(path))throw Error('capture_route');
- const cap=path==='/session/events'?MAX_EVENTS:CAPTURE_AUTH.bytes;
+ if(!['/oauth/token','/oauth/revoke',...HOOK_ROUTES].includes(path))throw Error('capture_route');
+ const cap=HOOK_ROUTES.has(path)?MAX_EVENTS:CAPTURE_AUTH.bytes;
  if(Buffer.byteLength(body)>cap)throw Error('capture_bound');
  return new Promise((resolve,reject)=>{
   let done=false,connected=false;const finish=(error,value)=>{if(done)return;done=true;error?reject(error):resolve(value);};
@@ -37,7 +39,7 @@ function transport(path,body,headers,deadline,{request=httpsRequest,signal}={}) 
      const error=Error('capture_http');error.status=res.statusCode;
      // Busy or down: the server said so and spent nothing it knows of. Worst case it did, and a retry ends in sign-in.
      error.notSpent=res.statusCode===429||res.statusCode>=500;
-     if(path==='/session/events'&&parsed)error.message=String(value?.error?.message||'capture_http').slice(0,1000);
+     if(HOOK_ROUTES.has(path)&&parsed)error.message=String(value?.error?.message||'capture_http').slice(0,1000);
      finish(error);return;
     }
     if(parsed)finish(null,value);else finish(Error('capture_response_json'));
@@ -107,7 +109,7 @@ export async function mcpHeaders({env=process.env,home,deadline=Date.now()+HEADE
  }catch{return {};}
 }
 
-/** The canonical env key wins without opening this store. A hook only ever uploads to POST /session/events. */
+/** The canonical env key wins without opening this store. A hook calls only the routes in HOOK_ROUTES with this sign-in. */
 export async function captureHookContext({env=process.env,home,deadline=Date.now()+12000,owner,
  request=httpsRequest}={}) {
  if(env.ESTELLE_API_KEY)return null;
@@ -119,12 +121,14 @@ export async function captureHookContext({env=process.env,home,deadline=Date.now
  // A refresh in flight is not a stopped sign-in. headersHelper refreshes as a session starts, beside this very hook,
  // and a token is usually expired by then. An upload during it fails retryably and is spooled.
  if(record.state!=='active'&&!await owner.busy())throw Error('capture_pending');
- return {captureOnly:true,partition:record.partition,request:async(path,body)=>{
-  if(path!=='/session/events')throw Error('capture_route');
+ return {captureOnly:false,partition:record.partition,request:async(path,body)=>{
+  if(!HOOK_ROUTES.has(path))throw Error('capture_route');
   const encoded=JSON.stringify(body);if(Buffer.byteLength(encoded)>MAX_EVENTS)throw Error('capture_bound');
   const access=await freshAccess(owner,record.partition,deadline,{request});
+  // Session events keep the capture-only door; the other hook routes take the same bearer as the account's own hook.
   return transport(path,encoded,
-   {Authorization:'Bearer '+access,'Content-Type':'application/json','X-Estelle-Capture-Only':'1',
+   {Authorization:'Bearer '+access,'Content-Type':'application/json',
+    ...(path==='/session/events'?{'X-Estelle-Capture-Only':'1'}:{}),
     'X-Estelle-Client-Protocol':'1','X-Estelle-Hook-Contract':'1',
     'X-Estelle-Client-Version':`estelle-plugins/${VERSION}`},deadline,{request});
  }};
@@ -226,4 +230,16 @@ export async function runCaptureSetup({host,logout=false,home,deadline=Date.now(
   const code=/^capture_[a-z_]+$/.test(String(error?.message))?error.message:'capture_failed';
   return publicState('pending_capture_auth',{reason:code});
  }
+}
+
+/** One owner of the order every hook route's credential comes in: the environment key, then the plugin's own sign-in
+ *  (refreshed as needed), then the key the Estelle CLI stored in ~/.estelle/auth.json. `null` means the environment key,
+ *  which the caller's ordinary client already carries. `{signedOut:true}` means there is nothing to sign with. */
+export async function hookCredentialContext({env=process.env,home,stateDirectory,apiClient,stored,capture=captureHookContext}={}) {
+ if(env.ESTELLE_API_KEY)return null;
+ const signedIn=await capture({env,home});
+ if(signedIn)return {...signedIn,stateDir:stateDirectory(env,signedIn.partition)};
+ const key=await stored({},home).catch(()=>null);
+ if(key){const keyed={...env,ESTELLE_API_KEY:key};return {stateDir:stateDirectory(keyed),request:apiClient({env:keyed}),captureOnly:false};}
+ return process.platform!=='win32'?{signedOut:true}:null;
 }

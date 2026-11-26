@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { handleHook, drainOne } from '../runtime/hooks.mjs';
-import { hash, stateDirectory } from '../runtime/io.mjs';
+import { hash, stateDirectory, apiClient } from '../runtime/io.mjs';
+import { hookCredentialContext } from '../runtime/capture-auth.mjs';
 
 async function fixture(t) {
  const home=await mkdtemp(join(tmpdir(),'estelle-capture-hooks-'));
@@ -200,4 +201,28 @@ test('a key the CLI stored in ~/.estelle/auth.json serves hooks with no variable
  assert.match(run(),/estelle:login/,'a group-readable credential file is refused');
  await chmod(file,0o600);
  assert(!run().includes('estelle:login'),'an owner-only file is used');
+});
+
+test('recall, checkpoint and mail run on the plugin sign-in alone, with no environment key',async t=>{
+ const f=await fixture(t),routes=[];
+ // The sign-in's own request: it answers the way the server's hook doors do, and records every route and its bearer.
+ const capture=async()=>({captureOnly:false,partition:'a'.repeat(32),request:async(route,body)=>{
+  routes.push(route);
+  if(route==='/search')return {recall:'RECALLED-BY-SIGN-IN'};
+  if(route==='/session/events')return f.request(route,body);
+  return {ok:true};
+ }});
+ const send=(event,extra={})=>handleHook({host:'claude-code',payload:{...f.payload,hook_event_name:event,...extra},
+  stateDir:f.stateDir,request:()=>{throw Error('credential_missing');},
+  requestContext:()=>hookCredentialContext({env:{},home:f.home,capture,stateDirectory,apiClient:()=>{throw Error('unused');},
+   stored:async()=>null})});
+ const output=await send('UserPromptSubmit',{prompt:'what did we decide about auth?'});
+ assert(routes.includes('/search'),`recall used the sign-in: ${routes}`);
+ assert.match(JSON.stringify(output),/RECALLED-BY-SIGN-IN/);
+ await send('Stop');
+ assert(routes.includes('/session/events'));
+ // With an environment key the sign-in is not consulted at all, so nothing here ran on it.
+ const before=routes.length;
+ assert.equal(await hookCredentialContext({env:{ESTELLE_API_KEY:'k'},capture,stateDirectory,apiClient,stored:async()=>'x'}),null);
+ assert.equal(routes.length,before);
 });
