@@ -1,7 +1,7 @@
 # OpenCode
 
 Package: `plugins/opencode` (npm name `@fatelabs/opencode-estelle`). Requires OpenCode 1.19 or later, Node.js 22 on
-the `PATH` of the OpenCode process, and `ESTELLE_API_KEY` in that process's environment for hooks. Written and tested
+the `PATH` of the OpenCode process, and, for hooks, either `/estelle:login` once or `ESTELLE_API_KEY` in that process's environment. Written and tested
 against OpenCode 1.19.6.
 
 One plugin adds everything: the Estelle MCP server, the `/estelle:*` commands, four Estelle subagents, the skills,
@@ -26,8 +26,10 @@ in `~/.config/opencode/opencode.json`, or in a project's `opencode.json` for one
 ## Sign in
 
 With `ESTELLE_API_KEY` set, MCP and the hooks use that one key. Without it, MCP signs in with OpenCode's own OAuth
-(`opencode mcp auth Estelle`) and the hooks report `credential_missing` in `doctor`; recall, capture and identity need
-the key.
+(`opencode mcp auth Estelle`), and the hooks use the plugin sign-in: run `/estelle:login` once (it runs
+`node runtime/cli.mjs setup opencode --login`). Credential order for hooks: `ESTELLE_API_KEY`, then the plugin sign-in, then
+the key the Estelle CLI stored. With none of them, `doctor` reports `credential_missing` and recall, capture and identity
+stop.
 
 ## Check it
 

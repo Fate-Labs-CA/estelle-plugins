@@ -1,12 +1,12 @@
 # Google Antigravity (IDE and `agy` CLI)
 
 Package: `plugins/antigravity`, one Antigravity plugin. The IDE and the `agy` CLI read the same plugin format, so the one
-directory serves both. Requires Node.js 22 on the `PATH` of the Antigravity process and `ESTELLE_API_KEY` in that process's
-environment for hooks. It was written from Antigravity's published plugin documentation and has not been run inside a real
+directory serves both. Requires Node.js 22 on the `PATH` of the Antigravity process and, for hooks, either `/estelle-login` once or
+`ESTELLE_API_KEY` in that process's environment. It was written from Antigravity's published plugin documentation and has not been run inside a real
 Antigravity install (see [what it supports](../hosts/antigravity.md)).
 
-One plugin adds the Estelle MCP server, every Estelle skill, the seven Estelle commands as skills (`/estelle-cloud`,
-`/estelle-code`, `/estelle-handoff`, `/estelle-monitor`, `/estelle-resume`, `/estelle-review`, `/estelle-rooms`), the four
+One plugin adds the Estelle MCP server, every Estelle skill, the nine Estelle commands as skills (`/estelle-cloud`,
+`/estelle-code`, `/estelle-handoff`, `/estelle-login`, `/estelle-logout`, `/estelle-monitor`, `/estelle-resume`, `/estelle-review`, `/estelle-rooms`), the four
 Estelle agents, Estelle's instructions as an always-on rule, and the session hooks.
 
 ## Your Google subscription
@@ -36,16 +36,24 @@ MCP signs in with Antigravity's own OAuth. The plugin declares the server by URL
 OAuth metadata and registers itself. It then asks you to finish in the browser. In the app, go to Customizations, Installed,
 and choose Authenticate under MCP Servers, then paste the code into Enter authorization code. No key is needed for MCP.
 
-Hooks cannot use that sign-in. They need `ESTELLE_API_KEY` in the environment Antigravity starts from. Without it MCP works
-and the hooks capture nothing. GUI apps may not inherit your terminal environment, so quit and reopen the IDE after setting a
-key.
+Hooks have their own sign-in: run `/estelle-login` once and approve the browser page. It runs
+`node runtime/cli.mjs setup antigravity --login`, waits up to 10 minutes, and prints `capture_configured`,
+`capture_already_configured`, `pending_unsupported_platform` (Windows) or `pending_capture_auth`. Without a sign-in, the first
+turn says Estelle is not recording and names `/estelle-login`. `/estelle-logout` ends it.
+
+`ESTELLE_API_KEY` is the override, not a requirement: when set in the environment Antigravity starts from, hooks use it and the
+plugin sign-in is not opened. Credential order for hooks: `ESTELLE_API_KEY`, then the plugin sign-in, then the key the Estelle
+CLI stored. GUI apps may not inherit your terminal environment, so quit and reopen the IDE after setting a key.
+
+Not proven: neither sign-in (`/estelle-login` for hooks, Authenticate for MCP) has been run signed in against a live Antigravity.
+`/estelle-login` is not available on Windows yet, and on a machine with no browser it cannot finish: use a key.
 
 ## Check it
 
 - `agy plugin list` shows `estelle`. `agy plugin validate --strict ./estelle-plugins/plugins/antigravity` reports no errors.
 - `/hooks` in the TUI lists Estelle's five hooks.
-- Type `/estelle-` and the seven commands are offered.
-- After a turn with `ESTELLE_API_KEY` set, the session appears on your Estelle Sessions page.
+- Type `/estelle-` and the nine commands are offered, including `/estelle-login`.
+- After `/estelle-login` (or with `ESTELLE_API_KEY` set) and one turn, the session appears on your Estelle Sessions page.
 
 ## Update
 
@@ -56,5 +64,5 @@ behind (`ESTELLE_PLUGIN_UPDATE_CHECK=0` turns the check off).
 ## Copy/paste setup prompt
 
 ```text
-Use the current source: read https://github.com/Fate-Labs-CA/estelle-plugins at its latest main, never a cached or older local copy of the repository. Install Estelle for Google Antigravity from https://github.com/Fate-Labs-CA/estelle-plugins using plugins/antigravity. Follow docs/install/antigravity.md: clone the repository, run `agy plugin validate <clone>/plugins/antigravity`, then `agy plugin install <clone>/plugins/antigravity`. Do not edit Antigravity settings by hand. Keep hooks on the ESTELLE_API_KEY environment key; never request or display credentials, and never touch my Google sign-in. Then tell me to restart Antigravity and authenticate Estelle under MCP Servers. Report plugin validation, MCP sign-in and observed hooks separately. No paid installation tests.
+Use the current source: read https://github.com/Fate-Labs-CA/estelle-plugins at its latest main, never a cached or older local copy of the repository. Install Estelle for Google Antigravity from https://github.com/Fate-Labs-CA/estelle-plugins using plugins/antigravity. Follow docs/install/antigravity.md: clone the repository, run `agy plugin validate <clone>/plugins/antigravity`, then `agy plugin install <clone>/plugins/antigravity`. Do not edit Antigravity settings by hand. Do not set or ask for an ESTELLE_API_KEY unless I already use one; never request or display credentials, and never touch my Google sign-in. Then tell me to restart Antigravity, run /estelle-login for the hooks, and authenticate Estelle under MCP Servers for the tools. Report plugin validation, MCP sign-in, hook sign-in and observed hooks separately; the sign-ins are unproven live. No paid installation tests.
 ```

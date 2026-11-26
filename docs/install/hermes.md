@@ -2,7 +2,7 @@
 
 Package: `plugins/hermes`, a Hermes directory plugin (`plugin.yaml` and `__init__.py`). Requires Hermes Agent with MCP
 support (`hermes-agent[mcp]`, or the official installer), Node.js 22 on the `PATH` of the Hermes process, and
-`ESTELLE_API_KEY` in that process's environment for hooks. Tested against hermes-agent 0.19.0 from PyPI; the plugin API
+either `/estelle-login` once or `ESTELLE_API_KEY` in that process's environment, for hooks. Tested against hermes-agent 0.19.0 from PyPI; the plugin API
 it uses was read against Hermes v0.23.3 on GitHub and is unchanged there.
 
 The plugin adds the session hooks, the skills (as `estelle:<skill>`), the `/estelle-*` commands and Estelle's
@@ -30,13 +30,14 @@ mcp_servers:
 
 ## Sign in
 
-Hooks need `ESTELLE_API_KEY` in the environment Hermes starts from. Without it, MCP works and the hooks capture nothing.
+Hooks sign in separately from MCP: run `/estelle-login` once and approve the browser page (it runs
+`node runtime/cli.mjs setup hermes --login`). `ESTELLE_API_KEY` in the environment Hermes starts from overrides it. Credential order for hooks: `ESTELLE_API_KEY`, then the plugin sign-in, then the key the Estelle CLI stored. With neither, MCP works and the first turn says Estelle is not recording.
 
 ## Check it
 
 - `hermes plugins list` shows `estelle` as `enabled`.
 - `hermes mcp test Estelle` connects and lists Estelle's tools.
-- After a turn with `ESTELLE_API_KEY` set, the session appears on your Estelle Sessions page.
+- After `/estelle-login` (or with `ESTELLE_API_KEY` set) and one turn, the session appears on your Estelle Sessions page.
 
 What Hermes can and cannot do for Estelle, with sources: [docs/hosts/hermes.md](../hosts/hermes.md).
 

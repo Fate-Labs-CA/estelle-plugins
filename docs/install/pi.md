@@ -1,7 +1,7 @@
 # Pi
 
 Package: `plugins/pi` (npm name `@fatelabs/pi-estelle`). Requires Pi 1.5 or later (`@earendil-works/pi-coding-agent`),
-Node.js 22 on the `PATH` of the Pi process, and `ESTELLE_API_KEY` in that process's environment for hooks. Written and
+Node.js 22 on the `PATH` of the Pi process, and, for hooks, either `/estelle:login` once or `ESTELLE_API_KEY` in that process's environment. Written and
 tested against Pi 1.5.2.
 
 One package adds everything Pi can take: the Estelle MCP server (through Pi's built-in MCP support), the
@@ -29,7 +29,9 @@ without installing: `pi -e git:github.com/Fate-Labs-CA/estelle-plugins`.
 ## Sign in
 
 With `ESTELLE_API_KEY` set, MCP and the hooks use that one key. Without it, MCP signs in with Pi's own OAuth
-(`/mcp login Estelle`) and the hooks report `credential_missing` in `doctor`; recall, capture and identity need the key.
+(`/mcp login Estelle`), and the hooks use the plugin sign-in: run `/estelle:login` once (it runs
+`node runtime/cli.mjs setup pi --login`). Credential order for hooks: `ESTELLE_API_KEY`, then the plugin sign-in, then the
+key the Estelle CLI stored. With none of them, `doctor` reports `credential_missing` and recall, capture and identity stop.
 
 ## Check it
 
