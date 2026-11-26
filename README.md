@@ -29,7 +29,7 @@ Version: `0.0.26`.
 | Google Antigravity (IDE and `agy` CLI) | [Antigravity](docs/install/antigravity.md) · [what it supports](docs/hosts/antigravity.md) |
 | Hermes Agent | [Hermes](docs/install/hermes.md) · [what it supports](docs/hosts/hermes.md) |
 | mini-swe-agent (MCP tools through bash, no capture) | [mini-swe-agent](docs/install/mini-swe-agent.md) · [what it supports](docs/hosts/mini-swe-agent.md) |
-| OpenClaw (skills and MCP, no capture yet) | [OpenClaw](docs/install/openclaw.md) · [what it supports](docs/hosts/openclaw.md) |
+| OpenClaw (native plugin: hooks, recall, capture; or a skills bundle) | [OpenClaw native](docs/install/openclaw-native.md) · [bundle](docs/install/openclaw.md) · [what it supports](docs/hosts/openclaw.md) |
 | fx (skills and MCP, no capture) | [fx](docs/install/fx.md) · [what it supports](docs/hosts/fx.md) |
 
 OpenCode and Pi install from npm with one command each:

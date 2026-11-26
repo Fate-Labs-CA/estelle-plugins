@@ -5,8 +5,8 @@ Package: `plugins/openclaw`, an Agent Plugins 1.0.0 bundle (a root `plugin.json`
 24.16 or later.
 
 The bundle adds Estelle's skills. The Estelle MCP server is OpenClaw's own MCP configuration, added with one command.
-Session capture is not part of this package: OpenClaw's hooks are in-process TypeScript plugins, and an Estelle one has
-not been built yet.
+Session capture, recall and the write warning are in the separate native plugin,
+[openclaw-native](openclaw-native.md); install one of the two, not both.
 
 ## Install
 

@@ -33,6 +33,7 @@ async function adapter(host) {
   if (host === 'qwen-code') return import('../adapters/qwen.mjs');
   if (host === 'gemini-cli') return import('../adapters/gemini.mjs');
   if (host === 'antigravity') return import('../adapters/antigravity.mjs');
+  if (host === 'openclaw') return import('../adapters/openclaw.mjs');
   throw new Error('unsupported_host');
 }
 
@@ -69,7 +70,7 @@ export async function drainOne(stateDir, request) {
     await writeJson(cursorPath, { last: name });
     const path = join(stateDir, 'deferred', name);
     const item = await readJson(path, 16_000);
-    if (!['claude-code', 'codex', 'kimi', 'grok', 'cursor', 'dsh', 'opencode', 'pi', 'hermes', 'qwen-code', 'gemini-cli', 'antigravity'].includes(item.host)) throw new Error('unsupported_host');
+    if (!['claude-code', 'codex', 'kimi', 'grok', 'cursor', 'dsh', 'opencode', 'pi', 'hermes', 'qwen-code', 'gemini-cli', 'antigravity', 'openclaw'].includes(item.host)) throw new Error('unsupported_host');
     const repo = repository(item.payload.cwd);
     const payload = { ...item.payload, hook_event_name: 'Stop' };
     if (item.host === 'kimi') {
@@ -278,7 +279,8 @@ async function answerEvent({ host, port, n, payload, stateDir, request, notice: 
     if (queued) {
       await recordStatus(stateDir, { host, event: n.event, mode: 'context',
         ...(queued.degraded ? { status: 'partial', code: 'recall_degraded', pending: false } : { status: 'emitted' }) });
-      return port.formatContext(notice ? `${queued.text}\n\n${notice}` : queued.text, n.event);
+      // Mail pulled at this same boundary rides with the queued recall: the server has already handed it over, so dropping it would lose it.
+      return port.formatContext(extra ? `${queued.text}\n\n${extra}` : queued.text, n.event);
     }
   }
   if (context?.text) return port.formatContext(notice ? `${context.text}\n\n${notice}` : context.text, n.event);

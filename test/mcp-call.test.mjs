@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { mcpUrl, rpcMessage, runMcpCommand } from '../runtime/mcp-call.mjs';
+import { mcpUrl, rpcMessage, runMcpCommand, scrubArguments } from '../runtime/mcp-call.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const KEY = 'est_fixture_key';
@@ -91,4 +91,46 @@ test('the mini-swe-agent config extends the default one and points the model at 
   assert.match(text, /mcp call <tool> '<json arguments>'/);
   assert.doesNotMatch(text, /instance_template|model:|environment:/, 'only the system prompt changes');
   await readFile(join(root, 'plugins', 'mini-swe-agent', 'runtime', 'mcp-call.mjs'));
+});
+
+test('arguments leave the machine scrubbed: private spans and key shapes never reach the server, ordinary words and fields do', async t => {
+  const received = [];
+  const http = createServer((req, res) => {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      const message = JSON.parse(body || '{}');
+      if (message.method === 'tools/call') received.push(message.params.arguments);
+      if (message.method === 'initialize') res.writeHead(200, { 'content-type': 'application/json', 'mcp-session-id': 's' });
+      else res.writeHead(message.id ? 200 : 202, { 'content-type': 'application/json' });
+      res.end(message.id ? JSON.stringify({ jsonrpc: '2.0', id: message.id, result: message.method === 'tools/call'
+        ? { content: [{ type: 'text', text: 'ok' }] } : {} }) : '');
+    });
+  });
+  await new Promise(done => http.listen(0, '127.0.0.1', done));
+  t.after(() => new Promise(done => http.close(done)));
+  const env = { ESTELLE_API_KEY: KEY, ESTELLE_MCP_URL: `http://127.0.0.1:${http.address().port}/mcp` };
+  const github = `ghp_${'a'.repeat(30)}`;
+  const args = { query: `why does <private>the launch code is 4411</private> fail with ${github}`,
+    nested: { list: ['AKIAABCDEFGHIJKLMNOP', 'plain words'], count: 3 }, session_token: 'f'.repeat(32) };
+  await runMcpCommand(['call', 'estelle_grep', JSON.stringify(args)], { env });
+  assert.equal(received.length, 1);
+  const sent = JSON.stringify(received[0]);
+  assert.doesNotMatch(sent, /launch code|4411|ghp_|AKIA/, 'a private span or a key reached the wire');
+  assert.match(sent, /\[private\]/);
+  assert.match(sent, /\[redacted github token\]/);
+  assert.equal(received[0].nested.list[1], 'plain words');
+  assert.equal(received[0].nested.count, 3);
+  assert.equal(received[0].session_token, 'f'.repeat(32), 'a field is not dropped for its name');
+});
+
+test('scrubArguments refuses past its bounds instead of sending unscanned text, and returns a new object', () => {
+  const input = { a: ['<private>x</private>'] };
+  const out = scrubArguments(input);
+  assert.deepEqual(out, { a: ['[private]'] });
+  assert.deepEqual(input, { a: ['<private>x</private>'] }, 'the caller\'s object is not mutated');
+  let deep = 'leaf';
+  for (let i = 0; i < 40; i++) deep = { next: deep };
+  assert.throws(() => scrubArguments(deep), /arguments_size/);
+  assert.throws(() => scrubArguments(Array.from({ length: 30_000 }, () => 'x')), /arguments_size/);
 });

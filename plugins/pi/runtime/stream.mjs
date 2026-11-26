@@ -20,7 +20,7 @@ const INJECTED = ['<system-reminder', '<command-', '<local-command', '<task-noti
 const CODEX_INJECTED = [...INJECTED, '<environment_context', '<user_instructions', '# AGENTS.md instructions', '<skill', '<turn_aborted', '<user_shell_command'];
 const AGENTS = { claude: 'claude-code', 'claude-code': 'claude-code', codex: 'codex', kimi: 'kimi-code', 'kimi-code': 'kimi-code',
   grok: 'grok', cursor: 'cursor', dsh: 'deepseek-harness', 'deepseek-harness': 'deepseek-harness', opencode: 'opencode', pi: 'pi',
-  hermes: 'hermes', 'qwen-code': 'qwen-code', 'gemini-cli': 'gemini-cli', antigravity: 'antigravity' };
+  hermes: 'hermes', 'qwen-code': 'qwen-code', 'gemini-cli': 'gemini-cli', antigravity: 'antigravity', openclaw: 'openclaw' };
 const WAITING = 'waiting_for_review/input_required';
 const string = value => typeof value === 'string' ? value : '';
 const validTime = value => typeof value === 'string' && Number.isFinite(Date.parse(value));
@@ -822,7 +822,7 @@ export async function streamSession({ payload, host, repo, stateDir, request, no
   const notes = { repository: repo, ...(sub ? { sidechain: true } : {}) };
   // Grok and Cursor transcript lines carry no verified timestamps; capture time stamps their events.
   if (harness === 'grok' || harness === 'cursor' || harness === ANTIGRAVITY_AGENT) notes.observedAt = new Date().toISOString();
-  if (harness === 'opencode' || harness === 'hermes') notes.harness = harness;
+  if (['opencode', 'hermes', 'openclaw'].includes(harness)) notes.harness = harness;
   // Kimi 2.6.0 records assistant and tool turns only as loop events; the first window that shows either vocabulary decides.
   if (harness === 'kimi-code' && typeof state.kimi_loop_turns === 'boolean') notes.kimiLoopTurns = state.kimi_loop_turns;
   let events = [];
@@ -904,6 +904,8 @@ export async function streamSession({ payload, host, repo, stateDir, request, no
       capture_scope: "Gemini CLI's own chat recording; the person's prompts, replies, thoughts, tool calls and results; subagent sessions (chats/<parent>/) are not captured" } : {}),
     ...(harness === ANTIGRAVITY_AGENT ? { transcript_format: 'antigravity-transcript-jsonl-inferred', current_format_verified: false,
       capture_scope: "hook transcriptPath (brain/<conversation>/.system_generated/logs/transcript.jsonl): the person's prompts, planner replies, tool calls and step outputs; the layout is from third-party observation, not a recording" } : {}),
+    ...(harness === 'openclaw' ? { transcript_format: 'openclaw-plugin-mirror', current_format_verified: false, event_times: 'capture-time',
+      capture_scope: "the turn's messages the plugin read from OpenClaw's agent_end hook (message shape inferred from the docs, not yet seen live); subagents are not linked to their parent" } : {}),
     ...(harness === QWEN_AGENT ? { transcript_format: 'qwen-chat-recording', current_format_verified: true,
       capture_scope: "Qwen Code's own chat recording; the person's prompts, replies, tool calls and results; system records are skipped" } : {}) };
 }

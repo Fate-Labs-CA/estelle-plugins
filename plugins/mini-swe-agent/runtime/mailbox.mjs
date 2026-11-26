@@ -16,9 +16,13 @@ import { timelineIdentity } from './identity.mjs';
 import { subagentIdentity } from './supervise.mjs';
 
 // Hosts whose sessions the server can mail (its live list) and whose hook output carries additionalContext.
-// OpenCode and Pi carry the text through their in-process plugin (adapters/opencode-plugin.mjs, adapters/pi-extension.mjs);
-// the server must list them as local hosts too, or identity is refused and only the start text is printed.
-export const MAILBOX_HOSTS = new Set(['claude-code', 'codex', 'opencode', 'pi']);
+// OpenCode, Pi and OpenClaw carry the text through their in-process plugin (adapters/opencode-plugin.mjs, adapters/pi-extension.mjs,
+// adapters/openclaw-plugin.mjs); the server must list every host here as a local one too (estelle api_session_mail.py
+// EXTERNAL_ORIGINS), or identity is refused and only the start text is printed.
+// Cursor and Qwen Code print the tool-boundary pull as additionalContext at PostToolUse (both hosts document it); the
+// OpenClaw plugin queues it for its next before_prompt_build. Not listed, with the reason: Grok (stdout ignored for passive
+// events), Kimi (PostToolUse stdout not specified), Hermes 0.19 (post_tool_call return is ignored), dsh (no tool-result hook).
+export const MAILBOX_HOSTS = new Set(['claude-code', 'codex', 'cursor', 'opencode', 'pi', 'qwen-code', 'openclaw']);
 export const TOOL_PULL_INTERVAL_MS = 10_000;
 // Characters of delivered text one hook output carries; the server already bounds a delivery well below this.
 const MAX_CONTEXT_CHARS = 12_000;

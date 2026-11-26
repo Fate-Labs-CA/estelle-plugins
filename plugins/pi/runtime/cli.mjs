@@ -120,6 +120,6 @@ if (command === 'doctor') {
     process.exitCode = 1;
   }
 } else {
-  console.error('Usage: node runtime/cli.mjs hook <claude-code|codex|kimi|grok|cursor|dsh|opencode|pi|hermes|qwen-code|gemini-cli|antigravity> | doctor | mcp tools | mcp call <tool> <json> | setup <host> [--apply] [--expect SHA256]');
+  console.error('Usage: node runtime/cli.mjs hook <claude-code|codex|kimi|grok|cursor|dsh|opencode|pi|hermes|qwen-code|gemini-cli|antigravity|openclaw> | doctor | mcp tools | mcp call <tool> <json> | setup <host> [--apply] [--expect SHA256]');
   process.exitCode = 1;
 }

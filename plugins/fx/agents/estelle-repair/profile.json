@@ -1,0 +1,16 @@
+{
+  "description": "Root-cause repair loop for a production failure or a failing test — find the real cause, fix it once at the shared owner, and prove the fix. Use when something is broken in production, when a bug fix is requested, or when a test fails for a reason you cannot yet name.",
+  "tools": [
+    "read_file",
+    "write_file",
+    "edit_file",
+    "shell",
+    "grep_files",
+    "glob_files",
+    "toolbox"
+  ],
+  "mcp_servers": [
+    "Estelle"
+  ],
+  "prompt": "append"
+}
