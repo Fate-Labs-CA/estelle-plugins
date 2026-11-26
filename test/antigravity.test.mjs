@@ -153,7 +153,7 @@ test('the Antigravity plugin follows the documented schema: manifest, MCP, hooks
   for (const command of commands) assert.match(command, /^node \.\/runtime\/cli\.mjs hook antigravity [A-Za-z]+$/, 'relative path, no PLUGIN_ROOT');
   assert.match(await readFile(join(dir, 'rules', 'AGENTS.md'), 'utf8'), /Estelle/);
   const folders = [...(await readdir(join(dir, 'skills'))).map(name => ['skills', name]), ...(await readdir(join(dir, 'command-skills'))).map(name => ['command-skills', name])];
-  assert.equal(folders.length, (await readdir(join(root, 'skills'))).length + (await readdir(join(root, 'commands'))).length);
+  assert.equal(folders.length, (await readdir(join(root, 'skills'))).length + (await readdir(join(root, 'commands'))).filter(name => name.endsWith('.md')).length);
   for (const [parent, name] of folders) {
     const text = await readFile(join(dir, parent, name, 'SKILL.md'), 'utf8');
     assert.equal(/^name: (.+)$/m.exec(text)?.[1], name, 'skill folder matches its name');
@@ -163,6 +163,6 @@ test('the Antigravity plugin follows the documented schema: manifest, MCP, hooks
   }
   assert.deepEqual((await readdir(join(dir, 'command-skills'))).sort(), ['cloud', 'code', 'handoff', 'login', 'logout', 'monitor', 'resume', 'review', 'rooms'].map(n => `estelle-${n}`));
   const agents = await readdir(join(dir, 'agents'));
-  assert.equal(agents.length, (await readdir(join(root, 'agents'))).length);
+  assert.equal(agents.length, (await readdir(join(root, 'agent-sources'))).length);
   for (const file of agents) assert.match(await readFile(join(dir, 'agents', file), 'utf8'), /^---\nname: .+\ndescription: ".+"\nmainAgent: false\nsubagent: true\nmodel: inherit\n---\n/);
 });

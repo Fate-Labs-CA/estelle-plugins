@@ -1,0 +1,11 @@
+{
+  "name": "estelle",
+  "version": "0.0.29",
+  "description": "Fate Labs Estelle: Estelle MCP, memory and session hooks for coding agents.",
+  "mcpServers": {
+    "Estelle": {
+      "httpUrl": "https://api.fatelabs.ca/mcp"
+    }
+  },
+  "contextFileName": "instructions.md"
+}

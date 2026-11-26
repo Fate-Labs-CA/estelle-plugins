@@ -41,9 +41,9 @@ test('WIRED: with the start now delivered, a start then a stop records the child
 
 test('the four shared agents ship to Cursor, Kimi and Qwen, and the manifests point at them', async () => {
   for (const host of ['cursor', 'kimi', 'qwen']) {
-    assert.deepEqual((await readdir(join(root, 'plugins', host, 'agents'))).sort(), SHARED, host);
+    assert.deepEqual((await readdir(join(root, 'plugins', host, host === 'kimi' ? 'kimi-agents' : 'agents'))).sort(), SHARED, host);
   }
-  for (const file of ['plugins/kimi/kimi.plugin.json', 'kimi.plugin.json']) assert.deepEqual((await read(file)).agents, ['./agents'], file);
+  for (const file of ['plugins/kimi/kimi.plugin.json', 'kimi.plugin.json']) assert.deepEqual((await read(file)).agents, ['./kimi-agents'], file);
   assert.equal((await read('plugins/qwen/qwen-extension.json')).agents, 'agents');
 });
 
@@ -53,5 +53,5 @@ test('Qwen agents name Qwen tools: no Claude tool names and no Claude-plugin ali
   for (const name of ['read_file', 'write_file', 'edit', 'run_shell_command', 'grep_search', 'glob', 'mcp__Estelle__verify']) assert.ok(tools.includes(name), name);
   for (const name of ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob']) assert.ok(!tools.includes(name), name);
   assert.ok(!tools.some(name => name.startsWith('mcp__plugin_')));
-  assert.match(await readFile(join(root, 'plugins/kimi/agents/estelle-repair.md'), 'utf8'), /^tools: Read, Write, Edit, Bash, Grep, Glob,/m);
+  assert.match(await readFile(join(root, 'plugins/kimi/kimi-agents/estelle-repair.md'), 'utf8'), /^tools: Read, Write, Edit, Bash, Grep, Glob,/m);
 });

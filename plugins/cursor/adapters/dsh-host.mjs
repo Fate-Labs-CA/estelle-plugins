@@ -63,7 +63,7 @@ function transcriptWriter(ctx) {
 function registerCommands(ctx, createUserMessage) {
   ctx.inject(['commands'], child => {
     const directory = join(ROOT, 'commands');
-    for (const entry of readdirSync(directory).sort()) {
+    for (const entry of readdirSync(directory).filter(name => name.endsWith('.md')).sort()) {
       const source = readFileSync(join(directory, entry), 'utf8');
       const [, description, body] = /^---\ndescription: (.+)\n---\n([\s\S]+)$/.exec(source) ?? [];
       if (!description) throw new Error(`Command needs one description line: ${entry}`);
