@@ -172,7 +172,7 @@ test('the Gemini CLI extension: OAuth-ready MCP, hooks on the variables Gemini C
   }
   assert.equal(hooks.BeforeTool[0].matcher, 'write_file|replace');
   const commands = await readdir(join(root, 'plugins', 'gemini', 'commands', 'estelle'));
-  assert.deepEqual(commands.map(file => file.replace('.toml', '')).sort(), (await readdir(join(root, 'commands'))).map(file => file.replace('.md', '')).sort());
+  assert.deepEqual(commands.map(file => file.replace('.toml', '')).sort(), (await readdir(join(root, 'commands'))).filter(file => file.endsWith('.md')).map(file => file.replace('.md', '')).sort());
   for (const file of commands) {
     const text = await readFile(join(root, 'plugins', 'gemini', 'commands', 'estelle', file), 'utf8');
     assert.match(text, /^description = ".+"\nprompt = '''\n/);
@@ -187,4 +187,26 @@ test('the Gemini CLI extension: OAuth-ready MCP, hooks on the variables Gemini C
   }
   await readFile(join(root, 'plugins', 'gemini', 'runtime', 'cli.mjs'));
   await readFile(join(root, 'plugins', 'gemini', 'skills', 'estelle', 'SKILL.md'));
+});
+
+test('the repository root is an installable Gemini CLI extension identical to plugins/gemini, and no other host sees its commands', async () => {
+  const same = async path => assert.equal(await readFile(join(root, path), 'utf8'), await readFile(join(root, 'plugins', 'gemini', path), 'utf8'), path);
+  await same('gemini-extension.json');
+  await same('hooks/hooks.json');
+  const manifest = await json('gemini-extension.json');
+  assert.deepEqual(manifest.mcpServers, { Estelle: { httpUrl: 'https://api.fatelabs.ca/mcp' } });
+  assert.equal(manifest.name, 'estelle');
+  assert.equal(manifest.contextFileName, 'instructions.md');
+  assert.deepEqual(Object.keys((await json('hooks/hooks.json')).hooks), HOOK_EVENTS);
+  assert.deepEqual(Object.keys((await json('plugins/gemini/hooks/hooks.json')).hooks), HOOK_EVENTS);
+  for (const file of ['runtime/cli.mjs', 'instructions.md']) assert.ok((await readFile(join(root, file), 'utf8')).length > 0, file);
+  const toml = (await readdir(join(root, 'commands', 'estelle'))).sort();
+  assert.deepEqual(toml, (await readdir(join(root, 'plugins', 'gemini', 'commands', 'estelle'))).sort());
+  assert.equal(toml.length, (await readdir(join(root, 'commands'))).filter(file => file.endsWith('.md')).length);
+  for (const file of toml) await same(`commands/estelle/${file}`);
+  // The root toml copy is Gemini's alone: no other host's bundle takes a commands/estelle folder.
+  for (const host of await readdir(join(root, 'plugins'))) {
+    assert.deepEqual((await readdir(join(root, 'plugins', host))).includes('commands') && (await readdir(join(root, 'plugins', host, 'commands'))).includes('estelle')
+      && host !== 'qwen' && host !== 'gemini', false, `${host} must not carry commands/estelle/*.toml`);
+  }
 });

@@ -10,6 +10,8 @@ const root = resolve(import.meta.dirname, '..');
 const check = process.argv.includes('--check');
 const version = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version;
 const description = 'Estelle MCP, memory and session hooks for coding agents.';
+// Root `commands/` holds the shared Claude-format markdown and, for `gemini extensions install <repo>`, `commands/estelle/*.toml`.
+const commandFiles = async () => (await readdir(join(root, 'commands'))).filter(name => name.endsWith('.md')).sort();
 const generated = new Map();
 const json = value => JSON.stringify(value, null, 2) + '\n';
 const emit = (file, value) => generated.set(file, typeof value === 'string' ? value : json(value));
@@ -67,7 +69,7 @@ emit('plugins/codex/.codex-plugin/plugin.json', { ...manifest, skills: ['./skill
   hooks: './hooks/hooks.json', mcpServers: './.mcp.json' });
 // Codex has no command format of its own. It turns commands into skills at install, but silently skips any
 // command using $ARGUMENTS, which is all of ours. So the Codex package gets those skills generated here.
-for (const entry of (await readdir(join(root, 'commands'))).sort()) {
+for (const entry of (await commandFiles()).sort()) {
   const name = entry.replace(/\.md$/, '');
   const source = await readFile(join(root, 'commands', entry), 'utf8');
   const [, description, body] = /^---\ndescription: (.+)\n---\n([\s\S]+)$/.exec(source) ?? [];
@@ -92,7 +94,7 @@ for (const entry of (await readdir(join(root, 'agents'))).sort()) {
 // small model: the session's main model re-read the whole context for every turn of that. The shared files carry
 // only `description`, which every host and Codex's conversion above read.
 const CLAUDE_COMMAND_MODEL = Object.freeze({ cloud: 'haiku', handoff: 'haiku' });
-for (const entry of (await readdir(join(root, 'commands'))).sort()) {
+for (const entry of (await commandFiles()).sort()) {
   const name = entry.replace(/\.md$/, '');
   const source = await readFile(join(root, 'commands', entry), 'utf8');
   const model = CLAUDE_COMMAND_MODEL[name];
@@ -220,7 +222,7 @@ for (const entry of (await readdir(join(root, 'agents'))).filter(name => name.en
 }
 // Qwen Code commands are Markdown with `{{args}}`; the runner path is where `qwen extensions install` puts the extension.
 const QWEN_CLI = '~/.qwen/extensions/estelle/runtime/cli.mjs';
-for (const entry of (await readdir(join(root, 'commands'))).sort()) {
+for (const entry of (await commandFiles()).sort()) {
   const source = await readFile(join(root, 'commands', entry), 'utf8');
   if (!/^---\ndescription: .+\n---\n/.test(source)) throw new Error(`Command needs one description line: ${entry}`);
   emit(`plugins/qwen/commands/estelle/${entry}`, source.replaceAll('$ARGUMENTS', '{{args}}').replaceAll('<Estelle cli.mjs>', QWEN_CLI));
@@ -232,24 +234,30 @@ for (const entry of (await readdir(join(root, 'commands'))).sort()) {
 // own way (adapters/gemini.mjs renames them). BeforeTool only ever carries the write warning, so it is limited to the two
 // file-writing tools. Notification, BeforeModel, AfterModel and BeforeToolSelection carry nothing Estelle uses.
 const GEMINI_EVENTS = ['SessionStart', 'BeforeAgent', 'BeforeTool', 'AfterTool', 'AfterAgent', 'PreCompress', 'SessionEnd'];
-emit('plugins/gemini/gemini-extension.json', { name: 'estelle', version, description: `Fate Labs Estelle: ${description}`,
+// The same files are emitted twice: under plugins/gemini (clone-based installs) and at the repository root, because
+// `gemini extensions install <github url>` reads the root and has no subdirectory option. At the root they sit beside the
+// shared sources: `hooks/` is read by no other host, and Gemini reads only `commands/**/*.toml`, so `commands/*.md` is ignored.
+const GEMINI_ROOTS = ['plugins/gemini/', ''];
+for (const base of GEMINI_ROOTS) {
+emit(`${base}gemini-extension.json`, { name: 'estelle', version, description: `Fate Labs Estelle: ${description}`,
   mcpServers: { Estelle: { httpUrl: server.url } }, contextFileName: 'instructions.md' });
-emit('plugins/gemini/hooks/hooks.json', { hooks: Object.fromEntries(GEMINI_EVENTS.map(event => [event, [{
+emit(`${base}hooks/hooks.json`, { hooks: Object.fromEntries(GEMINI_EVENTS.map(event => [event, [{
   ...(event === 'BeforeTool' ? { matcher: 'write_file|replace' } : {}),
   hooks: [{ name: `estelle-${event}`, type: 'command', command: 'node "${extensionPath}${/}runtime${/}cli.mjs" hook gemini-cli',
     timeout: event === 'SessionEnd' ? 3000 : 20000 }] }]])) });
+}
 // Gemini CLI commands are TOML (`prompt`, `description`) with `{{args}}`; `commands/estelle/code.toml` becomes `/estelle:code`.
 // The runner path is where `gemini extensions install` (and `link`) puts the extension. The prompt is a TOML literal string,
 // so backslashes and quotes stay as written; one that held a triple quote or a Gemini injection token would not survive.
 const GEMINI_CLI = '$HOME/.gemini/extensions/estelle/runtime/cli.mjs';
 const TOML_LITERAL = "'" + "'" + "'";
-for (const entry of (await readdir(join(root, 'commands'))).sort()) {
+for (const entry of (await commandFiles()).sort()) {
   const source = await readFile(join(root, 'commands', entry), 'utf8');
   const [, description, body] = /^---\ndescription: (.+)\n---\n([\s\S]+)$/.exec(source) ?? [];
   if (!description) throw new Error(`Command needs one description line: ${entry}`);
   const prompt = body.replaceAll('$ARGUMENTS', '{{args}}').replaceAll('<Estelle cli.mjs>', GEMINI_CLI);
   if (prompt.includes(TOML_LITERAL) || /[!@]\{/.test(prompt)) throw new Error(`Command cannot be a Gemini CLI TOML literal: ${entry}`);
-  emit(`plugins/gemini/commands/estelle/${entry.replace(/\.md$/, '.toml')}`,
+  for (const base of GEMINI_ROOTS) emit(`${base}commands/estelle/${entry.replace(/\.md$/, '.toml')}`,
     `description = ${JSON.stringify(description)}\nprompt = ${TOML_LITERAL}\n${prompt.trimEnd()}\n${TOML_LITERAL}\n`);
 }
 // Gemini CLI subagents (`agents/*.md`, preview): the same four definitions, with Gemini CLI's own tool names. Its loader is
@@ -328,7 +336,7 @@ emit('plugins/antigravity/rules/AGENTS.md', generated.get('instructions.md'));
 emit('plugins/antigravity/assets/logo.svg', await readFile(join(root, 'assets', 'logo.svg'), 'utf8'));
 // Commands are skills here (`/<skill-name>`), prefixed so they cannot shadow a person's own `/code` or `/review`. Only the
 // person invokes them. `$ARGUMENTS` has no meaning in a skill, as in Codex's conversion above.
-for (const entry of (await readdir(join(root, 'commands'))).sort()) {
+for (const entry of (await commandFiles()).sort()) {
   const name = entry.replace(/\.md$/, '');
   const [, description, body] = /^---\ndescription: (.+)\n---\n([\s\S]+)$/.exec(await readFile(join(root, 'commands', entry), 'utf8')) ?? [];
   if (!description) throw new Error(`Command needs one description line: ${entry}`);
@@ -370,6 +378,7 @@ async function inventory(directory, prefix = '') {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
     const path = join(directory, entry.name);
+    if (path === join(root, 'commands', 'estelle')) continue; // Gemini's root copy of the commands, not a shared source
     if (entry.isSymbolicLink()) throw new Error('Bundle symlinks are forbidden');
     if (entry.isDirectory()) for (const pair of await inventory(path, relative)) output.set(...pair);
     else if (entry.isFile()) output.set(relative, createHash('sha256').update(await readFile(path)).digest('hex'));
@@ -381,7 +390,7 @@ const digest = async path => statSync(path).isDirectory() ? inventory(path)
 if (!check) {
   // Regenerate derived packages and release metadata; user installations are untouched.
   await rm(join(root, 'plugins'), { recursive: true, force: true });
-  for (const file of ['.claude-plugin/plugin.json', '.codex-plugin', '.mcp.claude.json', '.mcp.codex.json', 'hooks', 'kimi.plugin.json']) {
+  for (const file of ['.claude-plugin/plugin.json', '.codex-plugin', '.mcp.claude.json', '.mcp.codex.json', 'kimi.plugin.json']) {
     await rm(join(root, file), { recursive: true, force: true });
   }
 }
@@ -395,7 +404,7 @@ for (const [file, content] of generated) {
 }
 for (const host of HOSTS) for (const asset of assetsFor(host)) {
   const original = join(root, asset), target = join(root, 'plugins', host, asset);
-  if (!check) { await cp(original, target, { recursive: true }); continue; }
+  if (!check) { await cp(original, target, { recursive: true, filter: source => source !== join(root, 'commands', 'estelle') }); continue; }
   if (JSON.stringify([...(await digest(original))].sort()) !== JSON.stringify([...(await digest(target))].sort())) {
     throw new Error(`Bundle differs: ${host}/${asset}`);
   }

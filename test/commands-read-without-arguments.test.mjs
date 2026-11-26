@@ -8,7 +8,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const commands = async () => Promise.all((await readdir(join(root, 'commands'))).sort()
+const commands = async () => Promise.all((await readdir(join(root, 'commands'))).filter(name => name.endsWith('.md')).sort()
   .map(async name => [name, await readFile(join(root, 'commands', name), 'utf8')]));
 
 test('every shared command reads as plain sentences when $ARGUMENTS is empty', async () => {

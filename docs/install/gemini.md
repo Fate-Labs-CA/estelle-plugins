@@ -1,11 +1,11 @@
 # Gemini CLI
 
-Package: `plugins/gemini`, a Gemini CLI extension. Requires Gemini CLI 0.71 or later (`@google/gemini-cli`), Node.js 22 on
+Package: the repository root (`gemini-extension.json`) and, for clone-based installs, `plugins/gemini`; both are the same Gemini CLI extension. Requires Gemini CLI 0.71 or later (`@google/gemini-cli`), Node.js 22 on
 the `PATH` of the Gemini CLI process, and, for hooks, either `/estelle:login` once or `ESTELLE_API_KEY` in that process's environment. Written against
 Gemini CLI 0.71.1.
 
-One extension adds the Estelle MCP server, the `/estelle:*` commands, the skills, the four Estelle subagents, Estelle's
-instructions (as the extension's context file) and the session hooks.
+One extension adds the Estelle MCP server, the `/estelle:*` commands, the skills, Estelle's instructions (as the extension's
+context file) and the session hooks. The four Estelle subagents come with the `plugins/gemini` install only (see below).
 
 ## Who pays for the model
 
@@ -19,7 +19,17 @@ README states this). Estelle for Antigravity is a separate package. This one is 
 
 ## Install
 
-From a clone of this repository:
+One command:
+
+```sh
+gemini extensions install https://github.com/Fate-Labs-CA/estelle-plugins
+```
+
+Gemini CLI has no subdirectory option, so it reads the repository root, where `gemini-extension.json`, `hooks/hooks.json` and
+`commands/estelle/*.toml` sit beside the shared sources (`commands/*.md`, `skills/`, `runtime/`, `instructions.md`), which
+Gemini CLI ignores or reads as they are. Root `agents/` holds Claude-format subagents that Gemini CLI cannot parse, so a root
+install loads no subagents and Gemini CLI logs one non-fatal warning per agent file when it loads the extension. For the
+subagents, install from a clone instead:
 
 ```sh
 git clone https://github.com/Fate-Labs-CA/estelle-plugins
@@ -67,10 +77,10 @@ with sources: [docs/hosts/gemini.md](../hosts/gemini.md).
 
 ## Update
 
-Gemini CLI copies an extension when it installs it, so pull your estelle-plugins clone and run the install command again, then restart Gemini CLI. Estelle checks once a day, at the start of a session, whether a newer release exists and shows one line when yours is behind (`ESTELLE_PLUGIN_UPDATE_CHECK=0` turns the check off).
+Gemini CLI copies an extension when it installs it: run `gemini extensions update estelle` (or install again; for a clone, pull it first), then restart Gemini CLI. Estelle checks once a day, at the start of a session, whether a newer release exists and shows one line when yours is behind (`ESTELLE_PLUGIN_UPDATE_CHECK=0` turns the check off).
 
 ## Copy/paste setup prompt
 
 ```text
-Use the current source: read https://github.com/Fate-Labs-CA/estelle-plugins at its latest main, never a cached or older local copy of the repository. Install Estelle for Gemini CLI from https://github.com/Fate-Labs-CA/estelle-plugins. Follow docs/install/gemini.md: clone the repository and run `gemini extensions install <clone>/plugins/gemini --consent`. Do not edit Gemini CLI settings by hand. Do not set or ask for an ESTELLE_API_KEY unless I already use one; never request or display credentials, and never touch my Google sign-in. Then tell me to restart Gemini CLI, run /estelle:login for the hooks, and run /mcp auth Estelle for the tools. Report extension loading, MCP status, hook sign-in and observed hooks separately; the sign-ins are unproven live. No paid installation tests.
+Use the current source: read https://github.com/Fate-Labs-CA/estelle-plugins at its latest main, never a cached or older local copy of the repository. Install Estelle for Gemini CLI from https://github.com/Fate-Labs-CA/estelle-plugins. Follow docs/install/gemini.md: run `gemini extensions install https://github.com/Fate-Labs-CA/estelle-plugins`. Do not edit Gemini CLI settings by hand. Do not set or ask for an ESTELLE_API_KEY unless I already use one; never request or display credentials, and never touch my Google sign-in. Then tell me to restart Gemini CLI, run /estelle:login for the hooks, and run /mcp auth Estelle for the tools. Report extension loading, MCP status, hook sign-in and observed hooks separately; the sign-ins are unproven live. No paid installation tests.
 ```

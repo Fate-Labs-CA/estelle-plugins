@@ -110,7 +110,7 @@ test('the Qwen Code extension: OAuth-ready MCP, hooks on the path Qwen Code fill
     assert.equal(rows[0].hooks[0].command, 'node "${CLAUDE_PLUGIN_ROOT}/runtime/cli.mjs" hook qwen-code');
   }
   const commands = await readdir(join(root, 'plugins', 'qwen', 'commands', 'estelle'));
-  assert.equal(commands.length, (await readdir(join(root, 'commands'))).length);
+  assert.equal(commands.length, (await readdir(join(root, 'commands'))).filter(name => name.endsWith('.md')).length);
   for (const file of commands) {
     const text = await readFile(join(root, 'plugins', 'qwen', 'commands', 'estelle', file), 'utf8');
     assert.match(text, /^---\ndescription: .+\n---\n/);
