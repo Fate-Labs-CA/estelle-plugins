@@ -6,7 +6,8 @@ Install directly from GitHub after these three prerequisites:
 2. External Node.js 22 or later is available as `node` to the actual Kimi process. A bundled host
    runtime does not establish that external hook commands can find Node.
 3. You have a valid `ESTELLE_API_KEY` from your Estelle account, with access to the hosted service,
-   and the key is available in Kimi's environment.
+   available in Kimi's environment: Kimi's MCP entry still uses the key. For hooks, `/estelle:login` is the default and the
+   key is the override; hooks run on either.
 
 The plugin does not install Kimi or Node, or create an account. No backend clone or Estelle CLI is needed.
 From the environment that launches Kimi, check Node and key presence without printing the key:
