@@ -3,7 +3,7 @@
 Package: `plugins/grok`. Requires Node.js 22. MCP uses the `ESTELLE_API_KEY` header as shipped, so the key must be in the host environment for the tools. Hooks (recall, checkpoints, mail, capture) sign in with `/estelle:login` once, or with the key, which wins.
 
 ```sh
-grok plugin install Fate-Labs-CA/estelle-plugins@v0.0.28#plugins/grok
+grok plugin install Fate-Labs-CA/estelle-plugins@v0.0.29#plugins/grok
 grok plugin enable estelle
 ```
 
