@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "Estelle": {
+    "tools": {
       "serverUrl": "https://api.fatelabs.ca/mcp"
     }
   }

@@ -1,6 +1,6 @@
 {
   "name": "@fatelabs/openclaw-estelle",
-  "version": "0.0.29",
+  "version": "0.0.30",
   "description": "Estelle MCP, memory and session hooks for coding agents.",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
