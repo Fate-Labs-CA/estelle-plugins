@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm, readdir, readFile, chmod } from 'node:fs
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { handleHook, drainOne } from '../runtime/hooks.mjs';
 import { hash, stateDirectory, apiClient } from '../runtime/io.mjs';
 import { hookCredentialContext } from '../runtime/capture-auth.mjs';
@@ -179,7 +180,7 @@ test('with a key set the sign-in is never offered, on any host', async t=>{
 
 test('the real runner, with no key and no stored sign-in, offers the sign-in on Codex; with a key it stays silent',async t=>{
  const f=await fixture(t);
- const runner=new URL('../runtime/cli.mjs',import.meta.url).pathname;
+ const runner=fileURLToPath(new URL('../runtime/cli.mjs',import.meta.url));
  const payload=JSON.stringify({...f.payload,hook_event_name:'SessionStart',model:'gpt-5',permission_mode:'default',source:'startup'});
  const run=extra=>execFileSync(process.execPath,[runner,'hook','codex'],{input:payload,timeout:15000,encoding:'utf8',
   env:{PATH:process.env.PATH,HOME:f.home,ESTELLE_PLUGIN_DATA:join(f.home,'runner-state'),ESTELLE_PLUGIN_UPDATE_CHECK:'0',...extra}});
@@ -189,7 +190,7 @@ test('the real runner, with no key and no stored sign-in, offers the sign-in on 
 
 test('a key the CLI stored in ~/.estelle/auth.json serves hooks with no variable, only when it is owner-only',async t=>{
  const f=await fixture(t);
- const runner=new URL('../runtime/cli.mjs',import.meta.url).pathname;
+ const runner=fileURLToPath(new URL('../runtime/cli.mjs',import.meta.url));
  const payload=JSON.stringify({...f.payload,hook_event_name:'SessionStart',model:'gpt-5',permission_mode:'default',source:'startup'});
  const run=()=>execFileSync(process.execPath,[runner,'hook','codex'],{input:payload,timeout:15000,encoding:'utf8',
   env:{PATH:process.env.PATH,HOME:f.home,ESTELLE_PLUGIN_DATA:join(f.home,'runner-state'),ESTELLE_PLUGIN_UPDATE_CHECK:'0',
