@@ -183,17 +183,18 @@ test('the real runner, with no key and no stored sign-in, offers the sign-in on 
  const runner=fileURLToPath(new URL('../runtime/cli.mjs',import.meta.url));
  const payload=JSON.stringify({...f.payload,hook_event_name:'SessionStart',model:'gpt-5',permission_mode:'default',source:'startup'});
  const run=extra=>execFileSync(process.execPath,[runner,'hook','codex'],{input:payload,timeout:15000,encoding:'utf8',
-  env:{PATH:process.env.PATH,HOME:f.home,ESTELLE_PLUGIN_DATA:join(f.home,'runner-state'),ESTELLE_PLUGIN_UPDATE_CHECK:'0',...extra}});
+  env:{PATH:process.env.PATH,HOME:f.home,USERPROFILE:f.home,SYSTEMROOT:process.env.SYSTEMROOT,ESTELLE_PLUGIN_DATA:join(f.home,'runner-state'),ESTELLE_PLUGIN_UPDATE_CHECK:'0',...extra}});
  assert.match(JSON.parse(run({})).systemMessage,/Run \$estelle:login once to sign in/);
  assert(!run({ESTELLE_API_KEY:'est_fixture_not_real',ESTELLE_API_URL:'http://127.0.0.1:9'}).includes('estelle:login'));
 });
 
 test('a key the CLI stored in ~/.estelle/auth.json serves hooks with no variable, only when it is owner-only',async t=>{
+ if(process.platform==='win32'){t.skip('owner-only is POSIX mode bits; Windows has none to check');return;}
  const f=await fixture(t);
  const runner=fileURLToPath(new URL('../runtime/cli.mjs',import.meta.url));
  const payload=JSON.stringify({...f.payload,hook_event_name:'SessionStart',model:'gpt-5',permission_mode:'default',source:'startup'});
  const run=()=>execFileSync(process.execPath,[runner,'hook','codex'],{input:payload,timeout:15000,encoding:'utf8',
-  env:{PATH:process.env.PATH,HOME:f.home,ESTELLE_PLUGIN_DATA:join(f.home,'runner-state'),ESTELLE_PLUGIN_UPDATE_CHECK:'0',
+  env:{PATH:process.env.PATH,HOME:f.home,USERPROFILE:f.home,SYSTEMROOT:process.env.SYSTEMROOT,ESTELLE_PLUGIN_DATA:join(f.home,'runner-state'),ESTELLE_PLUGIN_UPDATE_CHECK:'0',
    ESTELLE_API_URL:'http://127.0.0.1:9'}});
  await mkdir(join(f.home,'.estelle'),{mode:0o700});
  const file=join(f.home,'.estelle','auth.json');
