@@ -143,7 +143,7 @@ test('the Antigravity plugin follows the documented schema: manifest, MCP, hooks
   assert.ok(manifest.suggestedPrompts.length <= 3);
   assert.match(manifest.homepage, /^https:\/\//);
   // URL only: Antigravity's own OAuth signs in; a headers or oauth entry would replace it.
-  assert.deepEqual(await json('plugins/antigravity/mcp_config.json'), { mcpServers: { Estelle: { serverUrl: 'https://api.fatelabs.ca/mcp' } } });
+  assert.deepEqual(await json('plugins/antigravity/mcp_config.json'), { mcpServers: { tools: { serverUrl: 'https://api.fatelabs.ca/mcp' } } });
   const hooks = (await json('plugins/antigravity/hooks.json')).estelle;
   assert.deepEqual(Object.keys(hooks).sort(), ['PostToolUse', 'PreInvocation', 'PreToolUse', 'SessionStart', 'Stop']);
   for (const event of ['PreToolUse', 'PostToolUse']) assert.ok(Array.isArray(hooks[event][0].hooks), `${event} takes {matcher, hooks}`);
@@ -152,7 +152,9 @@ test('the Antigravity plugin follows the documented schema: manifest, MCP, hooks
   const commands = [hooks.SessionStart[0], hooks.PreInvocation[0], hooks.Stop[0], hooks.PreToolUse[0].hooks[0], hooks.PostToolUse[0].hooks[0]].map(h => h.command);
   for (const command of commands) assert.match(command, /^node \.\/runtime\/cli\.mjs hook antigravity [A-Za-z]+$/, 'relative path, no PLUGIN_ROOT');
   assert.match(await readFile(join(dir, 'rules', 'AGENTS.md'), 'utf8'), /Estelle/);
-  const folders = [...(await readdir(join(dir, 'skills'))).map(name => ['skills', name]), ...(await readdir(join(dir, 'command-skills'))).map(name => ['command-skills', name])];
+  // agy reads a plugin's skills (and so its slash commands) from `skills/` only.
+  await assert.rejects(readdir(join(dir, 'command-skills')), { code: 'ENOENT' });
+  const folders = (await readdir(join(dir, 'skills'))).map(name => ['skills', name]);
   assert.equal(folders.length, (await readdir(join(root, 'skills'))).length + (await readdir(join(root, 'commands'))).filter(name => name.endsWith('.md')).length);
   for (const [parent, name] of folders) {
     const text = await readFile(join(dir, parent, name, 'SKILL.md'), 'utf8');
@@ -161,7 +163,8 @@ test('the Antigravity plugin follows the documented schema: manifest, MCP, hooks
     const description = /^description: (.+)$/m.exec(text)?.[1];
     assert.ok(description && description.length <= 1024 + 2);
   }
-  assert.deepEqual((await readdir(join(dir, 'command-skills'))).sort(), ['cloud', 'code', 'handoff', 'login', 'logout', 'monitor', 'resume', 'review', 'rooms'].map(n => `estelle-${n}`));
+  const present = new Set(await readdir(join(dir, 'skills')));
+  for (const n of ['cloud', 'code', 'handoff', 'login', 'logout', 'monitor', 'resume', 'review', 'rooms']) assert.ok(present.has(`estelle-${n}`), `/estelle-${n} is a skill agy can find`);
   const agents = await readdir(join(dir, 'agents'));
   assert.equal(agents.length, (await readdir(join(root, 'agent-sources'))).length);
   for (const file of agents) assert.match(await readFile(join(dir, 'agents', file), 'utf8'), /^---\nname: .+\ndescription: ".+"\nmainAgent: false\nsubagent: true\nmodel: inherit\n---\n/);

@@ -1,9 +1,12 @@
 # Google Antigravity: what the host offers and how Estelle uses it
 
-Read on 2026-11-25 from Antigravity's published documentation. No `agy` binary was run: Google distributes it through
-`curl | bash` installers only (the `agy`, `antigravity` and `antigravity-cli` names on npm are unrelated placeholders), and
-Estelle's checks do not run installer scripts. Everything marked unverified below is read from documentation or third-party
-write-ups and has not been seen on a real install.
+Read on 2026-11-25 from Antigravity's published documentation, then checked on 2026-11-27 against `agy` 1.5.18 (its
+`agy plugin validate`, `agy plugin install` into an isolated HOME, and the docs and changelog bundled in the binary). Never
+run signed in. Anything below not marked as checked is read from documentation or third-party write-ups.
+
+Checked with agy 1.5.18: a plugin's slash commands are its skills, read from `skills/` only (a `command-skills/` folder is
+ignored, which made `/estelle-login` an unknown command); a plugin's MCP server is named `<plugin>_<server>` with no
+de-duplication (so key `tools` shows as `estelle_tools`); MCP sign-in is `/mcp`, the server, `Authenticate`, then the pasted code.
 
 | Mechanism | Antigravity | Source |
 |---|---|---|
@@ -11,7 +14,7 @@ write-ups and has not been seen on a real install.
 | Install | `agy plugin install <name, GitHub URL or path>`, global `~/.gemini/config/plugins/<name>/`, workspace `.agents/plugins/`. `agy plugin validate [--strict] [--json]`. | [plugins](https://antigravity.google/docs/plugins) |
 | MCP | `mcp_config.json`, `serverUrl` is Streamable HTTP only. With no `headers` or `oauth`, OAuth 2.0 with PKCE runs on its own through CIMD or dynamic client registration; the code is pasted back into the app. Tokens live in `~/.gemini/antigravity/mcp_oauth_tokens.json`. Tools are named `<plugin>_<server>`. | [mcp](https://antigravity.google/docs/mcp) |
 | Hooks | `hooks.json`: `SessionStart`, `PreToolUse`, `PostToolUse`, `PreInvocation`, `PostInvocation`, `Stop`. camelCase stdin (`conversationId`, `workspacePaths`, `transcriptPath`, `lastUserInput`, `toolCall`). Context reaches the model only as `injectSteps` from `SessionStart` and `PreInvocation`. Non-zero exit fails open. | [hooks](https://antigravity.google/docs/hooks) |
-| Commands | None of their own. A skill is invoked as `/<skill-name>`; `disable-model-invocation: true` limits it to that. | [build-plugins](https://antigravity.google/docs/build-plugins) |
+| Commands | None of their own. A skill in the plugin's `skills/` folder is invoked as `/<skill-name>`; `disable-model-invocation: true` limits it to that. Other folders are not read. | [build-plugins](https://antigravity.google/docs/build-plugins) |
 | Rules | `rules/AGENTS.md` is always on while the plugin is enabled. | build-plugins |
 | Agents | `agents/<name>.md` with `mainAgent`, `subagent`, `model`, `tools`, `skills`. | build-plugins |
 | Transcript | `~/.gemini/antigravity-cli/brain/<conversation>/.system_generated/logs/transcript.jsonl` (`transcript_full.jsonl` untruncated beside it) for the CLI; the app uses `~/.gemini/antigravity/`. One step per line: `step_index`, `source`, `type`, `status`, `created_at`, `content`, `tool_calls`. Conversation stores (`conversations/<id>.db` or `.pb`) are not read. | Unverified: third-party write-ups, [dev.to](https://dev.to/iromin/antigravity-cli-tutorial-series-part-2-conversations-conversations-and-conversations-j39). The hook passes the real path as `transcriptPath`. |
@@ -35,8 +38,8 @@ write-ups and has not been seen on a real install.
 
 ## Gaps, said plainly
 
-- Nothing here was run in Antigravity. `agy plugin validate` was not run. The plugin was checked against the documented schema
-  by `test/antigravity.test.mjs`.
+- No signed-in Antigravity session has run these hooks or commands. The plugin passes `agy plugin validate --strict` and
+  installs with all components, and is checked against the documented schema by `test/antigravity.test.mjs`.
 - The transcript layout and the file-writing tool names are not verified. Recall, `injectSteps` and the decision shape are
   documented.
 - Antigravity expands `${VAR}` in `mcp_config.json` only for values it prompts the person for, so the plugin does not send

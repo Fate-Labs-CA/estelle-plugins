@@ -327,7 +327,9 @@ emit('plugins/antigravity/plugin.json', { $schema: 'https://antigravity.google/s
   homepage: 'https://github.com/Fate-Labs-CA/estelle-plugins/blob/main/docs/install/antigravity.md',
   repository: 'https://github.com/Fate-Labs-CA/estelle-plugins', keywords: ['estelle', 'memory', 'mcp', 'code-review'],
   suggestedPrompts: ['Resume where I left off with Estelle', 'Review my current change with Estelle'] });
-emit('plugins/antigravity/mcp_config.json', { mcpServers: { Estelle: { serverUrl: server.url } } });
+// agy names a plugin's MCP server `<plugin>_<server>` (its 1.2.2 changelog) and does not de-duplicate, so a key of `Estelle`
+// showed as `estelle_Estelle`. The key `tools` shows as `estelle_tools`. Nothing on Estelle's server reads the key.
+emit('plugins/antigravity/mcp_config.json', { mcpServers: { tools: { serverUrl: server.url } } });
 emit('plugins/antigravity/hooks.json', { estelle: {
   SessionStart: [AGY_COMMAND('SessionStart')], PreInvocation: [AGY_COMMAND('PreInvocation')],
   PreToolUse: [{ matcher: WRITE_TOOL_MATCHER, hooks: [AGY_COMMAND('PreToolUse')] }],
@@ -336,12 +338,16 @@ emit('plugins/antigravity/rules/AGENTS.md', generated.get('instructions.md'));
 // The Fate Labs mark (founder, 2026-11-25: the same logo as Eden's plugin), which plugin.json's `logo` names and the Marketplace needs.
 emit('plugins/antigravity/assets/logo.svg', await readFile(join(root, 'assets', 'logo.svg'), 'utf8'));
 // Commands are skills here (`/<skill-name>`), prefixed so they cannot shadow a person's own `/code` or `/review`. Only the
-// person invokes them. `$ARGUMENTS` has no meaning in a skill, as in Codex's conversion above.
+// person invokes them. `$ARGUMENTS` has no meaning in a skill, as in Codex's conversion above. agy loads skills from the
+// plugin's `skills/` folder only: a sibling `command-skills/` folder (as Codex has) is never read, so `/estelle-login` was
+// an unknown command. They are written into `skills/` beside the copied shared skills (see AGY_COMMAND_SKILLS below).
+const AGY_COMMAND_SKILLS = [];
 for (const entry of (await commandFiles()).sort()) {
   const name = entry.replace(/\.md$/, '');
   const [, description, body] = /^---\ndescription: (.+)\n---\n([\s\S]+)$/.exec(await readFile(join(root, 'commands', entry), 'utf8')) ?? [];
   if (!description) throw new Error(`Command needs one description line: ${entry}`);
-  emit(`plugins/antigravity/command-skills/estelle-${name}/SKILL.md`, `---\nname: estelle-${name}\ndescription: ${JSON.stringify(description)}\n`
+  AGY_COMMAND_SKILLS.push(`estelle-${name}`);
+  emit(`plugins/antigravity/skills/estelle-${name}/SKILL.md`, `---\nname: estelle-${name}\ndescription: ${JSON.stringify(description)}\n`
     + `disable-model-invocation: true\n---\n\n${body.replaceAll('$ARGUMENTS', 'what the person asked for')}`);
 }
 // Agents: Antigravity's frontmatter has no Claude `tools` list (its tool names differ), so the agent keeps all tools.
@@ -408,7 +414,9 @@ for (const [file, content] of generated) {
 for (const host of HOSTS) for (const asset of assetsFor(host)) {
   const original = join(root, sourceOf(asset)), target = join(root, 'plugins', host, asset);
   if (!check) { await cp(original, target, { recursive: true, filter: source => source !== join(root, 'commands', 'estelle') }); continue; }
-  if (JSON.stringify([...(await digest(original))].sort()) !== JSON.stringify([...(await digest(target))].sort())) {
+  // agy's `skills/` also holds the generated command skills (checked above as generated files); only the copy is compared.
+  const own = ([path]) => !(host === 'antigravity' && asset === 'skills' && AGY_COMMAND_SKILLS.some(name => path.startsWith(`${name}/`)));
+  if (JSON.stringify([...(await digest(original))].sort()) !== JSON.stringify([...(await digest(target))].filter(own).sort())) {
     throw new Error(`Bundle differs: ${host}/${asset}`);
   }
 }
